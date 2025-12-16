@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Plus, FileText, MoreHorizontal, Trash2, Copy, ExternalLink, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,15 +23,18 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { TemplateLibrary } from "@/components/editor/TemplateLibrary";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Page } from "@shared/schema";
+import type { Page, Block } from "@shared/schema";
 import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 
 export default function PagesList() {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [deletePageId, setDeletePageId] = useState<string | null>(null);
+  const [showTemplates, setShowTemplates] = useState(false);
 
   const { data: pages, isLoading } = useQuery<Page[]>({
     queryKey: ["/api/pages"],
@@ -99,12 +102,14 @@ export default function PagesList() {
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <Link href="/editor/new">
-              <Button className="gap-2" data-testid="button-new-page">
-                <Plus className="h-4 w-4" />
-                New Page
-              </Button>
-            </Link>
+            <Button 
+              className="gap-2" 
+              onClick={() => setShowTemplates(true)}
+              data-testid="button-new-page"
+            >
+              <Plus className="h-4 w-4" />
+              New Page
+            </Button>
           </div>
         </div>
       </header>
@@ -155,9 +160,11 @@ export default function PagesList() {
                           <Copy className="h-4 w-4 mr-2" />
                           Duplicate
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <ExternalLink className="h-4 w-4 mr-2" />
-                          Preview
+                        <DropdownMenuItem asChild>
+                          <a href={`/preview/${page.id}`} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="h-4 w-4 mr-2" />
+                            Preview
+                          </a>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
@@ -191,7 +198,6 @@ export default function PagesList() {
                   <div className="flex items-center justify-between gap-2">
                     <Badge
                       variant={page.status === "published" ? "default" : "secondary"}
-                      size="sm"
                     >
                       {page.status}
                     </Badge>
@@ -214,12 +220,14 @@ export default function PagesList() {
                 <p className="text-sm text-muted-foreground mb-6">
                   Create your first landing page to start building high-converting ad experiences.
                 </p>
-                <Link href="/editor/new">
-                  <Button className="gap-2" data-testid="button-create-first">
-                    <Plus className="h-4 w-4" />
-                    Create Your First Page
-                  </Button>
-                </Link>
+                <Button 
+                  className="gap-2" 
+                  onClick={() => setShowTemplates(true)}
+                  data-testid="button-create-first"
+                >
+                  <Plus className="h-4 w-4" />
+                  Create Your First Page
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -248,6 +256,16 @@ export default function PagesList() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <TemplateLibrary
+        open={showTemplates}
+        onClose={() => setShowTemplates(false)}
+        onSelectTemplate={(blocks: Block[]) => {
+          // Store selected template blocks in sessionStorage for the editor to pick up
+          sessionStorage.setItem("templateBlocks", JSON.stringify(blocks));
+          navigate("/editor/new");
+        }}
+      />
     </div>
   );
 }

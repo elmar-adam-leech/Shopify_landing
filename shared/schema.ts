@@ -153,18 +153,36 @@ export const pages = pgTable("pages", {
   title: text("title").notNull(),
   slug: text("slug").notNull().unique(),
   blocks: jsonb("blocks").$type<Block[]>().notNull().default([]),
-  pixelSettings: jsonb("pixel_settings").$type<PixelSettings>().default({}),
+  pixelSettings: jsonb("pixel_settings").$type<PixelSettings>(),
   status: text("status", { enum: ["draft", "published"] }).notNull().default("draft"),
   shopifyPageId: text("shopify_page_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// UTM parameters schema
+export const utmParamsSchema = z.object({
+  utm_source: z.string().optional(),
+  utm_medium: z.string().optional(),
+  utm_campaign: z.string().optional(),
+  utm_term: z.string().optional(),
+  utm_content: z.string().optional(),
+  utm_id: z.string().optional(),
+  gclid: z.string().optional(),
+  fbclid: z.string().optional(),
+  ttclid: z.string().optional(),
+});
+
+export type UTMParams = z.infer<typeof utmParamsSchema>;
+
 export const formSubmissions = pgTable("form_submissions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   pageId: varchar("page_id").notNull().references(() => pages.id),
   blockId: text("block_id").notNull(),
   data: jsonb("data").$type<Record<string, string>>().notNull(),
+  utmParams: jsonb("utm_params").$type<UTMParams>().default({}),
+  landingPage: text("landing_page"),
+  referrer: text("referrer"),
   submittedAt: timestamp("submitted_at").defaultNow().notNull(),
 });
 

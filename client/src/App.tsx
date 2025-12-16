@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/lib/theme";
 import PagesList from "@/pages/PagesList";
 import Editor from "@/pages/Editor";
+import Preview from "@/pages/Preview";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -13,6 +14,7 @@ function Router() {
     <Switch>
       <Route path="/" component={PagesList} />
       <Route path="/editor/:id" component={Editor} />
+      <Route path="/preview/:id" component={Preview} />
       <Route component={NotFound} />
     </Switch>
   );

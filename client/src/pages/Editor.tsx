@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useLocation, useRoute } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -14,7 +14,7 @@ import {
 } from "@dnd-kit/core";
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { v4 as uuidv4 } from "uuid";
-import { ArrowLeft, Save, Eye, Settings, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, Eye, Settings, Loader2, Monitor, Tablet, Smartphone } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -113,6 +113,24 @@ export default function Editor() {
   const [showPixelSettings, setShowPixelSettings] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
+  const [viewportSize, setViewportSize] = useState<"desktop" | "tablet" | "mobile">("desktop");
+
+  // Load template blocks from sessionStorage if this is a new page
+  useEffect(() => {
+    if (isNewPage) {
+      const templateBlocks = sessionStorage.getItem("templateBlocks");
+      if (templateBlocks) {
+        try {
+          const parsed = JSON.parse(templateBlocks) as Block[];
+          setBlocks(parsed);
+          setHasChanges(parsed.length > 0);
+          sessionStorage.removeItem("templateBlocks");
+        } catch (e) {
+          console.error("Failed to parse template blocks:", e);
+        }
+      }
+    }
+  }, [isNewPage]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -125,19 +143,27 @@ export default function Editor() {
     })
   );
 
-  const { isLoading } = useQuery({
+  const { isLoading, data: pageData } = useQuery({
     queryKey: ["/api/pages", pageId],
     enabled: !isNewPage && !!pageId,
+    staleTime: 0, // Always fetch fresh data
     queryFn: async () => {
       const response = await fetch(`/api/pages/${pageId}`);
       if (!response.ok) throw new Error("Failed to load page");
       const data = await response.json() as Page;
-      setBlocks(data.blocks || []);
-      setTitle(data.title);
-      setPixelSettings(data.pixelSettings || defaultPixelSettings);
       return data;
     },
   });
+
+  // Update state when page data loads
+  useEffect(() => {
+    if (pageData && !isNewPage) {
+      setBlocks(pageData.blocks || []);
+      setTitle(pageData.title);
+      setPixelSettings(pageData.pixelSettings || defaultPixelSettings);
+      setHasChanges(false);
+    }
+  }, [pageData, isNewPage]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -293,10 +319,18 @@ export default function Editor() {
               <Settings className="h-4 w-4" />
               Pixels
             </Button>
-            <Button variant="outline" size="sm" className="gap-2" data-testid="button-preview">
-              <Eye className="h-4 w-4" />
-              Preview
-            </Button>
+            <a href={isNewPage ? "#" : `/preview/${pageId}`} target="_blank" rel="noopener noreferrer">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="gap-2" 
+                disabled={isNewPage}
+                data-testid="button-preview"
+              >
+                <Eye className="h-4 w-4" />
+                Preview
+              </Button>
+            </a>
             <Button
               size="sm"
               className="gap-2"
@@ -319,15 +353,57 @@ export default function Editor() {
             <BlockLibrary />
           </aside>
 
-          <main className="flex-1 overflow-hidden bg-muted/30">
-            <EditorCanvas
-              blocks={blocks}
-              selectedBlockId={selectedBlockId}
-              onSelectBlock={setSelectedBlockId}
-              onDeleteBlock={handleDeleteBlock}
-              onDuplicateBlock={handleDuplicateBlock}
-              onOpenSettings={setSettingsBlockId}
-            />
+          <main className="flex-1 overflow-hidden bg-muted/30 flex flex-col">
+            {/* Viewport Size Toggle */}
+            <div className="flex items-center justify-center gap-1 py-2 border-b bg-background">
+              <Button
+                variant={viewportSize === "desktop" ? "secondary" : "ghost"}
+                size="icon"
+                onClick={() => setViewportSize("desktop")}
+                data-testid="button-viewport-desktop"
+                className="toggle-elevate"
+              >
+                <Monitor className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={viewportSize === "tablet" ? "secondary" : "ghost"}
+                size="icon"
+                onClick={() => setViewportSize("tablet")}
+                data-testid="button-viewport-tablet"
+                className="toggle-elevate"
+              >
+                <Tablet className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={viewportSize === "mobile" ? "secondary" : "ghost"}
+                size="icon"
+                onClick={() => setViewportSize("mobile")}
+                data-testid="button-viewport-mobile"
+                className="toggle-elevate"
+              >
+                <Smartphone className="h-4 w-4" />
+              </Button>
+            </div>
+            
+            {/* Canvas Container */}
+            <div className="flex-1 overflow-auto flex justify-center py-4">
+              <div 
+                className={`transition-all duration-300 ${
+                  viewportSize === "desktop" ? "w-full max-w-none" :
+                  viewportSize === "tablet" ? "w-[768px]" : "w-[375px]"
+                }`}
+                style={{ minHeight: "100%" }}
+              >
+                <EditorCanvas
+                  blocks={blocks}
+                  selectedBlockId={selectedBlockId}
+                  onSelectBlock={setSelectedBlockId}
+                  onDeleteBlock={handleDeleteBlock}
+                  onDuplicateBlock={handleDuplicateBlock}
+                  onOpenSettings={setSettingsBlockId}
+                />
+              </div>
+            </div>
           </main>
         </div>
 
