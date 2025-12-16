@@ -211,6 +211,44 @@ function renderBlock(block: Block) {
       );
 
     case "phone-block":
+      const handlePhoneClick = () => {
+        if (config.trackCalls !== false) {
+          // Fire call tracking events to ad pixels
+          const w = window as any;
+          
+          // Meta/Facebook - Contact event
+          if (w.fbq) {
+            w.fbq('track', 'Contact', { 
+              content_name: 'Phone Call',
+              phone_number: config.phoneNumber 
+            });
+          }
+          
+          // Google Ads - Conversion event
+          if (w.gtag) {
+            w.gtag('event', 'conversion', {
+              'event_category': 'Contact',
+              'event_label': 'Phone Call',
+              'value': 1
+            });
+          }
+          
+          // TikTok - Contact event
+          if (w.ttq) {
+            w.ttq.track('Contact', { 
+              description: 'Phone Call' 
+            });
+          }
+          
+          // Pinterest - Lead event
+          if (w.pintrk) {
+            w.pintrk('track', 'lead', {
+              lead_type: 'Phone Call'
+            });
+          }
+        }
+      };
+      
       return (
         <section
           key={block.id}
@@ -219,7 +257,9 @@ function renderBlock(block: Block) {
         >
           <a
             href={`tel:${(config.phoneNumber || "").replace(/\D/g, "")}`}
+            onClick={handlePhoneClick}
             className="inline-flex items-center gap-3 px-6 py-3 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg transition-colors"
+            data-testid="button-call-phone"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
