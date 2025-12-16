@@ -3,7 +3,8 @@ import { useRoute, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { captureUTMParams, getStoredUTMParams, parseUTMParams } from "@/lib/utm";
-import type { Page, Block, BlockVariant, VisibilityCondition, VisibilityRules, AnalyticsEventType, AbTest, AbTestVariant } from "@shared/schema";
+import { firePixelEvent, type PixelEventName } from "@/lib/pixels";
+import type { Page, Block, BlockVariant, VisibilityCondition, VisibilityRules, AnalyticsEventType, AbTest, AbTestVariant, PixelSettings } from "@shared/schema";
 
 function getOrCreateVisitorId(): string {
   const key = "pb_visitor_id";
@@ -597,6 +598,125 @@ function generatePixelScripts(settings: any): string {
   return scripts.join("\n");
 }
 
+// Interactive form block component with state for form submission
+function FormBlockPreview({ 
+  block, 
+  config, 
+  onSubmit 
+}: { 
+  block: Block; 
+  config: Record<string, any>; 
+  onSubmit: (formData: Record<string, string>) => void;
+}) {
+  const [formData, setFormData] = useState<Record<string, string>>({});
+  const [submitted, setSubmitted] = useState(false);
+
+  const handleFieldChange = (fieldId: string, value: string) => {
+    setFormData(prev => ({ ...prev, [fieldId]: value }));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSubmit(formData);
+    setSubmitted(true);
+  };
+
+  if (submitted) {
+    return (
+      <section
+        key={block.id}
+        className="py-8 px-6"
+        data-testid={`preview-block-${block.id}`}
+      >
+        <div className="max-w-md mx-auto text-center">
+          <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+            <p className="text-green-800 font-medium">
+              {config.successMessage || "Thank you for your submission!"}
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  const renderField = (field: any) => {
+    const value = formData[field.id] || "";
+    
+    switch (field.type) {
+      case "textarea":
+        return (
+          <textarea
+            className="w-full px-3 py-2 border rounded-lg"
+            placeholder={field.label}
+            value={value}
+            onChange={(e) => handleFieldChange(field.id, e.target.value)}
+            required={field.required}
+            data-testid={`form-field-${field.id}`}
+          />
+        );
+      case "select":
+        return (
+          <select
+            className="w-full px-3 py-2 border rounded-lg"
+            value={value}
+            onChange={(e) => handleFieldChange(field.id, e.target.value)}
+            required={field.required}
+            data-testid={`form-field-${field.id}`}
+          >
+            <option value="">Select {field.label}</option>
+            {(field.options || []).map((option: string, index: number) => (
+              <option key={index} value={option}>{option}</option>
+            ))}
+          </select>
+        );
+      default:
+        return (
+          <input
+            type={field.type}
+            className="w-full px-3 py-2 border rounded-lg"
+            placeholder={field.label}
+            value={value}
+            onChange={(e) => handleFieldChange(field.id, e.target.value)}
+            required={field.required}
+            data-testid={`form-field-${field.id}`}
+          />
+        );
+    }
+  };
+
+  return (
+    <section
+      key={block.id}
+      className="py-8 px-6"
+      data-testid={`preview-block-${block.id}`}
+    >
+      <div className="max-w-md mx-auto">
+        {config.title && (
+          <h2 className="text-2xl font-bold mb-6 text-center">{config.title}</h2>
+        )}
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          {(config.fields || []).map((field: any) => (
+            <div key={field.id}>
+              <label className="block text-sm font-medium mb-1">
+                {field.label}
+                {field.required && <span className="text-red-500 ml-1">*</span>}
+              </label>
+              {renderField(field)}
+            </div>
+          ))}
+          <button
+            type="submit"
+            className="w-full py-3 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg transition-colors"
+            data-testid="form-submit-button"
+          >
+            {config.submitText || "Submit"}
+          </button>
+        </form>
+      </div>
+    </section>
+  );
+}
+
 export default function Preview() {
   const [, params] = useRoute("/preview/:id");
   const [, setLocation] = useLocation();
@@ -697,7 +817,7 @@ export default function Preview() {
     }
   }, [page, pageId, abTestInfo, abTestData]);
 
-  // Track button click
+  // Track button click and fire pixel events
   const handleButtonClick = useCallback((blockId: string, config: any) => {
     if (pageId) {
       trackEvent(
@@ -708,8 +828,19 @@ export default function Preview() {
         abTestInfo?.test?.id,
         abTestInfo?.variant?.id
       );
+      
+      // Fire pixel event if conversion tracking is enabled
+      if (config.trackConversion && page?.pixelSettings) {
+        const eventName = (config.conversionEvent || "AddToCart") as PixelEventName;
+        firePixelEvent(eventName, {
+          content_name: config.text,
+          content_category: "Button Click",
+          value: config.conversionValue || 0,
+          currency: "USD",
+        }, page.pixelSettings);
+      }
     }
-  }, [pageId, abTestInfo]);
+  }, [pageId, abTestInfo, page?.pixelSettings]);
 
   // Track phone click
   const handlePhoneClick = useCallback((blockId: string, config: any) => {
@@ -724,6 +855,31 @@ export default function Preview() {
       );
     }
   }, [pageId, abTestInfo]);
+
+  // Handle form submission with pixel event firing
+  const handleFormSubmit = useCallback((blockId: string, config: any, formData: Record<string, string>) => {
+    if (pageId) {
+      trackEvent(
+        pageId, 
+        "form_submission", 
+        blockId, 
+        { formTitle: config.title, ...formData },
+        abTestInfo?.test?.id,
+        abTestInfo?.variant?.id
+      );
+      
+      // Fire pixel event if conversion tracking is enabled
+      if (config.fireConversionEvent !== false && page?.pixelSettings) {
+        const eventName = (config.conversionEvent || "Lead") as PixelEventName;
+        firePixelEvent(eventName, {
+          content_name: config.title || "Form Submission",
+          content_category: "Form",
+          value: config.conversionValue || 0,
+          currency: "USD",
+        }, page.pixelSettings);
+      }
+    }
+  }, [pageId, abTestInfo, page?.pixelSettings]);
 
   // Set meta robots tag based on page settings
   useEffect(() => {
@@ -773,6 +929,19 @@ export default function Preview() {
 
   // Render block with event tracking
   const renderBlockWithTracking = (block: Block) => {
+    // Handle form blocks specially to intercept form submission
+    if (block.type === "form-block") {
+      const { config } = getOrAssignBlockVariant(block);
+      return (
+        <FormBlockPreview
+          key={block.id}
+          block={block}
+          config={config}
+          onSubmit={(formData) => handleFormSubmit(block.id, config, formData)}
+        />
+      );
+    }
+    
     const rendered = renderBlock(block);
     
     // Wrap button blocks with click tracking

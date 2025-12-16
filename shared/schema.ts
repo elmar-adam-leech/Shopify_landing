@@ -50,6 +50,19 @@ export const imageBlockConfigSchema = z.object({
   alignment: z.enum(["left", "center", "right"]).default("center"),
 });
 
+export const pixelEventTypes = [
+  "Lead",
+  "AddToCart",
+  "InitiateCheckout",
+  "Purchase",
+  "ViewContent",
+  "CompleteRegistration",
+  "Contact",
+  "SubmitApplication",
+] as const;
+
+export type PixelEventType = (typeof pixelEventTypes)[number];
+
 export const buttonBlockConfigSchema = z.object({
   text: z.string().default("Click Here"),
   url: z.string().default("#"),
@@ -57,6 +70,8 @@ export const buttonBlockConfigSchema = z.object({
   size: z.enum(["small", "medium", "large"]).default("medium"),
   alignment: z.enum(["left", "center", "right"]).default("center"),
   trackConversion: z.boolean().default(false),
+  conversionEvent: z.enum(pixelEventTypes).default("AddToCart"),
+  conversionValue: z.number().optional(),
 });
 
 export const formFieldSchema = z.object({
@@ -76,6 +91,8 @@ export const formBlockConfigSchema = z.object({
   submitText: z.string().default("Submit"),
   successMessage: z.string().default("Thank you for your submission!"),
   fireConversionEvent: z.boolean().default(true),
+  conversionEvent: z.enum(pixelEventTypes).default("Lead"),
+  conversionValue: z.number().optional(),
 });
 
 export const phoneBlockConfigSchema = z.object({

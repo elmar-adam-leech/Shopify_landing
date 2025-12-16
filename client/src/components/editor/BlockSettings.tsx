@@ -347,14 +347,59 @@ function ButtonBlockSettings({ config, onUpdate }: { config: Record<string, any>
           </SelectContent>
         </Select>
       </div>
-      <div className="flex items-center justify-between">
-        <Label htmlFor="trackConversion">Track as Conversion</Label>
-        <Switch
-          id="trackConversion"
-          checked={config.trackConversion === true}
-          onCheckedChange={(checked) => onUpdate({ ...config, trackConversion: checked })}
-          data-testid="switch-button-conversion"
-        />
+      <div className="space-y-4 border-t pt-4 mt-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <Label htmlFor="trackConversion">Fire Pixel Event on Click</Label>
+            <p className="text-xs text-muted-foreground">Track this button click in ad platforms</p>
+          </div>
+          <Switch
+            id="trackConversion"
+            checked={config.trackConversion === true}
+            onCheckedChange={(checked) => onUpdate({ ...config, trackConversion: checked })}
+            data-testid="switch-button-conversion"
+          />
+        </div>
+        {config.trackConversion && (
+          <>
+            <div className="space-y-2">
+              <Label>Event Type</Label>
+              <Select
+                value={config.conversionEvent || "AddToCart"}
+                onValueChange={(value) => onUpdate({ ...config, conversionEvent: value })}
+              >
+                <SelectTrigger data-testid="select-button-event">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="AddToCart">Add to Cart</SelectItem>
+                  <SelectItem value="InitiateCheckout">Initiate Checkout</SelectItem>
+                  <SelectItem value="Purchase">Purchase</SelectItem>
+                  <SelectItem value="Lead">Lead</SelectItem>
+                  <SelectItem value="ViewContent">View Content</SelectItem>
+                  <SelectItem value="Contact">Contact</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="conversionValue">Conversion Value (Optional)</Label>
+              <Input
+                id="conversionValue"
+                type="number"
+                value={config.conversionValue !== undefined ? config.conversionValue : ""}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  onUpdate({ 
+                    ...config, 
+                    conversionValue: value === "" ? undefined : parseFloat(value) 
+                  });
+                }}
+                placeholder="e.g., 99.99"
+                data-testid="input-button-value"
+              />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -467,14 +512,57 @@ function FormBlockSettings({ config, onUpdate }: { config: Record<string, any>; 
           data-testid="input-form-success"
         />
       </div>
-      <div className="flex items-center justify-between">
-        <Label htmlFor="fireConversionEvent">Fire Conversion Event</Label>
-        <Switch
-          id="fireConversionEvent"
-          checked={config.fireConversionEvent !== false}
-          onCheckedChange={(checked) => onUpdate({ ...config, fireConversionEvent: checked })}
-          data-testid="switch-form-conversion"
-        />
+      <div className="space-y-4 border-t pt-4 mt-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <Label htmlFor="fireConversionEvent">Fire Pixel Event on Submit</Label>
+            <p className="text-xs text-muted-foreground">Track form submissions in ad platforms</p>
+          </div>
+          <Switch
+            id="fireConversionEvent"
+            checked={config.fireConversionEvent !== false}
+            onCheckedChange={(checked) => onUpdate({ ...config, fireConversionEvent: checked })}
+            data-testid="switch-form-conversion"
+          />
+        </div>
+        {config.fireConversionEvent !== false && (
+          <>
+            <div className="space-y-2">
+              <Label>Event Type</Label>
+              <Select
+                value={config.conversionEvent || "Lead"}
+                onValueChange={(value) => onUpdate({ ...config, conversionEvent: value })}
+              >
+                <SelectTrigger data-testid="select-form-event">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Lead">Lead</SelectItem>
+                  <SelectItem value="CompleteRegistration">Complete Registration</SelectItem>
+                  <SelectItem value="SubmitApplication">Submit Application</SelectItem>
+                  <SelectItem value="Contact">Contact</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="conversionValue">Lead Value (Optional)</Label>
+              <Input
+                id="conversionValue"
+                type="number"
+                value={config.conversionValue !== undefined ? config.conversionValue : ""}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  onUpdate({ 
+                    ...config, 
+                    conversionValue: value === "" ? undefined : parseFloat(value) 
+                  });
+                }}
+                placeholder="e.g., 50"
+                data-testid="input-form-value"
+              />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
