@@ -1,18 +1,211 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, jsonb, boolean, integer, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { relations } from "drizzle-orm";
 
+// Block types for the page builder
+export const blockTypes = [
+  "hero-banner",
+  "product-grid",
+  "text-block",
+  "image-block",
+  "button-block",
+  "form-block",
+  "phone-block",
+  "chat-block",
+] as const;
+
+export type BlockType = (typeof blockTypes)[number];
+
+// Block configuration schemas
+export const heroBlockConfigSchema = z.object({
+  title: z.string().default("Your Headline Here"),
+  subtitle: z.string().default("Add a compelling subtitle"),
+  buttonText: z.string().default("Shop Now"),
+  buttonUrl: z.string().default("#"),
+  backgroundImage: z.string().optional(),
+  overlayOpacity: z.number().min(0).max(100).default(50),
+  textAlign: z.enum(["left", "center", "right"]).default("center"),
+});
+
+export const productGridConfigSchema = z.object({
+  columns: z.number().min(1).max(4).default(3),
+  productIds: z.array(z.string()).default([]),
+  showPrice: z.boolean().default(true),
+  showTitle: z.boolean().default(true),
+  showAddToCart: z.boolean().default(true),
+});
+
+export const textBlockConfigSchema = z.object({
+  content: z.string().default("Add your text here..."),
+  textAlign: z.enum(["left", "center", "right"]).default("left"),
+  fontSize: z.enum(["small", "medium", "large", "xlarge"]).default("medium"),
+});
+
+export const imageBlockConfigSchema = z.object({
+  src: z.string().default(""),
+  alt: z.string().default("Image"),
+  width: z.enum(["full", "large", "medium", "small"]).default("full"),
+  alignment: z.enum(["left", "center", "right"]).default("center"),
+});
+
+export const buttonBlockConfigSchema = z.object({
+  text: z.string().default("Click Here"),
+  url: z.string().default("#"),
+  variant: z.enum(["primary", "secondary", "outline"]).default("primary"),
+  size: z.enum(["small", "medium", "large"]).default("medium"),
+  alignment: z.enum(["left", "center", "right"]).default("center"),
+  trackConversion: z.boolean().default(false),
+});
+
+export const formFieldSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  type: z.enum(["text", "email", "phone", "textarea", "select"]),
+  required: z.boolean().default(false),
+  options: z.array(z.string()).optional(),
+});
+
+export const formBlockConfigSchema = z.object({
+  title: z.string().default("Contact Us"),
+  fields: z.array(formFieldSchema).default([
+    { id: "name", label: "Name", type: "text", required: true },
+    { id: "email", label: "Email", type: "email", required: true },
+  ]),
+  submitText: z.string().default("Submit"),
+  successMessage: z.string().default("Thank you for your submission!"),
+  fireConversionEvent: z.boolean().default(true),
+});
+
+export const phoneBlockConfigSchema = z.object({
+  phoneNumber: z.string().default("+1 (555) 000-0000"),
+  displayText: z.string().default("Call Us Now"),
+  trackCalls: z.boolean().default(true),
+  trackingServiceId: z.string().optional(),
+});
+
+export const chatBlockConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  welcomeMessage: z.string().default("Hi! How can we help you today?"),
+  position: z.enum(["bottom-right", "bottom-left"]).default("bottom-right"),
+});
+
+export type HeroBlockConfig = z.infer<typeof heroBlockConfigSchema>;
+export type ProductGridConfig = z.infer<typeof productGridConfigSchema>;
+export type TextBlockConfig = z.infer<typeof textBlockConfigSchema>;
+export type ImageBlockConfig = z.infer<typeof imageBlockConfigSchema>;
+export type ButtonBlockConfig = z.infer<typeof buttonBlockConfigSchema>;
+export type FormBlockConfig = z.infer<typeof formBlockConfigSchema>;
+export type PhoneBlockConfig = z.infer<typeof phoneBlockConfigSchema>;
+export type ChatBlockConfig = z.infer<typeof chatBlockConfigSchema>;
+
+export type BlockConfig = 
+  | HeroBlockConfig 
+  | ProductGridConfig 
+  | TextBlockConfig 
+  | ImageBlockConfig 
+  | ButtonBlockConfig 
+  | FormBlockConfig 
+  | PhoneBlockConfig 
+  | ChatBlockConfig;
+
+// Block schema for individual blocks
+export const blockSchema = z.object({
+  id: z.string(),
+  type: z.enum(blockTypes),
+  config: z.record(z.any()),
+  order: z.number(),
+});
+
+export type Block = z.infer<typeof blockSchema>;
+
+// Pixel settings schema
+export const pixelSettingsSchema = z.object({
+  metaPixelId: z.string().optional(),
+  metaPixelEnabled: z.boolean().default(false),
+  googleAdsId: z.string().optional(),
+  googleAdsEnabled: z.boolean().default(false),
+  tiktokPixelId: z.string().optional(),
+  tiktokPixelEnabled: z.boolean().default(false),
+  pinterestTagId: z.string().optional(),
+  pinterestTagEnabled: z.boolean().default(false),
+  events: z.object({
+    pageView: z.boolean().default(true),
+    addToCart: z.boolean().default(true),
+    initiateCheckout: z.boolean().default(true),
+    purchase: z.boolean().default(true),
+    lead: z.boolean().default(true),
+  }).default({}),
+});
+
+export type PixelSettings = z.infer<typeof pixelSettingsSchema>;
+
+// Database tables
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
 });
 
+export const pages = pgTable("pages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  slug: text("slug").notNull().unique(),
+  blocks: jsonb("blocks").$type<Block[]>().notNull().default([]),
+  pixelSettings: jsonb("pixel_settings").$type<PixelSettings>().default({}),
+  status: text("status", { enum: ["draft", "published"] }).notNull().default("draft"),
+  shopifyPageId: text("shopify_page_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const formSubmissions = pgTable("form_submissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  pageId: varchar("page_id").notNull().references(() => pages.id),
+  blockId: text("block_id").notNull(),
+  data: jsonb("data").$type<Record<string, string>>().notNull(),
+  submittedAt: timestamp("submitted_at").defaultNow().notNull(),
+});
+
+// Relations
+export const pagesRelations = relations(pages, ({ many }) => ({
+  formSubmissions: many(formSubmissions),
+}));
+
+export const formSubmissionsRelations = relations(formSubmissions, ({ one }) => ({
+  page: one(pages, {
+    fields: [formSubmissions.pageId],
+    references: [pages.id],
+  }),
+}));
+
+// Insert schemas
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
 });
 
+export const insertPageSchema = createInsertSchema(pages).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updatePageSchema = insertPageSchema.partial();
+
+export const insertFormSubmissionSchema = createInsertSchema(formSubmissions).omit({
+  id: true,
+  submittedAt: true,
+});
+
+// Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+
+export type InsertPage = z.infer<typeof insertPageSchema>;
+export type UpdatePage = z.infer<typeof updatePageSchema>;
+export type Page = typeof pages.$inferSelect;
+
+export type InsertFormSubmission = z.infer<typeof insertFormSubmissionSchema>;
+export type FormSubmission = typeof formSubmissions.$inferSelect;

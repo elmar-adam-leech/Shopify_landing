@@ -1,0 +1,253 @@
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Link } from "wouter";
+import { Plus, FileText, MoreHorizontal, Trash2, Copy, ExternalLink, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { Page } from "@shared/schema";
+import { useState } from "react";
+import { formatDistanceToNow } from "date-fns";
+
+export default function PagesList() {
+  const { toast } = useToast();
+  const [deletePageId, setDeletePageId] = useState<string | null>(null);
+
+  const { data: pages, isLoading } = useQuery<Page[]>({
+    queryKey: ["/api/pages"],
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("DELETE", `/api/pages/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pages"] });
+      toast({
+        title: "Page deleted",
+        description: "The page has been permanently deleted.",
+      });
+      setDeletePageId(null);
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete page. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const duplicateMutation = useMutation({
+    mutationFn: async (page: Page) => {
+      return apiRequest("POST", "/api/pages", {
+        title: `${page.title} (Copy)`,
+        slug: `${page.slug}-copy-${Date.now()}`,
+        blocks: page.blocks,
+        pixelSettings: page.pixelSettings,
+        status: "draft",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pages"] });
+      toast({
+        title: "Page duplicated",
+        description: "A copy of the page has been created.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to duplicate page. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  return (
+    <div className="min-h-screen bg-background">
+      <header className="border-b">
+        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <FileText className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold">Page Builder</h1>
+              <p className="text-xs text-muted-foreground">Create landing pages for ads</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <Link href="/editor/new">
+              <Button className="gap-2" data-testid="button-new-page">
+                <Plus className="h-4 w-4" />
+                New Page
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-6xl mx-auto px-6 py-8">
+        {isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[1, 2, 3].map((i) => (
+              <Card key={i}>
+                <CardHeader>
+                  <Skeleton className="h-5 w-32" />
+                  <Skeleton className="h-4 w-24" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-32 w-full" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : pages && pages.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {pages.map((page) => (
+              <Card key={page.id} className="group hover-elevate" data-testid={`card-page-${page.id}`}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <CardTitle className="text-base truncate">{page.title}</CardTitle>
+                      <CardDescription className="text-xs mt-1">
+                        /{page.slug}
+                      </CardDescription>
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                          data-testid={`button-menu-${page.id}`}
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => duplicateMutation.mutate(page)}
+                          disabled={duplicateMutation.isPending}
+                        >
+                          <Copy className="h-4 w-4 mr-2" />
+                          Duplicate
+                        </DropdownMenuItem>
+                        <DropdownMenuItem>
+                          <ExternalLink className="h-4 w-4 mr-2" />
+                          Preview
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => setDeletePageId(page.id)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <Link href={`/editor/${page.id}`}>
+                    <div className="aspect-video bg-muted rounded-lg flex items-center justify-center mb-3 cursor-pointer hover:bg-muted/80 transition-colors">
+                      {page.blocks && page.blocks.length > 0 ? (
+                        <div className="text-center p-4">
+                          <p className="text-2xl font-bold text-muted-foreground">
+                            {page.blocks.length}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            block{page.blocks.length !== 1 ? "s" : ""}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Empty page</p>
+                      )}
+                    </div>
+                  </Link>
+                  <div className="flex items-center justify-between gap-2">
+                    <Badge
+                      variant={page.status === "published" ? "default" : "secondary"}
+                      size="sm"
+                    >
+                      {page.status}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDistanceToNow(new Date(page.updatedAt), { addSuffix: true })}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Card className="max-w-md mx-auto">
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                  <FileText className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-medium mb-2">No pages yet</h3>
+                <p className="text-sm text-muted-foreground mb-6">
+                  Create your first landing page to start building high-converting ad experiences.
+                </p>
+                <Link href="/editor/new">
+                  <Button className="gap-2" data-testid="button-create-first">
+                    <Plus className="h-4 w-4" />
+                    Create Your First Page
+                  </Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </main>
+
+      <AlertDialog open={!!deletePageId} onOpenChange={(open) => !open && setDeletePageId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete page?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The page and all its content will be permanently deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deletePageId && deleteMutation.mutate(deletePageId)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
