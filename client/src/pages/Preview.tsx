@@ -1,9 +1,64 @@
-import { useEffect } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { useRoute } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { captureUTMParams } from "@/lib/utm";
-import type { Page, Block } from "@shared/schema";
+import { captureUTMParams, getStoredUTMParams } from "@/lib/utm";
+import type { Page, Block, AnalyticsEventType } from "@shared/schema";
+
+function getOrCreateVisitorId(): string {
+  const key = "pb_visitor_id";
+  let visitorId = localStorage.getItem(key);
+  if (!visitorId) {
+    visitorId = crypto.randomUUID();
+    localStorage.setItem(key, visitorId);
+  }
+  return visitorId;
+}
+
+function getSessionId(): string {
+  const key = "pb_session_id";
+  let sessionId = sessionStorage.getItem(key);
+  if (!sessionId) {
+    sessionId = crypto.randomUUID();
+    sessionStorage.setItem(key, sessionId);
+  }
+  return sessionId;
+}
+
+async function trackEvent(
+  pageId: string,
+  eventType: AnalyticsEventType,
+  blockId?: string,
+  metadata?: Record<string, any>
+) {
+  const utmParams = getStoredUTMParams();
+  const visitorId = getOrCreateVisitorId();
+  const sessionId = getSessionId();
+
+  try {
+    await fetch("/api/analytics", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pageId,
+        eventType,
+        blockId,
+        visitorId,
+        sessionId,
+        utmSource: utmParams.utm_source,
+        utmMedium: utmParams.utm_medium,
+        utmCampaign: utmParams.utm_campaign,
+        utmTerm: utmParams.utm_term,
+        utmContent: utmParams.utm_content,
+        referrer: document.referrer || undefined,
+        userAgent: navigator.userAgent,
+        metadata,
+      }),
+    });
+  } catch (error) {
+    console.error("Failed to track event:", error);
+  }
+}
 
 function renderBlock(block: Block) {
   const { type, config } = block;
@@ -351,6 +406,7 @@ function generatePixelScripts(settings: any): string {
 export default function Preview() {
   const [, params] = useRoute("/preview/:id");
   const pageId = params?.id;
+  const pageViewTracked = useRef(false);
 
   // Capture UTM parameters on page load
   useEffect(() => {
@@ -366,6 +422,33 @@ export default function Preview() {
       return response.json();
     },
   });
+
+  // Track page view once when page loads
+  useEffect(() => {
+    if (page && pageId && !pageViewTracked.current) {
+      pageViewTracked.current = true;
+      trackEvent(pageId, "page_view");
+    }
+  }, [page, pageId]);
+
+  // Track button click
+  const handleButtonClick = useCallback((blockId: string, config: any) => {
+    if (pageId) {
+      trackEvent(pageId, "button_click", blockId, { 
+        buttonText: config.text,
+        url: config.url 
+      });
+    }
+  }, [pageId]);
+
+  // Track phone click
+  const handlePhoneClick = useCallback((blockId: string, config: any) => {
+    if (pageId) {
+      trackEvent(pageId, "phone_click", blockId, {
+        phoneNumber: config.phoneNumber
+      });
+    }
+  }, [pageId]);
 
   if (isLoading) {
     return (
@@ -389,12 +472,37 @@ export default function Preview() {
   const sortedBlocks = [...(page.blocks || [])].sort((a, b) => a.order - b.order);
   const pixelScripts = generatePixelScripts(page.pixelSettings);
 
+  // Render block with event tracking
+  const renderBlockWithTracking = (block: Block) => {
+    const rendered = renderBlock(block);
+    
+    // Wrap button blocks with click tracking
+    if (block.type === "button-block" && rendered) {
+      return (
+        <div key={block.id} onClick={() => handleButtonClick(block.id, block.config)}>
+          {rendered}
+        </div>
+      );
+    }
+    
+    // Wrap phone blocks with click tracking
+    if (block.type === "phone-block" && rendered) {
+      return (
+        <div key={block.id} onClick={() => handlePhoneClick(block.id, block.config)}>
+          {rendered}
+        </div>
+      );
+    }
+    
+    return rendered;
+  };
+
   return (
     <div className="min-h-screen bg-white text-gray-900" data-testid="preview-page">
       {pixelScripts && (
         <script dangerouslySetInnerHTML={{ __html: pixelScripts }} />
       )}
-      {sortedBlocks.map((block) => renderBlock(block))}
+      {sortedBlocks.map((block) => renderBlockWithTracking(block))}
       {sortedBlocks.length === 0 && (
         <div className="min-h-screen flex items-center justify-center">
           <p className="text-gray-500">This page has no content yet.</p>

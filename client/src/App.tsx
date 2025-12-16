@@ -7,6 +7,9 @@ import { ThemeProvider } from "@/lib/theme";
 import PagesList from "@/pages/PagesList";
 import Editor from "@/pages/Editor";
 import Preview from "@/pages/Preview";
+import Analytics from "@/pages/Analytics";
+import ABTests from "@/pages/ABTests";
+import ABTestResults from "@/pages/ABTestResults";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -15,6 +18,9 @@ function Router() {
       <Route path="/" component={PagesList} />
       <Route path="/editor/:id" component={Editor} />
       <Route path="/preview/:id" component={Preview} />
+      <Route path="/analytics/:id" component={Analytics} />
+      <Route path="/ab-tests" component={ABTests} />
+      <Route path="/ab-tests/:id" component={ABTestResults} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { Plus, FileText, MoreHorizontal, Trash2, Copy, ExternalLink, Loader2 } from "lucide-react";
+import { Plus, FileText, MoreHorizontal, Trash2, Copy, ExternalLink, Loader2, BarChart3, FlaskConical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -101,6 +101,12 @@ export default function PagesList() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Link href="/ab-tests">
+              <Button variant="outline" className="gap-2" data-testid="button-ab-tests">
+                <FlaskConical className="h-4 w-4" />
+                A/B Tests
+              </Button>
+            </Link>
             <ThemeToggle />
             <Button 
               className="gap-2" 
@@ -165,6 +171,12 @@ export default function PagesList() {
                             <ExternalLink className="h-4 w-4 mr-2" />
                             Preview
                           </a>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link href={`/analytics/${page.id}`}>
+                            <BarChart3 className="h-4 w-4 mr-2" />
+                            Analytics
+                          </Link>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
