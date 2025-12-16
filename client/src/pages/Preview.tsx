@@ -1,9 +1,9 @@
-import { useEffect, useCallback, useRef } from "react";
-import { useRoute } from "wouter";
+import { useEffect, useCallback, useRef, useState } from "react";
+import { useRoute, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { captureUTMParams, getStoredUTMParams } from "@/lib/utm";
-import type { Page, Block, AnalyticsEventType } from "@shared/schema";
+import type { Page, Block, AnalyticsEventType, AbTest, AbTestVariant } from "@shared/schema";
 
 function getOrCreateVisitorId(): string {
   const key = "pb_visitor_id";
@@ -25,11 +25,42 @@ function getSessionId(): string {
   return sessionId;
 }
 
+// Get persistent variant assignment for an A/B test
+function getVariantAssignment(testId: string): string | null {
+  const key = `pb_ab_variant_${testId}`;
+  return localStorage.getItem(key);
+}
+
+// Store variant assignment for an A/B test
+function setVariantAssignment(testId: string, variantId: string): void {
+  const key = `pb_ab_variant_${testId}`;
+  localStorage.setItem(key, variantId);
+}
+
+// Select a variant based on traffic percentages
+function selectVariant(variants: AbTestVariant[]): AbTestVariant {
+  const totalPercentage = variants.reduce((sum, v) => sum + v.trafficPercentage, 0);
+  const random = Math.random() * totalPercentage;
+  
+  let cumulative = 0;
+  for (const variant of variants) {
+    cumulative += variant.trafficPercentage;
+    if (random <= cumulative) {
+      return variant;
+    }
+  }
+  
+  // Fallback to first variant
+  return variants[0];
+}
+
 async function trackEvent(
   pageId: string,
   eventType: AnalyticsEventType,
   blockId?: string,
-  metadata?: Record<string, any>
+  metadata?: Record<string, any>,
+  abTestId?: string,
+  variantId?: string
 ) {
   const utmParams = getStoredUTMParams();
   const visitorId = getOrCreateVisitorId();
@@ -52,6 +83,8 @@ async function trackEvent(
         utmContent: utmParams.utm_content,
         referrer: document.referrer || undefined,
         userAgent: navigator.userAgent,
+        abTestId,
+        variantId,
         metadata,
       }),
     });
@@ -405,13 +438,60 @@ function generatePixelScripts(settings: any): string {
 
 export default function Preview() {
   const [, params] = useRoute("/preview/:id");
+  const [, setLocation] = useLocation();
   const pageId = params?.id;
   const pageViewTracked = useRef(false);
+  const [abTestInfo, setAbTestInfo] = useState<{
+    test: AbTest;
+    variant: AbTestVariant;
+  } | null>(null);
 
   // Capture UTM parameters on page load
   useEffect(() => {
     captureUTMParams();
   }, []);
+
+  // Check for active A/B test and handle variant assignment
+  const { data: abTestData, isLoading: isLoadingAbTest } = useQuery<{
+    test: AbTest;
+    variants: AbTestVariant[];
+  } | null>({
+    queryKey: ["/api/ab-tests/for-page", pageId],
+    enabled: !!pageId,
+    queryFn: async () => {
+      const response = await fetch(`/api/ab-tests/for-page/${pageId}`);
+      if (!response.ok) return null;
+      return response.json();
+    },
+  });
+
+  // Handle A/B test variant assignment
+  useEffect(() => {
+    if (abTestData && abTestData.variants.length > 0) {
+      const { test, variants } = abTestData;
+      
+      // Check if visitor already has a variant assignment
+      let assignedVariantId = getVariantAssignment(test.id);
+      let assignedVariant: AbTestVariant | undefined;
+      
+      if (assignedVariantId) {
+        assignedVariant = variants.find(v => v.id === assignedVariantId);
+      }
+      
+      // If no assignment or invalid variant, assign a new one
+      if (!assignedVariant) {
+        assignedVariant = selectVariant(variants);
+        setVariantAssignment(test.id, assignedVariant.id);
+      }
+      
+      setAbTestInfo({ test, variant: assignedVariant });
+      
+      // If the assigned variant's page is different, redirect
+      if (assignedVariant.pageId !== pageId) {
+        setLocation(`/preview/${assignedVariant.pageId}`);
+      }
+    }
+  }, [abTestData, pageId, setLocation]);
 
   const { data: page, isLoading, error } = useQuery<Page>({
     queryKey: ["/api/pages", pageId],
@@ -423,34 +503,66 @@ export default function Preview() {
     },
   });
 
-  // Track page view once when page loads
+  // Reset page view tracker when pageId changes (e.g., after redirect)
   useEffect(() => {
-    if (page && pageId && !pageViewTracked.current) {
-      pageViewTracked.current = true;
-      trackEvent(pageId, "page_view");
+    pageViewTracked.current = false;
+  }, [pageId]);
+
+  // Track page view once when page loads (wait for A/B test info if applicable)
+  useEffect(() => {
+    // Only track if:
+    // 1. We have page data
+    // 2. We haven't tracked yet
+    // 3. Either there's no A/B test OR we have the A/B test info resolved
+    const abTestResolved = !abTestData || (abTestInfo !== null);
+    
+    if (page && pageId && !pageViewTracked.current && abTestResolved) {
+      // Make sure we're on the correct page (not about to redirect)
+      const isCorrectPage = !abTestInfo || abTestInfo.variant.pageId === pageId;
+      
+      if (isCorrectPage) {
+        pageViewTracked.current = true;
+        trackEvent(
+          pageId, 
+          "page_view", 
+          undefined, 
+          undefined,
+          abTestInfo?.test?.id,
+          abTestInfo?.variant?.id
+        );
+      }
     }
-  }, [page, pageId]);
+  }, [page, pageId, abTestInfo, abTestData]);
 
   // Track button click
   const handleButtonClick = useCallback((blockId: string, config: any) => {
     if (pageId) {
-      trackEvent(pageId, "button_click", blockId, { 
-        buttonText: config.text,
-        url: config.url 
-      });
+      trackEvent(
+        pageId, 
+        "button_click", 
+        blockId, 
+        { buttonText: config.text, url: config.url },
+        abTestInfo?.test?.id,
+        abTestInfo?.variant?.id
+      );
     }
-  }, [pageId]);
+  }, [pageId, abTestInfo]);
 
   // Track phone click
   const handlePhoneClick = useCallback((blockId: string, config: any) => {
     if (pageId) {
-      trackEvent(pageId, "phone_click", blockId, {
-        phoneNumber: config.phoneNumber
-      });
+      trackEvent(
+        pageId, 
+        "phone_click", 
+        blockId, 
+        { phoneNumber: config.phoneNumber },
+        abTestInfo?.test?.id,
+        abTestInfo?.variant?.id
+      );
     }
-  }, [pageId]);
+  }, [pageId, abTestInfo]);
 
-  if (isLoading) {
+  if (isLoading || isLoadingAbTest) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />

@@ -65,6 +65,7 @@ export interface IStorage {
   getAllAbTests(): Promise<AbTest[]>;
   getAbTest(id: string): Promise<AbTest | undefined>;
   getAbTestByPageId(pageId: string): Promise<AbTest | undefined>;
+  getActiveAbTestForPage(pageId: string): Promise<AbTest | undefined>;
   createAbTest(test: InsertAbTest): Promise<AbTest>;
   updateAbTest(id: string, test: Partial<InsertAbTest>): Promise<AbTest | undefined>;
   deleteAbTest(id: string): Promise<boolean>;
@@ -261,6 +262,43 @@ export class DatabaseStorage implements IStorage {
   async getAbTestByPageId(pageId: string): Promise<AbTest | undefined> {
     const [test] = await db.select().from(abTests).where(eq(abTests.originalPageId, pageId));
     return test || undefined;
+  }
+
+  async getActiveAbTestForPage(pageId: string): Promise<AbTest | undefined> {
+    // Find running A/B test where this page is either the original or a variant
+    const [test] = await db
+      .select()
+      .from(abTests)
+      .where(and(
+        eq(abTests.originalPageId, pageId),
+        eq(abTests.status, "running")
+      ));
+    
+    if (test) return test;
+
+    // Also check if pageId is a variant in a running test
+    // Join to ensure we only get variants for running tests
+    const results = await db
+      .select({ 
+        abTestId: abTestVariants.abTestId,
+        testStatus: abTests.status
+      })
+      .from(abTestVariants)
+      .innerJoin(abTests, eq(abTestVariants.abTestId, abTests.id))
+      .where(and(
+        eq(abTestVariants.pageId, pageId),
+        eq(abTests.status, "running")
+      ));
+    
+    if (results.length > 0) {
+      const [variantTest] = await db
+        .select()
+        .from(abTests)
+        .where(eq(abTests.id, results[0].abTestId));
+      return variantTest || undefined;
+    }
+
+    return undefined;
   }
 
   async createAbTest(test: InsertAbTest): Promise<AbTest> {

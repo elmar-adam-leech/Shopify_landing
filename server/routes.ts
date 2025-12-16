@@ -328,6 +328,23 @@ export async function registerRoutes(
     }
   });
 
+  // Get active A/B test for a page (for traffic splitting)
+  app.get("/api/ab-tests/for-page/:pageId", async (req, res) => {
+    try {
+      const { pageId } = req.params;
+      const test = await storage.getActiveAbTestForPage(pageId);
+      if (!test) {
+        return res.json(null);
+      }
+      // Get variants for the test
+      const variants = await storage.getAbTestVariants(test.id);
+      res.json({ test, variants });
+    } catch (error) {
+      console.error("Error fetching active A/B test for page:", error);
+      res.status(500).json({ error: "Failed to fetch A/B test" });
+    }
+  });
+
   // Get single A/B test
   app.get("/api/ab-tests/:id", async (req, res) => {
     try {
