@@ -46,7 +46,7 @@ export async function registerRoutes(
         validatedData.slug = `${validatedData.slug}-${Date.now()}`;
       }
       
-      const page = await storage.createPage(validatedData);
+      const page = await storage.createPage(validatedData as any);
       res.status(201).json(page);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -77,7 +77,7 @@ export async function registerRoutes(
         }
       }
       
-      const page = await storage.updatePage(id, validatedData);
+      const page = await storage.updatePage(id, validatedData as any);
       res.json(page);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -119,7 +119,7 @@ export async function registerRoutes(
         pageId,
       });
       
-      const submission = await storage.createFormSubmission(validatedData);
+      const submission = await storage.createFormSubmission(validatedData as any);
       res.status(201).json(submission);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -157,6 +157,96 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error generating HTML:", error);
       res.status(500).json({ error: "Failed to generate HTML" });
+    }
+  });
+
+  // Get version history for a page
+  app.get("/api/pages/:pageId/versions", async (req, res) => {
+    try {
+      const { pageId } = req.params;
+      
+      // Check if page exists
+      const page = await storage.getPage(pageId);
+      if (!page) {
+        return res.status(404).json({ error: "Page not found" });
+      }
+      
+      const versions = await storage.getPageVersions(pageId);
+      res.json(versions);
+    } catch (error) {
+      console.error("Error fetching versions:", error);
+      res.status(500).json({ error: "Failed to fetch versions" });
+    }
+  });
+
+  // Create a new version (snapshot) of a page
+  app.post("/api/pages/:pageId/versions", async (req, res) => {
+    try {
+      const { pageId } = req.params;
+      
+      // Get the current page data
+      const page = await storage.getPage(pageId);
+      if (!page) {
+        return res.status(404).json({ error: "Page not found" });
+      }
+      
+      // Get the next version number
+      const latestVersionNumber = await storage.getLatestVersionNumber(pageId);
+      
+      // Create the version snapshot
+      const version = await storage.createPageVersion({
+        pageId,
+        versionNumber: latestVersionNumber + 1,
+        title: page.title,
+        blocks: page.blocks,
+        pixelSettings: page.pixelSettings,
+      } as any);
+      
+      res.status(201).json(version);
+    } catch (error) {
+      console.error("Error creating version:", error);
+      res.status(500).json({ error: "Failed to create version" });
+    }
+  });
+
+  // Restore a page to a specific version
+  app.post("/api/pages/:pageId/versions/:versionId/restore", async (req, res) => {
+    try {
+      const { pageId, versionId } = req.params;
+      
+      // Get the version to restore
+      const version = await storage.getPageVersion(versionId);
+      if (!version || version.pageId !== pageId) {
+        return res.status(404).json({ error: "Version not found" });
+      }
+      
+      // Get current page to create a backup version first
+      const currentPage = await storage.getPage(pageId);
+      if (!currentPage) {
+        return res.status(404).json({ error: "Page not found" });
+      }
+      
+      // Create a backup of current state before restoring
+      const latestVersionNumber = await storage.getLatestVersionNumber(pageId);
+      await storage.createPageVersion({
+        pageId,
+        versionNumber: latestVersionNumber + 1,
+        title: currentPage.title,
+        blocks: currentPage.blocks,
+        pixelSettings: currentPage.pixelSettings,
+      } as any);
+      
+      // Restore the page to the selected version's state
+      const updatedPage = await storage.updatePage(pageId, {
+        title: version.title,
+        blocks: version.blocks,
+        pixelSettings: version.pixelSettings,
+      } as any);
+      
+      res.json(updatedPage);
+    } catch (error) {
+      console.error("Error restoring version:", error);
+      res.status(500).json({ error: "Failed to restore version" });
     }
   });
 

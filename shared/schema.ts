@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, jsonb, boolean, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, jsonb, boolean, integer, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -186,9 +186,30 @@ export const formSubmissions = pgTable("form_submissions", {
   submittedAt: timestamp("submitted_at").defaultNow().notNull(),
 });
 
+// Page versions for version history
+export const pageVersions = pgTable("page_versions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  pageId: varchar("page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
+  versionNumber: integer("version_number").notNull(),
+  title: text("title").notNull(),
+  blocks: jsonb("blocks").$type<Block[]>().notNull().default([]),
+  pixelSettings: jsonb("pixel_settings").$type<PixelSettings>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  uniquePageVersion: uniqueIndex("page_versions_unique_idx").on(table.pageId, table.versionNumber),
+}));
+
 // Relations
 export const pagesRelations = relations(pages, ({ many }) => ({
   formSubmissions: many(formSubmissions),
+  versions: many(pageVersions),
+}));
+
+export const pageVersionsRelations = relations(pageVersions, ({ one }) => ({
+  page: one(pages, {
+    fields: [pageVersions.pageId],
+    references: [pages.id],
+  }),
 }));
 
 export const formSubmissionsRelations = relations(formSubmissions, ({ one }) => ({
@@ -217,13 +238,28 @@ export const insertFormSubmissionSchema = createInsertSchema(formSubmissions).om
   submittedAt: true,
 });
 
-// Types
-export type InsertUser = z.infer<typeof insertUserSchema>;
+// Types - Zod inferred types for validation
+export type InsertUserValidation = z.infer<typeof insertUserSchema>;
+export type InsertPageValidation = z.infer<typeof insertPageSchema>;
+export type UpdatePageValidation = z.infer<typeof updatePageSchema>;
+export type InsertFormSubmissionValidation = z.infer<typeof insertFormSubmissionSchema>;
+
+export const insertPageVersionSchema = createInsertSchema(pageVersions).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertPageVersionValidation = z.infer<typeof insertPageVersionSchema>;
+
+// Types - Drizzle native types for database operations
+export type InsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 
-export type InsertPage = z.infer<typeof insertPageSchema>;
-export type UpdatePage = z.infer<typeof updatePageSchema>;
+export type InsertPage = typeof pages.$inferInsert;
+export type UpdatePage = Partial<InsertPage>;
 export type Page = typeof pages.$inferSelect;
 
-export type InsertFormSubmission = z.infer<typeof insertFormSubmissionSchema>;
+export type InsertFormSubmission = typeof formSubmissions.$inferInsert;
 export type FormSubmission = typeof formSubmissions.$inferSelect;
+
+export type InsertPageVersion = typeof pageVersions.$inferInsert;
+export type PageVersion = typeof pageVersions.$inferSelect;

@@ -14,7 +14,7 @@ import {
 } from "@dnd-kit/core";
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { v4 as uuidv4 } from "uuid";
-import { ArrowLeft, Save, Eye, Settings, Loader2, Monitor, Tablet, Smartphone } from "lucide-react";
+import { ArrowLeft, Save, Eye, Settings, Loader2, Monitor, Tablet, Smartphone, History } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,7 @@ import { BlockLibrary } from "@/components/editor/BlockLibrary";
 import { EditorCanvas } from "@/components/editor/EditorCanvas";
 import { BlockSettings } from "@/components/editor/BlockSettings";
 import { PixelSettingsDialog } from "@/components/editor/PixelSettings";
+import { VersionHistory } from "@/components/editor/VersionHistory";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -111,6 +112,7 @@ export default function Editor() {
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [settingsBlockId, setSettingsBlockId] = useState<string | null>(null);
   const [showPixelSettings, setShowPixelSettings] = useState(false);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [viewportSize, setViewportSize] = useState<"desktop" | "tablet" | "mobile">("desktop");
@@ -309,6 +311,18 @@ export default function Editor() {
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
+            {!isNewPage && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => setShowVersionHistory(true)}
+                data-testid="button-version-history"
+              >
+                <History className="h-4 w-4" />
+                History
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -423,6 +437,23 @@ export default function Editor() {
             setHasChanges(true);
           }}
         />
+
+        {!isNewPage && pageId && (
+          <VersionHistory
+            pageId={pageId}
+            open={showVersionHistory}
+            onClose={() => setShowVersionHistory(false)}
+            onRestore={(restoredPage) => {
+              if (restoredPage) {
+                setBlocks(restoredPage.blocks || []);
+                setTitle(restoredPage.title);
+                setPixelSettings(restoredPage.pixelSettings || defaultPixelSettings);
+                setHasChanges(false);
+              }
+              queryClient.invalidateQueries({ queryKey: ["/api/pages", pageId] });
+            }}
+          />
+        )}
       </div>
 
       <DragOverlay>
