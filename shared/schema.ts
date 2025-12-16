@@ -120,6 +120,36 @@ export const blockVariantSchema = z.object({
 
 export type BlockVariant = z.infer<typeof blockVariantSchema>;
 
+// Visibility condition schema for query string personalization
+export const visibilityConditionSchema = z.object({
+  id: z.string(),
+  field: z.enum([
+    "utm_source",
+    "utm_medium", 
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "gclid",
+    "fbclid",
+    "ttclid",
+    "referrer",
+    "custom",
+  ]),
+  customField: z.string().optional(), // Used when field is "custom"
+  operator: z.enum(["equals", "not_equals", "contains", "not_contains", "starts_with", "exists", "not_exists"]),
+  value: z.string().default(""),
+});
+
+export type VisibilityCondition = z.infer<typeof visibilityConditionSchema>;
+
+export const visibilityRulesSchema = z.object({
+  enabled: z.boolean().default(false),
+  logic: z.enum(["show_if_any", "show_if_all", "hide_if_any", "hide_if_all"]).default("show_if_any"),
+  conditions: z.array(visibilityConditionSchema).default([]),
+});
+
+export type VisibilityRules = z.infer<typeof visibilityRulesSchema>;
+
 // Block schema for individual blocks
 export const blockSchema = z.object({
   id: z.string(),
@@ -129,6 +159,8 @@ export const blockSchema = z.object({
   // A/B testing: optional variants for this block
   variants: z.array(blockVariantSchema).optional(),
   abTestEnabled: z.boolean().optional(),
+  // Visibility rules for query string personalization
+  visibilityRules: visibilityRulesSchema.optional(),
 });
 
 export type Block = z.infer<typeof blockSchema>;

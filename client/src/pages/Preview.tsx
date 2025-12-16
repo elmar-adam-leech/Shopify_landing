@@ -2,8 +2,8 @@ import { useEffect, useCallback, useRef, useState, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { captureUTMParams, getStoredUTMParams } from "@/lib/utm";
-import type { Page, Block, BlockVariant, AnalyticsEventType, AbTest, AbTestVariant } from "@shared/schema";
+import { captureUTMParams, getStoredUTMParams, parseUTMParams } from "@/lib/utm";
+import type { Page, Block, BlockVariant, VisibilityCondition, VisibilityRules, AnalyticsEventType, AbTest, AbTestVariant } from "@shared/schema";
 
 function getOrCreateVisitorId(): string {
   const key = "pb_visitor_id";
@@ -80,6 +80,117 @@ function getOrAssignBlockVariant(block: Block): { config: Record<string, any>; v
   
   // Fallback to original
   return { config: block.config, variantId: "original", variantName: "Original" };
+}
+
+// Evaluate visibility conditions for a block
+function evaluateBlockVisibility(block: Block): boolean {
+  const rules = block.visibilityRules;
+  
+  // If no rules or not enabled, block is visible
+  if (!rules || !rules.enabled || rules.conditions.length === 0) {
+    return true;
+  }
+
+  // Get current URL params and referrer
+  const urlParams = new URLSearchParams(window.location.search);
+  const referrer = document.referrer || "";
+
+  // Evaluate each condition
+  const evaluateCondition = (condition: VisibilityCondition): boolean => {
+    // Skip conditions that require a value but don't have one
+    const requiresValue = !["exists", "not_exists"].includes(condition.operator);
+    if (requiresValue && (!condition.value || condition.value.trim() === "")) {
+      return false; // Invalid condition - treat as non-matching
+    }
+
+    // Skip custom field conditions without a field name
+    if (condition.field === "custom" && (!condition.customField || condition.customField.trim() === "")) {
+      return false; // Invalid condition - treat as non-matching
+    }
+
+    let fieldValue: string | null = null;
+
+    // Get the field value based on the condition field
+    switch (condition.field) {
+      case "utm_source":
+      case "utm_medium":
+      case "utm_campaign":
+      case "utm_term":
+      case "utm_content":
+        fieldValue = urlParams.get(condition.field);
+        break;
+      case "gclid":
+      case "fbclid":
+      case "ttclid":
+        fieldValue = urlParams.get(condition.field);
+        break;
+      case "referrer":
+        fieldValue = referrer;
+        break;
+      case "custom":
+        fieldValue = condition.customField ? urlParams.get(condition.customField) : null;
+        break;
+    }
+
+    // Evaluate based on operator
+    const targetValue = condition.value.toLowerCase();
+    const actualValue = (fieldValue || "").toLowerCase();
+
+    switch (condition.operator) {
+      case "equals":
+        return actualValue === targetValue;
+      case "not_equals":
+        return actualValue !== targetValue;
+      case "contains":
+        return actualValue.includes(targetValue);
+      case "not_contains":
+        return !actualValue.includes(targetValue);
+      case "starts_with":
+        return actualValue.startsWith(targetValue);
+      case "exists":
+        return fieldValue !== null && fieldValue !== "";
+      case "not_exists":
+        return fieldValue === null || fieldValue === "";
+      default:
+        return false;
+    }
+  };
+
+  // Helper to check if a condition is valid (has required fields)
+  const isConditionValid = (condition: VisibilityCondition): boolean => {
+    const requiresValue = !["exists", "not_exists"].includes(condition.operator);
+    if (requiresValue && (!condition.value || condition.value.trim() === "")) {
+      return false;
+    }
+    if (condition.field === "custom" && (!condition.customField || condition.customField.trim() === "")) {
+      return false;
+    }
+    return true;
+  };
+
+  // Filter to only valid conditions before evaluation
+  const validConditions = rules.conditions.filter(isConditionValid);
+  
+  // If no valid conditions, block is visible (don't apply rules)
+  if (validConditions.length === 0) {
+    return true;
+  }
+
+  // Evaluate only valid conditions
+  const conditionResults = validConditions.map(evaluateCondition);
+
+  switch (rules.logic) {
+    case "show_if_any":
+      return conditionResults.some((result) => result);
+    case "show_if_all":
+      return conditionResults.every((result) => result);
+    case "hide_if_any":
+      return !conditionResults.some((result) => result);
+    case "hide_if_all":
+      return !conditionResults.every((result) => result);
+    default:
+      return true;
+  }
 }
 
 // Select a variant based on traffic percentages
@@ -685,13 +796,16 @@ export default function Preview() {
     return rendered;
   };
 
+  // Filter blocks based on visibility rules
+  const visibleBlocks = sortedBlocks.filter((block) => evaluateBlockVisibility(block));
+
   return (
     <div className="min-h-screen bg-white text-gray-900" data-testid="preview-page">
       {pixelScripts && (
         <script dangerouslySetInnerHTML={{ __html: pixelScripts }} />
       )}
-      {sortedBlocks.map((block) => renderBlockWithTracking(block))}
-      {sortedBlocks.length === 0 && (
+      {visibleBlocks.map((block) => renderBlockWithTracking(block))}
+      {visibleBlocks.length === 0 && (
         <div className="min-h-screen flex items-center justify-center">
           <p className="text-gray-500">This page has no content yet.</p>
         </div>
