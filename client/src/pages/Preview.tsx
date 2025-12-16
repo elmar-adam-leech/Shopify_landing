@@ -133,7 +133,7 @@ function evaluateBlockVisibility(block: Block): boolean {
     }
 
     // Evaluate based on operator
-    const targetValue = condition.value.toLowerCase();
+    const targetValue = (condition.value ?? "").toLowerCase();
     const actualValue = (fieldValue || "").toLowerCase();
 
     switch (condition.operator) {
