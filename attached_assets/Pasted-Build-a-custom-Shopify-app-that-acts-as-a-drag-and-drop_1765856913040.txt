@@ -1,0 +1,34 @@
+Build a custom Shopify app that acts as a drag-and-drop page builder, similar to Replo or Shogun, for creating dynamic product landing pages specifically for advertising. The app should be embedded in the Shopify admin, allow merchants to visually build pages by dragging components that pull product data from Shopify’s database, and publish them as Shopify pages or theme sections. Use Node.js for the backend, React for the frontend, and integrate with Shopify APIs.
+First, set up the project structure:
+	•	Use Shopify CLI to scaffold a Node.js app with React embedded frontend.
+	•	Install necessary dependencies: @shopify/shopify-api, @shopify/polaris, @shopify/app-bridge-react, dnd-kit (for drag-and-drop), express (for server).
+	•	Configure OAuth authentication for Shopify apps.
+Key features:
+	•	A React-based drag-and-drop editor using Polaris UI components for a native Shopify look.
+	•	Sidebar with draggable blocks like “Hero Banner”, “Product Grid”, “Text Block”, “Form Block”, “Phone Number Block”.
+	•	Canvas where users drop and arrange blocks; support reordering with dnd-kit.
+	•	For dynamic content: Integrate Shopify Admin API (GraphQL preferred) to fetch products, collections, and variants in real-time.
+	•	On save, generate HTML/Liquid from the built page (stored as JSON state) and use the API to create a new Shopify page (POST /pages) or add to theme assets.
+	•	Store page drafts in a simple database like SQLite or Replit’s built-in DB.
+	•	Handle UTM parameters for ad tracking by allowing custom URL params in pages.
+	•	Built-in events for ad pixels: Automatically include JavaScript snippets in generated pages to fire standard events like page views, add-to-cart, initiate-checkout, and purchase. Use Shopify’s Customer Events API for server-side event handling where possible.
+	•	Section for major ad platform pixels: Add a dedicated settings panel in the editor where users can input and embed pixels/scripts for platforms like Meta Pixel, Google Ads (Tag Manager/Conversion Tracking), TikTok Pixel, and Pinterest Tag. Ensure these are injected into the or of the generated pages, with options to toggle events per platform.
+	•	Integration with Shopify Inbox: Allow draggable “Chat Block” components that embed Shopify Inbox widgets (using Shopify’s Inbox API or script tags) for live chat on pages. Pull Inbox data if needed for personalization, like displaying recent messages or triggering chats based on ad sources.
+	•	Features for trackable forms/phone numbers: Include “Form Block” for custom forms (e.g., lead capture) that fire conversion events to ad pixels on submit, with server-side submission to Shopify (e.g., via webhooks to create draft orders or customers). Add “Phone Number Block” for dynamic, trackable phone numbers (integrate with call tracking services like Nextiva via API if possible, or use placeholders for manual setup) that log calls as events and attribute to ad platforms via UTMs or GCLIDs.
+Break it down into steps for building:
+	1	Initialize the app and set up backend server with Express, including endpoints like /api/create-page that uses Shopify API to publish pages, and additional endpoints for handling form submissions and event firing.
+	2	Build the React frontend: Create a main App component with DndProvider, Sidebar for draggable items (including new blocks for forms, phone, and chat), and EditorCanvas for sortable dropped components.
+	3	Implement example components: A ProductComponent that queries products via API and displays them dynamically; FormComponent with event triggers; PhoneComponent with tracking hooks; ChatComponent embedding Shopify Inbox.
+	4	Add a save button that serializes the page state to HTML (including pixel scripts and event listeners) and calls the backend endpoint.
+	5	Add a pixel settings section: A modal or tab in the editor for configuring ad pixels, with validation for script inputs.
+	6	Test embedding in a Shopify dev store: Provide a preview URL for the app, and verify ad events, form tracking, and Inbox integration.
+Use simple, clean code. Here’s a starter code snippet for the React editor:
+import React, { useState } from 'react';
+import { Page, Layout } from '@shopify/polaris';
+import { DndProvider } from 'dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy } from 'dnd-kit/sortable';
+import { useSortable } from 'dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+// ... (add Sidebar with new blocks, EditorCanvas, SortableItem as in examples)
+// Include pixel integration example in save logic, e.g., append 
