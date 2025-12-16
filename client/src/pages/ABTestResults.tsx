@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useParams, Link } from "wouter";
+import { useRoute, Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -38,8 +38,8 @@ type TestResults = {
 const COLORS = ["hsl(var(--primary))", "hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))"];
 
 export default function ABTestResults() {
-  const params = useParams<{ id: string }>();
-  const testId = params.id;
+  const [, params] = useRoute("/ab-tests/:id/results");
+  const testId = params?.id;
   const { toast } = useToast();
   const [addVariantOpen, setAddVariantOpen] = useState(false);
   const [variantName, setVariantName] = useState("");

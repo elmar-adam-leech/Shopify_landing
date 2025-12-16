@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useParams, Link } from "wouter";
+import { useRoute, Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -20,11 +20,11 @@ type AnalyticsSummary = {
 const COLORS = ["hsl(var(--primary))", "hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))"];
 
 export default function Analytics() {
-  const params = useParams<{ id: string }>();
-  const pageId = params.id;
+  const [, params] = useRoute("/analytics/:id");
+  const pageId = params?.id;
   const [dateRange, setDateRange] = useState("7d");
 
-  const getDateRange = () => {
+  const { startDate, endDate } = useMemo(() => {
     const end = new Date();
     const start = new Date();
     switch (dateRange) {
@@ -43,17 +43,20 @@ export default function Analytics() {
       default:
         start.setDate(start.getDate() - 7);
     }
+    // Truncate to day to prevent query key from changing on every render
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
     return { startDate: start.toISOString(), endDate: end.toISOString() };
-  };
+  }, [dateRange]);
 
-  const { startDate, endDate } = getDateRange();
-
-  const { data: page, isLoading: pageLoading } = useQuery<Page>({
+  const { data: page, isLoading: pageLoading, error: pageError } = useQuery<Page>({
     queryKey: ["/api/pages", pageId],
+    enabled: !!pageId,
   });
 
-  const { data: analytics, isLoading: analyticsLoading } = useQuery<AnalyticsSummary>({
+  const { data: analytics, isLoading: analyticsLoading, error: analyticsError } = useQuery<AnalyticsSummary>({
     queryKey: ["/api/pages", pageId, "analytics", "summary", startDate, endDate],
+    enabled: !!pageId,
     queryFn: async () => {
       const response = await fetch(`/api/pages/${pageId}/analytics/summary?startDate=${startDate}&endDate=${endDate}`);
       if (!response.ok) throw new Error("Failed to fetch analytics");
@@ -62,10 +65,26 @@ export default function Analytics() {
     staleTime: 0,
   });
 
-  if (pageLoading || analyticsLoading) {
+  // Show loading if we don't have pageId yet, or if queries are loading
+  const isLoading = !pageId || pageLoading || analyticsLoading;
+  
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-muted-foreground">Loading analytics...</div>
+      </div>
+    );
+  }
+
+  if (pageError || analyticsError) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-muted-foreground mb-4">Failed to load analytics</div>
+          <Link href="/">
+            <Button variant="outline" data-testid="button-back-to-pages">Back to Pages</Button>
+          </Link>
+        </div>
       </div>
     );
   }
