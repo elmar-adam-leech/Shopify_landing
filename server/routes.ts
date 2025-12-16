@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertPageSchema, updatePageSchema, insertFormSubmissionSchema } from "@shared/schema";
+import { insertPageSchema, updatePageSchema, insertFormSubmissionSchema, insertAnalyticsEventSchema, insertAbTestSchema, insertAbTestVariantSchema } from "@shared/schema";
 import { z } from "zod";
 
 export async function registerRoutes(
@@ -247,6 +247,259 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error restoring version:", error);
       res.status(500).json({ error: "Failed to restore version" });
+    }
+  });
+
+  // =====================
+  // ANALYTICS ENDPOINTS
+  // =====================
+
+  // Record an analytics event
+  app.post("/api/analytics", async (req, res) => {
+    try {
+      const validatedData = insertAnalyticsEventSchema.parse(req.body);
+      const event = await storage.createAnalyticsEvent(validatedData as any);
+      res.status(201).json(event);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Invalid data", details: error.errors });
+      }
+      console.error("Error recording analytics event:", error);
+      res.status(500).json({ error: "Failed to record event" });
+    }
+  });
+
+  // Get analytics for a page
+  app.get("/api/pages/:pageId/analytics", async (req, res) => {
+    try {
+      const { pageId } = req.params;
+      const { startDate, endDate } = req.query;
+      
+      const page = await storage.getPage(pageId);
+      if (!page) {
+        return res.status(404).json({ error: "Page not found" });
+      }
+
+      const start = startDate ? new Date(startDate as string) : undefined;
+      const end = endDate ? new Date(endDate as string) : undefined;
+
+      const events = await storage.getPageAnalytics(pageId, start, end);
+      res.json(events);
+    } catch (error) {
+      console.error("Error fetching analytics:", error);
+      res.status(500).json({ error: "Failed to fetch analytics" });
+    }
+  });
+
+  // Get analytics summary for a page
+  app.get("/api/pages/:pageId/analytics/summary", async (req, res) => {
+    try {
+      const { pageId } = req.params;
+      const { startDate, endDate } = req.query;
+      
+      const page = await storage.getPage(pageId);
+      if (!page) {
+        return res.status(404).json({ error: "Page not found" });
+      }
+
+      const start = startDate ? new Date(startDate as string) : undefined;
+      const end = endDate ? new Date(endDate as string) : undefined;
+
+      const summary = await storage.getPageAnalyticsSummary(pageId, start, end);
+      res.json(summary);
+    } catch (error) {
+      console.error("Error fetching analytics summary:", error);
+      res.status(500).json({ error: "Failed to fetch analytics summary" });
+    }
+  });
+
+  // =====================
+  // A/B TEST ENDPOINTS
+  // =====================
+
+  // Get all A/B tests
+  app.get("/api/ab-tests", async (_req, res) => {
+    try {
+      const tests = await storage.getAllAbTests();
+      res.json(tests);
+    } catch (error) {
+      console.error("Error fetching A/B tests:", error);
+      res.status(500).json({ error: "Failed to fetch A/B tests" });
+    }
+  });
+
+  // Get single A/B test
+  app.get("/api/ab-tests/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const test = await storage.getAbTest(id);
+      if (!test) {
+        return res.status(404).json({ error: "A/B test not found" });
+      }
+      res.json(test);
+    } catch (error) {
+      console.error("Error fetching A/B test:", error);
+      res.status(500).json({ error: "Failed to fetch A/B test" });
+    }
+  });
+
+  // Create A/B test
+  app.post("/api/ab-tests", async (req, res) => {
+    try {
+      const validatedData = insertAbTestSchema.parse(req.body);
+      
+      // Verify the original page exists
+      const page = await storage.getPage(validatedData.originalPageId);
+      if (!page) {
+        return res.status(400).json({ error: "Original page not found" });
+      }
+
+      const test = await storage.createAbTest(validatedData as any);
+      res.status(201).json(test);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Invalid data", details: error.errors });
+      }
+      console.error("Error creating A/B test:", error);
+      res.status(500).json({ error: "Failed to create A/B test" });
+    }
+  });
+
+  // Update A/B test
+  app.patch("/api/ab-tests/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const test = await storage.updateAbTest(id, req.body);
+      if (!test) {
+        return res.status(404).json({ error: "A/B test not found" });
+      }
+      res.json(test);
+    } catch (error) {
+      console.error("Error updating A/B test:", error);
+      res.status(500).json({ error: "Failed to update A/B test" });
+    }
+  });
+
+  // Delete A/B test
+  app.delete("/api/ab-tests/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await storage.deleteAbTest(id);
+      if (!deleted) {
+        return res.status(404).json({ error: "A/B test not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting A/B test:", error);
+      res.status(500).json({ error: "Failed to delete A/B test" });
+    }
+  });
+
+  // Get variants for an A/B test
+  app.get("/api/ab-tests/:abTestId/variants", async (req, res) => {
+    try {
+      const { abTestId } = req.params;
+      const variants = await storage.getAbTestVariants(abTestId);
+      res.json(variants);
+    } catch (error) {
+      console.error("Error fetching variants:", error);
+      res.status(500).json({ error: "Failed to fetch variants" });
+    }
+  });
+
+  // Create variant for an A/B test
+  app.post("/api/ab-tests/:abTestId/variants", async (req, res) => {
+    try {
+      const { abTestId } = req.params;
+      
+      // Verify test exists
+      const test = await storage.getAbTest(abTestId);
+      if (!test) {
+        return res.status(404).json({ error: "A/B test not found" });
+      }
+
+      const validatedData = insertAbTestVariantSchema.parse({
+        ...req.body,
+        abTestId,
+      });
+
+      const variant = await storage.createAbTestVariant(validatedData as any);
+      res.status(201).json(variant);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Invalid data", details: error.errors });
+      }
+      console.error("Error creating variant:", error);
+      res.status(500).json({ error: "Failed to create variant" });
+    }
+  });
+
+  // Update variant
+  app.patch("/api/ab-tests/:abTestId/variants/:variantId", async (req, res) => {
+    try {
+      const { variantId } = req.params;
+      const variant = await storage.updateAbTestVariant(variantId, req.body);
+      if (!variant) {
+        return res.status(404).json({ error: "Variant not found" });
+      }
+      res.json(variant);
+    } catch (error) {
+      console.error("Error updating variant:", error);
+      res.status(500).json({ error: "Failed to update variant" });
+    }
+  });
+
+  // Delete variant
+  app.delete("/api/ab-tests/:abTestId/variants/:variantId", async (req, res) => {
+    try {
+      const { variantId } = req.params;
+      const deleted = await storage.deleteAbTestVariant(variantId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Variant not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting variant:", error);
+      res.status(500).json({ error: "Failed to delete variant" });
+    }
+  });
+
+  // Get A/B test results/analytics
+  app.get("/api/ab-tests/:id/results", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const test = await storage.getAbTest(id);
+      if (!test) {
+        return res.status(404).json({ error: "A/B test not found" });
+      }
+
+      const variants = await storage.getAbTestVariants(id);
+      
+      // Get analytics for each variant
+      const results = await Promise.all(
+        variants.map(async (variant) => {
+          const summary = await storage.getPageAnalyticsSummary(variant.pageId);
+          return {
+            variantId: variant.id,
+            variantName: variant.name,
+            pageId: variant.pageId,
+            isControl: variant.isControl,
+            trafficPercentage: variant.trafficPercentage,
+            ...summary,
+            conversionRate: summary.pageViews > 0 
+              ? ((summary.formSubmissions + summary.buttonClicks) / summary.pageViews * 100).toFixed(2)
+              : "0.00",
+          };
+        })
+      );
+
+      res.json({
+        test,
+        results,
+      });
+    } catch (error) {
+      console.error("Error fetching A/B test results:", error);
+      res.status(500).json({ error: "Failed to fetch A/B test results" });
     }
   });
 

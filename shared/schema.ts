@@ -199,10 +199,72 @@ export const pageVersions = pgTable("page_versions", {
   uniquePageVersion: uniqueIndex("page_versions_unique_idx").on(table.pageId, table.versionNumber),
 }));
 
+// Analytics events table
+export const analyticsEventTypes = [
+  "page_view",
+  "form_submission",
+  "button_click",
+  "phone_click",
+  "add_to_cart",
+  "purchase",
+] as const;
+
+export type AnalyticsEventType = (typeof analyticsEventTypes)[number];
+
+export const analyticsEvents = pgTable("analytics_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  pageId: varchar("page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
+  eventType: text("event_type", { enum: analyticsEventTypes }).notNull(),
+  blockId: text("block_id"),
+  visitorId: text("visitor_id").notNull(),
+  sessionId: text("session_id"),
+  utmSource: text("utm_source"),
+  utmMedium: text("utm_medium"),
+  utmCampaign: text("utm_campaign"),
+  utmTerm: text("utm_term"),
+  utmContent: text("utm_content"),
+  referrer: text("referrer"),
+  userAgent: text("user_agent"),
+  ipAddress: text("ip_address"),
+  abTestId: varchar("ab_test_id"),
+  variantId: varchar("variant_id"),
+  metadata: jsonb("metadata").$type<Record<string, any>>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// A/B Tests table
+export const abTests = pgTable("ab_tests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  originalPageId: varchar("original_page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
+  status: text("status", { enum: ["draft", "running", "paused", "completed"] }).notNull().default("draft"),
+  trafficSplitType: text("traffic_split_type", { enum: ["random", "source_based"] }).notNull().default("random"),
+  goalType: text("goal_type", { enum: ["form_submission", "button_click", "page_view"] }).notNull().default("form_submission"),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// A/B Test Variants table
+export const abTestVariants = pgTable("ab_test_variants", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  abTestId: varchar("ab_test_id").notNull().references(() => abTests.id, { onDelete: "cascade" }),
+  pageId: varchar("page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  trafficPercentage: integer("traffic_percentage").notNull().default(50),
+  utmSourceMatch: text("utm_source_match"),
+  isControl: boolean("is_control").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Relations
 export const pagesRelations = relations(pages, ({ many }) => ({
   formSubmissions: many(formSubmissions),
   versions: many(pageVersions),
+  analyticsEvents: many(analyticsEvents),
+  abTestVariants: many(abTestVariants),
 }));
 
 export const pageVersionsRelations = relations(pageVersions, ({ one }) => ({
@@ -215,6 +277,32 @@ export const pageVersionsRelations = relations(pageVersions, ({ one }) => ({
 export const formSubmissionsRelations = relations(formSubmissions, ({ one }) => ({
   page: one(pages, {
     fields: [formSubmissions.pageId],
+    references: [pages.id],
+  }),
+}));
+
+export const analyticsEventsRelations = relations(analyticsEvents, ({ one }) => ({
+  page: one(pages, {
+    fields: [analyticsEvents.pageId],
+    references: [pages.id],
+  }),
+}));
+
+export const abTestsRelations = relations(abTests, ({ one, many }) => ({
+  originalPage: one(pages, {
+    fields: [abTests.originalPageId],
+    references: [pages.id],
+  }),
+  variants: many(abTestVariants),
+}));
+
+export const abTestVariantsRelations = relations(abTestVariants, ({ one }) => ({
+  abTest: one(abTests, {
+    fields: [abTestVariants.abTestId],
+    references: [abTests.id],
+  }),
+  page: one(pages, {
+    fields: [abTestVariants.pageId],
     references: [pages.id],
   }),
 }));
@@ -263,3 +351,30 @@ export type FormSubmission = typeof formSubmissions.$inferSelect;
 
 export type InsertPageVersion = typeof pageVersions.$inferInsert;
 export type PageVersion = typeof pageVersions.$inferSelect;
+
+// Analytics types
+export const insertAnalyticsEventSchema = createInsertSchema(analyticsEvents).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertAnalyticsEventValidation = z.infer<typeof insertAnalyticsEventSchema>;
+export type InsertAnalyticsEvent = typeof analyticsEvents.$inferInsert;
+export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;
+
+// A/B Test types
+export const insertAbTestSchema = createInsertSchema(abTests).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertAbTestValidation = z.infer<typeof insertAbTestSchema>;
+export type InsertAbTest = typeof abTests.$inferInsert;
+export type AbTest = typeof abTests.$inferSelect;
+
+export const insertAbTestVariantSchema = createInsertSchema(abTestVariants).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertAbTestVariantValidation = z.infer<typeof insertAbTestVariantSchema>;
+export type InsertAbTestVariant = typeof abTestVariants.$inferInsert;
+export type AbTestVariant = typeof abTestVariants.$inferSelect;

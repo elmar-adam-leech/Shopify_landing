@@ -3,6 +3,9 @@ import {
   pages,
   formSubmissions,
   pageVersions,
+  analyticsEvents,
+  abTests,
+  abTestVariants,
   type User, 
   type InsertUser,
   type Page,
@@ -12,9 +15,15 @@ import {
   type InsertFormSubmission,
   type PageVersion,
   type InsertPageVersion,
+  type AnalyticsEvent,
+  type InsertAnalyticsEvent,
+  type AbTest,
+  type InsertAbTest,
+  type AbTestVariant,
+  type InsertAbTestVariant,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, max } from "drizzle-orm";
+import { eq, desc, max, and, gte, lte, sql, count } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -39,6 +48,33 @@ export interface IStorage {
   createPageVersion(version: InsertPageVersion): Promise<PageVersion>;
   getPageVersion(id: string): Promise<PageVersion | undefined>;
   getLatestVersionNumber(pageId: string): Promise<number>;
+
+  // Analytics
+  createAnalyticsEvent(event: InsertAnalyticsEvent): Promise<AnalyticsEvent>;
+  getPageAnalytics(pageId: string, startDate?: Date, endDate?: Date): Promise<AnalyticsEvent[]>;
+  getPageAnalyticsSummary(pageId: string, startDate?: Date, endDate?: Date): Promise<{
+    pageViews: number;
+    formSubmissions: number;
+    buttonClicks: number;
+    phoneClicks: number;
+    bySource: { source: string; count: number }[];
+    byDay: { date: string; count: number }[];
+  }>;
+
+  // A/B Tests
+  getAllAbTests(): Promise<AbTest[]>;
+  getAbTest(id: string): Promise<AbTest | undefined>;
+  getAbTestByPageId(pageId: string): Promise<AbTest | undefined>;
+  createAbTest(test: InsertAbTest): Promise<AbTest>;
+  updateAbTest(id: string, test: Partial<InsertAbTest>): Promise<AbTest | undefined>;
+  deleteAbTest(id: string): Promise<boolean>;
+
+  // A/B Test Variants
+  getAbTestVariants(abTestId: string): Promise<AbTestVariant[]>;
+  getAbTestVariant(id: string): Promise<AbTestVariant | undefined>;
+  createAbTestVariant(variant: InsertAbTestVariant): Promise<AbTestVariant>;
+  updateAbTestVariant(id: string, variant: Partial<InsertAbTestVariant>): Promise<AbTestVariant | undefined>;
+  deleteAbTestVariant(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -146,6 +182,143 @@ export class DatabaseStorage implements IStorage {
       .from(pageVersions)
       .where(eq(pageVersions.pageId, pageId));
     return result?.maxVersion || 0;
+  }
+
+  // Analytics
+  async createAnalyticsEvent(event: InsertAnalyticsEvent): Promise<AnalyticsEvent> {
+    const [result] = await db
+      .insert(analyticsEvents)
+      .values(event as any)
+      .returning();
+    return result;
+  }
+
+  async getPageAnalytics(pageId: string, startDate?: Date, endDate?: Date): Promise<AnalyticsEvent[]> {
+    const conditions = [eq(analyticsEvents.pageId, pageId)];
+    if (startDate) {
+      conditions.push(gte(analyticsEvents.createdAt, startDate));
+    }
+    if (endDate) {
+      conditions.push(lte(analyticsEvents.createdAt, endDate));
+    }
+    return db
+      .select()
+      .from(analyticsEvents)
+      .where(and(...conditions))
+      .orderBy(desc(analyticsEvents.createdAt));
+  }
+
+  async getPageAnalyticsSummary(pageId: string, startDate?: Date, endDate?: Date) {
+    const conditions = [eq(analyticsEvents.pageId, pageId)];
+    if (startDate) {
+      conditions.push(gte(analyticsEvents.createdAt, startDate));
+    }
+    if (endDate) {
+      conditions.push(lte(analyticsEvents.createdAt, endDate));
+    }
+
+    const events = await db
+      .select()
+      .from(analyticsEvents)
+      .where(and(...conditions));
+
+    const pageViews = events.filter(e => e.eventType === "page_view").length;
+    const formSubmissions = events.filter(e => e.eventType === "form_submission").length;
+    const buttonClicks = events.filter(e => e.eventType === "button_click").length;
+    const phoneClicks = events.filter(e => e.eventType === "phone_click").length;
+
+    const sourceMap = new Map<string, number>();
+    events.forEach(e => {
+      const source = e.utmSource || "direct";
+      sourceMap.set(source, (sourceMap.get(source) || 0) + 1);
+    });
+    const bySource = Array.from(sourceMap.entries())
+      .map(([source, count]) => ({ source, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const dayMap = new Map<string, number>();
+    events.forEach(e => {
+      const date = e.createdAt.toISOString().split('T')[0];
+      dayMap.set(date, (dayMap.get(date) || 0) + 1);
+    });
+    const byDay = Array.from(dayMap.entries())
+      .map(([date, count]) => ({ date, count }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    return { pageViews, formSubmissions, buttonClicks, phoneClicks, bySource, byDay };
+  }
+
+  // A/B Tests
+  async getAllAbTests(): Promise<AbTest[]> {
+    return db.select().from(abTests).orderBy(desc(abTests.createdAt));
+  }
+
+  async getAbTest(id: string): Promise<AbTest | undefined> {
+    const [test] = await db.select().from(abTests).where(eq(abTests.id, id));
+    return test || undefined;
+  }
+
+  async getAbTestByPageId(pageId: string): Promise<AbTest | undefined> {
+    const [test] = await db.select().from(abTests).where(eq(abTests.originalPageId, pageId));
+    return test || undefined;
+  }
+
+  async createAbTest(test: InsertAbTest): Promise<AbTest> {
+    const [result] = await db
+      .insert(abTests)
+      .values(test as any)
+      .returning();
+    return result;
+  }
+
+  async updateAbTest(id: string, test: Partial<InsertAbTest>): Promise<AbTest | undefined> {
+    const [result] = await db
+      .update(abTests)
+      .set({ ...test, updatedAt: new Date() } as any)
+      .where(eq(abTests.id, id))
+      .returning();
+    return result || undefined;
+  }
+
+  async deleteAbTest(id: string): Promise<boolean> {
+    const result = await db.delete(abTests).where(eq(abTests.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // A/B Test Variants
+  async getAbTestVariants(abTestId: string): Promise<AbTestVariant[]> {
+    return db
+      .select()
+      .from(abTestVariants)
+      .where(eq(abTestVariants.abTestId, abTestId))
+      .orderBy(abTestVariants.createdAt);
+  }
+
+  async getAbTestVariant(id: string): Promise<AbTestVariant | undefined> {
+    const [variant] = await db.select().from(abTestVariants).where(eq(abTestVariants.id, id));
+    return variant || undefined;
+  }
+
+  async createAbTestVariant(variant: InsertAbTestVariant): Promise<AbTestVariant> {
+    const [result] = await db
+      .insert(abTestVariants)
+      .values(variant as any)
+      .returning();
+    return result;
+  }
+
+  async updateAbTestVariant(id: string, variant: Partial<InsertAbTestVariant>): Promise<AbTestVariant | undefined> {
+    const [result] = await db
+      .update(abTestVariants)
+      .set(variant as any)
+      .where(eq(abTestVariants.id, id))
+      .returning();
+    return result || undefined;
+  }
+
+  async deleteAbTestVariant(id: string): Promise<boolean> {
+    const result = await db.delete(abTestVariants).where(eq(abTestVariants.id, id)).returning();
+    return result.length > 0;
   }
 }
 
