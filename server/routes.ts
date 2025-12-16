@@ -34,6 +34,28 @@ export async function registerRoutes(
     }
   });
 
+  // Public page endpoint for landing pages - with caching headers for performance
+  app.get("/api/public/pages/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const page = await storage.getPage(id);
+      if (!page) {
+        return res.status(404).json({ error: "Page not found" });
+      }
+      
+      // Add cache headers for landing pages (cache for 5 minutes, stale-while-revalidate for 1 hour)
+      res.set({
+        'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600',
+        'Vary': 'Accept-Encoding'
+      });
+      
+      res.json(page);
+    } catch (error) {
+      console.error("Error fetching public page:", error);
+      res.status(500).json({ error: "Failed to fetch page" });
+    }
+  });
+
   // Create new page
   app.post("/api/pages", async (req, res) => {
     try {

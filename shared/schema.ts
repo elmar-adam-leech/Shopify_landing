@@ -110,12 +110,25 @@ export type BlockConfig =
   | PhoneBlockConfig 
   | ChatBlockConfig;
 
+// Block variant schema for A/B testing within blocks
+export const blockVariantSchema = z.object({
+  id: z.string(),
+  name: z.string().default("Variant"),
+  config: z.record(z.any()),
+  trafficPercentage: z.number().min(0).max(100).default(50),
+});
+
+export type BlockVariant = z.infer<typeof blockVariantSchema>;
+
 // Block schema for individual blocks
 export const blockSchema = z.object({
   id: z.string(),
   type: z.enum(blockTypes),
   config: z.record(z.any()),
   order: z.number(),
+  // A/B testing: optional variants for this block
+  variants: z.array(blockVariantSchema).optional(),
+  abTestEnabled: z.boolean().optional(),
 });
 
 export type Block = z.infer<typeof blockSchema>;
@@ -155,6 +168,7 @@ export const pages = pgTable("pages", {
   blocks: jsonb("blocks").$type<Block[]>().notNull().default([]),
   pixelSettings: jsonb("pixel_settings").$type<PixelSettings>(),
   status: text("status", { enum: ["draft", "published"] }).notNull().default("draft"),
+  allowIndexing: boolean("allow_indexing").notNull().default(true),
   shopifyPageId: text("shopify_page_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

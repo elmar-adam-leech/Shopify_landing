@@ -223,7 +223,7 @@ export function PixelSettingsDialog({ open, onClose, settings, onUpdate }: Pixel
         </div>
 
         <div className="flex items-center gap-2 mt-2">
-          <Badge variant="secondary" size="sm">
+          <Badge variant="secondary">
             {[
               settings.metaPixelEnabled,
               settings.googleAdsEnabled,
@@ -231,7 +231,7 @@ export function PixelSettingsDialog({ open, onClose, settings, onUpdate }: Pixel
               settings.pinterestTagEnabled,
             ].filter(Boolean).length} platforms active
           </Badge>
-          <Badge variant="secondary" size="sm">
+          <Badge variant="secondary">
             {Object.values(events).filter(Boolean).length} events enabled
           </Badge>
         </div>

@@ -1,9 +1,9 @@
-import { useEffect, useCallback, useRef, useState } from "react";
+import { useEffect, useCallback, useRef, useState, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { captureUTMParams, getStoredUTMParams } from "@/lib/utm";
-import type { Page, Block, AnalyticsEventType, AbTest, AbTestVariant } from "@shared/schema";
+import type { Page, Block, BlockVariant, AnalyticsEventType, AbTest, AbTestVariant } from "@shared/schema";
 
 function getOrCreateVisitorId(): string {
   const key = "pb_visitor_id";
@@ -35,6 +35,51 @@ function getVariantAssignment(testId: string): string | null {
 function setVariantAssignment(testId: string, variantId: string): void {
   const key = `pb_ab_variant_${testId}`;
   localStorage.setItem(key, variantId);
+}
+
+// Get or assign block variant for A/B testing
+function getOrAssignBlockVariant(block: Block): { config: Record<string, any>; variantId: string | null; variantName: string } {
+  // If A/B testing is not enabled or no variants, use original config
+  if (!block.abTestEnabled || !block.variants || block.variants.length === 0) {
+    return { config: block.config, variantId: null, variantName: "Original" };
+  }
+
+  // Check for existing assignment
+  const existingAssignment = getVariantAssignment(`block_${block.id}`);
+  
+  // Build list of all variants including original
+  const allVariants = [
+    { id: "original", name: "Original", config: block.config, trafficPercentage: 0 },
+    ...block.variants,
+  ];
+  
+  // Calculate original traffic (100 - sum of variant percentages)
+  const variantSum = block.variants.reduce((sum, v) => sum + v.trafficPercentage, 0);
+  allVariants[0].trafficPercentage = Math.max(0, 100 - variantSum);
+  
+  // If already assigned, return that variant
+  if (existingAssignment) {
+    const assigned = allVariants.find(v => v.id === existingAssignment);
+    if (assigned) {
+      return { config: assigned.config, variantId: assigned.id, variantName: assigned.name };
+    }
+  }
+  
+  // Select new variant based on traffic percentages
+  const totalPercentage = allVariants.reduce((sum, v) => sum + v.trafficPercentage, 0);
+  const random = Math.random() * totalPercentage;
+  
+  let cumulative = 0;
+  for (const variant of allVariants) {
+    cumulative += variant.trafficPercentage;
+    if (random <= cumulative) {
+      setVariantAssignment(`block_${block.id}`, variant.id);
+      return { config: variant.config, variantId: variant.id, variantName: variant.name };
+    }
+  }
+  
+  // Fallback to original
+  return { config: block.config, variantId: "original", variantName: "Original" };
 }
 
 // Select a variant based on traffic percentages
@@ -94,7 +139,10 @@ async function trackEvent(
 }
 
 function renderBlock(block: Block) {
-  const { type, config } = block;
+  // Apply A/B testing variant selection
+  const { config: variantConfig } = getOrAssignBlockVariant(block);
+  const { type } = block;
+  const config = variantConfig;
 
   switch (type) {
     case "hero-banner":
@@ -175,6 +223,8 @@ function renderBlock(block: Block) {
             <img
               src={config.src}
               alt={config.alt || "Image"}
+              loading="lazy"
+              decoding="async"
               className={`${widthClasses[config.width] || "w-full"} ${alignClasses[config.alignment] || "mx-auto"} rounded-lg`}
             />
           ) : (
@@ -494,10 +544,12 @@ export default function Preview() {
   }, [abTestData, pageId, setLocation]);
 
   const { data: page, isLoading, error } = useQuery<Page>({
-    queryKey: ["/api/pages", pageId],
+    queryKey: ["/api/public/pages", pageId],
     enabled: !!pageId,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes client-side
     queryFn: async () => {
-      const response = await fetch(`/api/pages/${pageId}`);
+      // Use public cached endpoint for better performance
+      const response = await fetch(`/api/public/pages/${pageId}`);
       if (!response.ok) throw new Error("Failed to load page");
       return response.json();
     },
@@ -561,6 +613,30 @@ export default function Preview() {
       );
     }
   }, [pageId, abTestInfo]);
+
+  // Set meta robots tag based on page settings
+  useEffect(() => {
+    if (page) {
+      // Remove any existing robots meta tag
+      const existingMeta = document.querySelector('meta[name="robots"]');
+      if (existingMeta) {
+        existingMeta.remove();
+      }
+      
+      // Add the robots meta tag
+      const meta = document.createElement('meta');
+      meta.name = 'robots';
+      meta.content = page.allowIndexing ? 'index, follow' : 'noindex, nofollow';
+      document.head.appendChild(meta);
+      
+      // Also set the page title
+      document.title = page.title;
+      
+      return () => {
+        meta.remove();
+      };
+    }
+  }, [page]);
 
   if (isLoading || isLoadingAbTest) {
     return (

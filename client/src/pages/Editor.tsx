@@ -14,7 +14,7 @@ import {
 } from "@dnd-kit/core";
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { v4 as uuidv4 } from "uuid";
-import { ArrowLeft, Save, Eye, Settings, Loader2, Monitor, Tablet, Smartphone, History } from "lucide-react";
+import { ArrowLeft, Save, Eye, Settings, Loader2, Monitor, Tablet, Smartphone, History, FileSliders } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,7 @@ import { BlockLibrary } from "@/components/editor/BlockLibrary";
 import { EditorCanvas } from "@/components/editor/EditorCanvas";
 import { BlockSettings } from "@/components/editor/BlockSettings";
 import { PixelSettingsDialog } from "@/components/editor/PixelSettings";
+import { PageSettingsDialog } from "@/components/editor/PageSettings";
 import { VersionHistory } from "@/components/editor/VersionHistory";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useToast } from "@/hooks/use-toast";
@@ -109,9 +110,11 @@ export default function Editor() {
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [title, setTitle] = useState("Untitled Page");
   const [pixelSettings, setPixelSettings] = useState<PixelSettings>(defaultPixelSettings);
+  const [allowIndexing, setAllowIndexing] = useState(true);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [settingsBlockId, setSettingsBlockId] = useState<string | null>(null);
   const [showPixelSettings, setShowPixelSettings] = useState(false);
+  const [showPageSettings, setShowPageSettings] = useState(false);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
@@ -163,6 +166,7 @@ export default function Editor() {
       setBlocks(pageData.blocks || []);
       setTitle(pageData.title);
       setPixelSettings(pageData.pixelSettings || defaultPixelSettings);
+      setAllowIndexing(pageData.allowIndexing ?? true);
       setHasChanges(false);
     }
   }, [pageData, isNewPage]);
@@ -175,6 +179,7 @@ export default function Editor() {
         slug,
         blocks,
         pixelSettings,
+        allowIndexing,
         status: "draft" as const,
       };
 
@@ -273,6 +278,13 @@ export default function Editor() {
     setHasChanges(true);
   }, [settingsBlockId]);
 
+  const handleUpdateBlock = useCallback((updatedBlock: Block) => {
+    setBlocks((prev) =>
+      prev.map((b) => (b.id === updatedBlock.id ? updatedBlock : b))
+    );
+    setHasChanges(true);
+  }, []);
+
   const selectedBlock = blocks.find((b) => b.id === settingsBlockId) || null;
 
   if (!isNewPage && isLoading) {
@@ -323,6 +335,16 @@ export default function Editor() {
                 History
               </Button>
             )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={() => setShowPageSettings(true)}
+              data-testid="button-page-settings"
+            >
+              <FileSliders className="h-4 w-4" />
+              Settings
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -426,6 +448,7 @@ export default function Editor() {
           open={!!settingsBlockId}
           onClose={() => setSettingsBlockId(null)}
           onUpdate={handleUpdateBlockConfig}
+          onUpdateBlock={handleUpdateBlock}
         />
 
         <PixelSettingsDialog
@@ -434,6 +457,16 @@ export default function Editor() {
           settings={pixelSettings}
           onUpdate={(settings) => {
             setPixelSettings(settings);
+            setHasChanges(true);
+          }}
+        />
+
+        <PageSettingsDialog
+          open={showPageSettings}
+          onClose={() => setShowPageSettings(false)}
+          allowIndexing={allowIndexing}
+          onAllowIndexingChange={(value) => {
+            setAllowIndexing(value);
             setHasChanges(true);
           }}
         />

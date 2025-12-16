@@ -36,6 +36,18 @@ The core entities are:
 - Hero Banner, Product Grid, Text Block, Image Block
 - Button Block, Form Block, Phone Block, Chat Block
 
+### A/B Testing (Block-Level)
+- Each block can have multiple variants with different configurations
+- Traffic percentage controls for variant distribution
+- Variants configured via tabbed interface in BlockSettings
+- Visitor variant assignments persisted in localStorage
+- Analytics tracking includes variant ID for performance measurement
+
+### Performance Optimizations
+- Public cached API endpoint (`/api/public/pages/:id`) with 5-minute cache and stale-while-revalidate
+- Image blocks use lazy loading (`loading="lazy"`, `decoding="async"`)
+- TanStack Query with 5-minute staleTime for client-side caching
+
 ### Key Design Patterns
 - **Monorepo Structure**: Client (`/client`), server (`/server`), and shared code (`/shared`)
 - **Shared Schema**: Database schema and Zod validators in `/shared/schema.ts` used by both frontend and backend
