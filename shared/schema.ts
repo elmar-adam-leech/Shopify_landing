@@ -322,6 +322,35 @@ export const abTestVariants = pgTable("ab_test_variants", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Twilio tracking numbers for DNI (Dynamic Number Insertion)
+export const trackingNumbers = pgTable("tracking_numbers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  phoneNumber: text("phone_number").notNull().unique(),
+  gclid: text("gclid"),
+  sessionId: text("session_id"),
+  visitorId: text("visitor_id"),
+  assignedAt: timestamp("assigned_at"),
+  expiresAt: timestamp("expires_at"),
+  isAvailable: boolean("is_available").notNull().default(true),
+  forwardTo: text("forward_to"), // Number to forward calls to
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Call logs for tracking
+export const callLogs = pgTable("call_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  twilioCallSid: text("twilio_call_sid").notNull().unique(),
+  trackingNumberId: varchar("tracking_number_id").references(() => trackingNumbers.id),
+  fromNumber: text("from_number").notNull(),
+  toNumber: text("to_number").notNull(),
+  gclid: text("gclid"),
+  callStatus: text("call_status"),
+  callDuration: integer("call_duration"),
+  shopifyCustomerId: text("shopify_customer_id"),
+  metadata: jsonb("metadata").$type<Record<string, any>>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Relations
 export const pagesRelations = relations(pages, ({ many }) => ({
   formSubmissions: many(formSubmissions),
@@ -441,3 +470,21 @@ export const insertAbTestVariantSchema = createInsertSchema(abTestVariants).omit
 export type InsertAbTestVariantValidation = z.infer<typeof insertAbTestVariantSchema>;
 export type InsertAbTestVariant = typeof abTestVariants.$inferInsert;
 export type AbTestVariant = typeof abTestVariants.$inferSelect;
+
+// Tracking number types
+export const insertTrackingNumberSchema = createInsertSchema(trackingNumbers).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertTrackingNumberValidation = z.infer<typeof insertTrackingNumberSchema>;
+export type InsertTrackingNumber = typeof trackingNumbers.$inferInsert;
+export type TrackingNumber = typeof trackingNumbers.$inferSelect;
+
+// Call log types
+export const insertCallLogSchema = createInsertSchema(callLogs).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertCallLogValidation = z.infer<typeof insertCallLogSchema>;
+export type InsertCallLog = typeof callLogs.$inferInsert;
+export type CallLog = typeof callLogs.$inferSelect;

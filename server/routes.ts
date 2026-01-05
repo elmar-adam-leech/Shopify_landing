@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertPageSchema, updatePageSchema, insertFormSubmissionSchema, insertAnalyticsEventSchema, insertAbTestSchema, insertAbTestVariantSchema } from "@shared/schema";
 import { z } from "zod";
+import { registerTwilioRoutes } from "./twilioRoutes";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -542,6 +543,9 @@ export async function registerRoutes(
     }
   });
 
+  // Register Twilio call tracking routes
+  registerTwilioRoutes(app);
+
   return httpServer;
 }
 
@@ -672,7 +676,7 @@ function generateBlockHtml(block: any): string {
     case "phone-block":
       return `
 <section style="padding: 2rem; text-align: center;">
-  <a href="tel:${(block.config.phoneNumber || "").replace(/\D/g, "")}" style="display: inline-flex; align-items: center; gap: 0.75rem; padding: 1rem 2rem; background: #3b82f6; color: white; text-decoration: none; border-radius: 0.5rem; font-weight: 500;">
+  <a href="tel:${(block.config.phoneNumber || "").replace(/\\D/g, "")}" style="display: inline-flex; align-items: center; gap: 0.75rem; padding: 1rem 2rem; background: #3b82f6; color: white; text-decoration: none; border-radius: 0.5rem; font-weight: 500;">
     <span style="font-weight: 600;">${block.config.displayText || "Call Us"}</span>
     <span style="opacity: 0.8;">${block.config.phoneNumber || ""}</span>
   </a>
