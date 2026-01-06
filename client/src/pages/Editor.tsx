@@ -5,6 +5,7 @@ import {
   DndContext,
   DragOverlay,
   closestCenter,
+  pointerWithin,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -350,10 +351,12 @@ export default function Editor() {
     );
   }
 
+  const collisionDetection = layoutMode === "freeform" ? pointerWithin : closestCenter;
+
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={collisionDetection}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >

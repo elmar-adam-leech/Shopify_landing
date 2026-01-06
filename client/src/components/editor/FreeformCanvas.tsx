@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { Rnd } from "react-rnd";
 import { Settings, Trash2, Copy, Lock, Unlock, ArrowUp, ArrowDown, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -320,7 +320,6 @@ export function FreeformCanvas({
   showRulers,
   showSnapGuides,
 }: FreeformCanvasProps) {
-  const canvasRef = useRef<HTMLDivElement>(null);
   const { setNodeRef, isOver } = useDroppable({
     id: "freeform-canvas",
   });
@@ -347,12 +346,7 @@ export function FreeformCanvas({
       <div className="p-8">
         <div className="max-w-5xl mx-auto">
           <div
-            ref={(node) => {
-              setNodeRef(node);
-              if (canvasRef.current !== node) {
-                (canvasRef as any).current = node;
-              }
-            }}
+            ref={setNodeRef}
             className={`relative mx-auto transition-all rounded-lg ${
               freeformBlocks.length === 0 && flowBlocks.length === 0
                 ? `border-2 border-dashed ${isOver ? "border-primary bg-primary/5" : "border-border"}`
