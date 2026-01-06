@@ -32,9 +32,9 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
 
   // Pages
-  getAllPages(): Promise<Page[]>;
+  getAllPages(storeId?: string): Promise<Page[]>;
   getPage(id: string): Promise<Page | undefined>;
-  getPageBySlug(slug: string): Promise<Page | undefined>;
+  getPageBySlug(slug: string, storeId?: string): Promise<Page | undefined>;
   createPage(page: InsertPage): Promise<Page>;
   updatePage(id: string, page: UpdatePage): Promise<Page | undefined>;
   deletePage(id: string): Promise<boolean>;
@@ -99,7 +99,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Pages
-  async getAllPages(): Promise<Page[]> {
+  async getAllPages(storeId?: string): Promise<Page[]> {
+    if (storeId) {
+      return db.select().from(pages).where(eq(pages.storeId, storeId)).orderBy(desc(pages.updatedAt));
+    }
     return db.select().from(pages).orderBy(desc(pages.updatedAt));
   }
 
@@ -108,7 +111,11 @@ export class DatabaseStorage implements IStorage {
     return page || undefined;
   }
 
-  async getPageBySlug(slug: string): Promise<Page | undefined> {
+  async getPageBySlug(slug: string, storeId?: string): Promise<Page | undefined> {
+    if (storeId) {
+      const [page] = await db.select().from(pages).where(and(eq(pages.slug, slug), eq(pages.storeId, storeId)));
+      return page || undefined;
+    }
     const [page] = await db.select().from(pages).where(eq(pages.slug, slug));
     return page || undefined;
   }

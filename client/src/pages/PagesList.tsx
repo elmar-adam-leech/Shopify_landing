@@ -25,6 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { TemplateLibrary } from "@/components/editor/TemplateLibrary";
 import { StoreSelector } from "@/components/StoreSelector";
+import { useStore } from "@/lib/store-context";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Page, Block } from "@shared/schema";
@@ -36,9 +37,16 @@ export default function PagesList() {
   const [, navigate] = useLocation();
   const [deletePageId, setDeletePageId] = useState<string | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
+  const { selectedStoreId } = useStore();
 
   const { data: pages, isLoading } = useQuery<Page[]>({
-    queryKey: ["/api/pages"],
+    queryKey: ["/api/pages", selectedStoreId],
+    queryFn: async () => {
+      const url = selectedStoreId ? `/api/pages?storeId=${selectedStoreId}` : '/api/pages';
+      const response = await fetch(url, { credentials: 'include' });
+      if (!response.ok) throw new Error('Failed to fetch pages');
+      return response.json();
+    },
   });
 
   const deleteMutation = useMutation({
@@ -46,7 +54,7 @@ export default function PagesList() {
       return apiRequest("DELETE", `/api/pages/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/pages"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pages", selectedStoreId] });
       toast({
         title: "Page deleted",
         description: "The page has been permanently deleted.",
@@ -70,10 +78,11 @@ export default function PagesList() {
         blocks: page.blocks,
         pixelSettings: page.pixelSettings,
         status: "draft",
+        storeId: page.storeId,
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/pages"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pages", selectedStoreId] });
       toast({
         title: "Page duplicated",
         description: "A copy of the page has been created.",
@@ -118,6 +127,7 @@ export default function PagesList() {
             <Button 
               className="gap-2" 
               onClick={() => setShowTemplates(true)}
+              disabled={!selectedStoreId}
               data-testid="button-new-page"
             >
               <Plus className="h-4 w-4" />
@@ -235,18 +245,25 @@ export default function PagesList() {
                 <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
                   <FileText className="h-8 w-8 text-muted-foreground" />
                 </div>
-                <h3 className="text-lg font-medium mb-2">No pages yet</h3>
+                <h3 className="text-lg font-medium mb-2">
+                  {selectedStoreId ? "No pages yet" : "Select a store first"}
+                </h3>
                 <p className="text-sm text-muted-foreground mb-6">
-                  Create your first landing page to start building high-converting ad experiences.
+                  {selectedStoreId 
+                    ? "Create your first landing page to start building high-converting ad experiences."
+                    : "Choose a store from the dropdown above to view or create pages."
+                  }
                 </p>
-                <Button 
-                  className="gap-2" 
-                  onClick={() => setShowTemplates(true)}
-                  data-testid="button-create-first"
-                >
-                  <Plus className="h-4 w-4" />
-                  Create Your First Page
-                </Button>
+                {selectedStoreId && (
+                  <Button 
+                    className="gap-2" 
+                    onClick={() => setShowTemplates(true)}
+                    data-testid="button-create-first"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Create Your First Page
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>

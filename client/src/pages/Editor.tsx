@@ -25,6 +25,7 @@ import { PixelSettingsDialog } from "@/components/editor/PixelSettings";
 import { PageSettingsDialog } from "@/components/editor/PageSettings";
 import { VersionHistory } from "@/components/editor/VersionHistory";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { useStore } from "@/lib/store-context";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Page, Block, BlockType, PixelSettings } from "@shared/schema";
@@ -104,6 +105,7 @@ export default function Editor() {
   const [, params] = useRoute("/editor/:id");
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { selectedStoreId } = useStore();
   const pageId = params?.id;
   const isNewPage = pageId === "new";
 
@@ -181,6 +183,7 @@ export default function Editor() {
         pixelSettings,
         allowIndexing,
         status: "draft" as const,
+        ...(isNewPage && selectedStoreId ? { storeId: selectedStoreId } : {}),
       };
 
       if (isNewPage) {
@@ -192,7 +195,7 @@ export default function Editor() {
     onSuccess: async (response) => {
       const data = await response.json();
       setHasChanges(false);
-      queryClient.invalidateQueries({ queryKey: ["/api/pages"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pages", selectedStoreId] });
       if (!isNewPage) {
         queryClient.invalidateQueries({ queryKey: ["/api/pages", pageId] });
       }

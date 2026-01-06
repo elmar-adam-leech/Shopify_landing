@@ -122,10 +122,11 @@ export async function registerRoutes(
 
   // ============== PAGE ROUTES ==============
   
-  // Get all pages
-  app.get("/api/pages", async (_req, res) => {
+  // Get all pages (optionally filtered by storeId)
+  app.get("/api/pages", async (req, res) => {
     try {
-      const pages = await storage.getAllPages();
+      const storeId = req.query.storeId as string | undefined;
+      const pages = await storage.getAllPages(storeId);
       res.json(pages);
     } catch (error) {
       console.error("Error fetching pages:", error);
@@ -175,8 +176,8 @@ export async function registerRoutes(
     try {
       const validatedData = insertPageSchema.parse(req.body);
       
-      // Check if slug already exists
-      const existingPage = await storage.getPageBySlug(validatedData.slug);
+      // Check if slug already exists within the same store
+      const existingPage = await storage.getPageBySlug(validatedData.slug, validatedData.storeId);
       if (existingPage) {
         // Append timestamp to make slug unique
         validatedData.slug = `${validatedData.slug}-${Date.now()}`;
@@ -205,9 +206,9 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Page not found" });
       }
       
-      // If slug is being updated, check for conflicts
+      // If slug is being updated, check for conflicts within the same store
       if (validatedData.slug && validatedData.slug !== existingPage.slug) {
-        const slugConflict = await storage.getPageBySlug(validatedData.slug);
+        const slugConflict = await storage.getPageBySlug(validatedData.slug, existingPage.storeId);
         if (slugConflict && slugConflict.id !== id) {
           validatedData.slug = `${validatedData.slug}-${Date.now()}`;
         }
