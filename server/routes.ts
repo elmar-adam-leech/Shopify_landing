@@ -1,14 +1,127 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertPageSchema, updatePageSchema, insertFormSubmissionSchema, insertAnalyticsEventSchema, insertAbTestSchema, insertAbTestVariantSchema } from "@shared/schema";
+import { insertPageSchema, updatePageSchema, insertFormSubmissionSchema, insertAnalyticsEventSchema, insertAbTestSchema, insertAbTestVariantSchema, insertStoreSchema, updateStoreSchema, stores } from "@shared/schema";
 import { z } from "zod";
 import { registerTwilioRoutes } from "./twilioRoutes";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  
+  // ============== STORE ROUTES ==============
+  
+  // Get all stores
+  app.get("/api/stores", async (_req, res) => {
+    try {
+      const allStores = await db.select().from(stores).orderBy(stores.name);
+      // Don't expose sensitive credentials in list view
+      const safeStores = allStores.map(s => ({
+        ...s,
+        shopifyApiKey: s.shopifyApiKey ? "***configured***" : null,
+        shopifyApiSecret: s.shopifyApiSecret ? "***configured***" : null,
+        shopifyAccessToken: s.shopifyAccessToken ? "***configured***" : null,
+        twilioAccountSid: s.twilioAccountSid ? "***configured***" : null,
+        twilioAuthToken: s.twilioAuthToken ? "***configured***" : null,
+      }));
+      res.json(safeStores);
+    } catch (error) {
+      console.error("Error fetching stores:", error);
+      res.status(500).json({ error: "Failed to fetch stores" });
+    }
+  });
+
+  // Get single store
+  app.get("/api/stores/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const [store] = await db.select().from(stores).where(eq(stores.id, id)).limit(1);
+      if (!store) {
+        return res.status(404).json({ error: "Store not found" });
+      }
+      // Mask sensitive fields
+      const safeStore = {
+        ...store,
+        shopifyApiKey: store.shopifyApiKey ? "***configured***" : null,
+        shopifyApiSecret: store.shopifyApiSecret ? "***configured***" : null,
+        shopifyAccessToken: store.shopifyAccessToken ? "***configured***" : null,
+        twilioAccountSid: store.twilioAccountSid ? "***configured***" : null,
+        twilioAuthToken: store.twilioAuthToken ? "***configured***" : null,
+      };
+      res.json(safeStore);
+    } catch (error) {
+      console.error("Error fetching store:", error);
+      res.status(500).json({ error: "Failed to fetch store" });
+    }
+  });
+
+  // Create new store
+  app.post("/api/stores", async (req, res) => {
+    try {
+      const validatedData = insertStoreSchema.parse(req.body);
+      const [store] = await db.insert(stores).values(validatedData).returning();
+      res.status(201).json(store);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Invalid data", details: error.errors });
+      }
+      console.error("Error creating store:", error);
+      res.status(500).json({ error: "Failed to create store" });
+    }
+  });
+
+  // Update store
+  app.patch("/api/stores/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const validatedData = updateStoreSchema.parse(req.body);
+      
+      // Filter out masked values (don't update if user hasn't changed them)
+      const updateData: Record<string, any> = {};
+      for (const [key, value] of Object.entries(validatedData)) {
+        if (value !== "***configured***" && value !== undefined) {
+          updateData[key] = value;
+        }
+      }
+      
+      const [updated] = await db.update(stores)
+        .set({ ...updateData, updatedAt: new Date() })
+        .where(eq(stores.id, id))
+        .returning();
+      
+      if (!updated) {
+        return res.status(404).json({ error: "Store not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Invalid data", details: error.errors });
+      }
+      console.error("Error updating store:", error);
+      res.status(500).json({ error: "Failed to update store" });
+    }
+  });
+
+  // Delete store
+  app.delete("/api/stores/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const [deleted] = await db.delete(stores).where(eq(stores.id, id)).returning();
+      if (!deleted) {
+        return res.status(404).json({ error: "Store not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting store:", error);
+      res.status(500).json({ error: "Failed to delete store" });
+    }
+  });
+
+  // ============== PAGE ROUTES ==============
+  
   // Get all pages
   app.get("/api/pages", async (_req, res) => {
     try {
