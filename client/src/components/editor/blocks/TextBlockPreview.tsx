@@ -1,10 +1,11 @@
+import { memo } from "react";
 import type { TextBlockConfig } from "@shared/schema";
 
 interface TextBlockPreviewProps {
   config: Record<string, any>;
 }
 
-export function TextBlockPreview({ config }: TextBlockPreviewProps) {
+export const TextBlockPreview = memo(function TextBlockPreview({ config }: TextBlockPreviewProps) {
   const settings = config as TextBlockConfig;
   const content = settings.content || "Add your text here...";
   const textAlign = settings.textAlign || "left";
@@ -34,4 +35,4 @@ export function TextBlockPreview({ config }: TextBlockPreviewProps) {
       />
     </div>
   );
-}
+});

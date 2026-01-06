@@ -185,7 +185,31 @@ export async function registerRoutes(
 
   // ============== PAGE ROUTES ==============
   
-  // Get all pages (optionally filtered by storeId)
+  // Lightweight page list - excludes heavy block data for faster loading
+  app.get("/api/pages/list", async (req, res) => {
+    try {
+      const storeId = req.query.storeId as string | undefined;
+      const pages = await storage.getAllPages(storeId);
+      // Return lightweight page summaries without blocks/sections
+      const lightweightPages = pages.map(page => ({
+        id: page.id,
+        storeId: page.storeId,
+        title: page.title,
+        slug: page.slug,
+        status: page.status,
+        allowIndexing: page.allowIndexing,
+        createdAt: page.createdAt,
+        updatedAt: page.updatedAt,
+        blockCount: page.blocks?.length || 0,
+      }));
+      res.json(lightweightPages);
+    } catch (error) {
+      console.error("Error fetching page list:", error);
+      res.status(500).json({ error: "Failed to fetch pages" });
+    }
+  });
+  
+  // Get all pages with full data (optionally filtered by storeId)
   app.get("/api/pages", async (req, res) => {
     try {
       const storeId = req.query.storeId as string | undefined;

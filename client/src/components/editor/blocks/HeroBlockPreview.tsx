@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { HeroBlockConfig } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 
@@ -5,7 +6,7 @@ interface HeroBlockPreviewProps {
   config: Record<string, any>;
 }
 
-export function HeroBlockPreview({ config }: HeroBlockPreviewProps) {
+export const HeroBlockPreview = memo(function HeroBlockPreview({ config }: HeroBlockPreviewProps) {
   const settings = config as HeroBlockConfig;
   const title = settings.title || "Your Headline Here";
   const subtitle = settings.subtitle || "Add a compelling subtitle";
@@ -50,4 +51,4 @@ export function HeroBlockPreview({ config }: HeroBlockPreviewProps) {
       </div>
     </div>
   );
-}
+});

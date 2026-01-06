@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { FormBlockConfig } from "@shared/schema";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -139,7 +140,7 @@ function HiddenFieldIndicator({ field }: { field: FormField }) {
   );
 }
 
-export function FormBlockPreview({ config }: FormBlockPreviewProps) {
+export const FormBlockPreview = memo(function FormBlockPreview({ config }: FormBlockPreviewProps) {
   const settings = config as FormBlockConfig;
   const title = settings.title || "Contact Us";
   const fields = settings.fields || [
@@ -243,4 +244,4 @@ export function FormBlockPreview({ config }: FormBlockPreviewProps) {
       </Card>
     </div>
   );
-}
+});

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { ChatBlockConfig } from "@shared/schema";
 import { Card } from "@/components/ui/card";
 import { MessageCircle, X } from "lucide-react";
@@ -7,7 +8,7 @@ interface ChatBlockPreviewProps {
   config: Record<string, any>;
 }
 
-export function ChatBlockPreview({ config }: ChatBlockPreviewProps) {
+export const ChatBlockPreview = memo(function ChatBlockPreview({ config }: ChatBlockPreviewProps) {
   const settings = config as ChatBlockConfig;
   const welcomeMessage = settings.welcomeMessage || "Hi! How can we help you today?";
   const position = settings.position || "bottom-right";
@@ -53,4 +54,4 @@ export function ChatBlockPreview({ config }: ChatBlockPreviewProps) {
       </p>
     </div>
   );
-}
+});

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { PhoneBlockConfig } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Phone } from "lucide-react";
@@ -6,7 +7,7 @@ interface PhoneBlockPreviewProps {
   config: Record<string, any>;
 }
 
-export function PhoneBlockPreview({ config }: PhoneBlockPreviewProps) {
+export const PhoneBlockPreview = memo(function PhoneBlockPreview({ config }: PhoneBlockPreviewProps) {
   const settings = config as PhoneBlockConfig;
   const phoneNumber = settings.phoneNumber || "+1 (555) 000-0000";
   const displayText = settings.displayText || "Call Us Now";
@@ -25,4 +26,4 @@ export function PhoneBlockPreview({ config }: PhoneBlockPreviewProps) {
       </Button>
     </div>
   );
-}
+});

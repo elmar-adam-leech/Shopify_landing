@@ -40,9 +40,10 @@ export default function PagesList() {
   const { selectedStoreId } = useStore();
 
   const { data: pages, isLoading } = useQuery<Page[]>({
-    queryKey: ["/api/pages", selectedStoreId],
+    queryKey: ["/api/pages/list", selectedStoreId],
+    staleTime: 2 * 60 * 1000, // Cache for 2 minutes
     queryFn: async () => {
-      const url = selectedStoreId ? `/api/pages?storeId=${selectedStoreId}` : '/api/pages';
+      const url = selectedStoreId ? `/api/pages/list?storeId=${selectedStoreId}` : '/api/pages/list';
       const response = await fetch(url, { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch pages');
       return response.json();
@@ -54,7 +55,7 @@ export default function PagesList() {
       return apiRequest("DELETE", `/api/pages/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/pages", selectedStoreId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pages/list"] });
       toast({
         title: "Page deleted",
         description: "The page has been permanently deleted.",
@@ -71,18 +72,20 @@ export default function PagesList() {
   });
 
   const duplicateMutation = useMutation({
-    mutationFn: async (page: Page) => {
+    mutationFn: async (pageId: string) => {
+      // Fetch full page data first (needed for blocks and pixelSettings)
+      const fullPage = await fetch(`/api/pages/${pageId}`).then(r => r.json());
       return apiRequest("POST", "/api/pages", {
-        title: `${page.title} (Copy)`,
-        slug: `${page.slug}-copy-${Date.now()}`,
-        blocks: page.blocks,
-        pixelSettings: page.pixelSettings,
+        title: `${fullPage.title} (Copy)`,
+        slug: `${fullPage.slug}-copy-${Date.now()}`,
+        blocks: fullPage.blocks,
+        pixelSettings: fullPage.pixelSettings,
         status: "draft",
-        storeId: page.storeId,
+        storeId: fullPage.storeId,
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/pages", selectedStoreId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pages/list"] });
       toast({
         title: "Page duplicated",
         description: "A copy of the page has been created.",
@@ -177,7 +180,7 @@ export default function PagesList() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem
-                          onClick={() => duplicateMutation.mutate(page)}
+                          onClick={() => duplicateMutation.mutate(page.id)}
                           disabled={duplicateMutation.isPending}
                         >
                           <Copy className="h-4 w-4 mr-2" />

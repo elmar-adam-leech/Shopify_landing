@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { ButtonBlockConfig } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 
@@ -5,7 +6,7 @@ interface ButtonBlockPreviewProps {
   config: Record<string, any>;
 }
 
-export function ButtonBlockPreview({ config }: ButtonBlockPreviewProps) {
+export const ButtonBlockPreview = memo(function ButtonBlockPreview({ config }: ButtonBlockPreviewProps) {
   const settings = config as ButtonBlockConfig;
   const text = settings.text || "Click Here";
   const variant = settings.variant || "primary";
@@ -44,4 +45,4 @@ export function ButtonBlockPreview({ config }: ButtonBlockPreviewProps) {
       </Button>
     </div>
   );
-}
+});

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { ImageBlockConfig } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Image as ImageIcon } from "lucide-react";
@@ -6,7 +7,7 @@ interface ImageBlockPreviewProps {
   config: Record<string, any>;
 }
 
-export function ImageBlockPreview({ config }: ImageBlockPreviewProps) {
+export const ImageBlockPreview = memo(function ImageBlockPreview({ config }: ImageBlockPreviewProps) {
   const settings = config as ImageBlockConfig;
   const src = settings.src || "";
   const alt = settings.alt || "Image";
@@ -50,4 +51,4 @@ export function ImageBlockPreview({ config }: ImageBlockPreviewProps) {
       </div>
     </div>
   );
-}
+});

@@ -158,7 +158,8 @@ export default function Editor() {
   const { isLoading, data: pageData } = useQuery({
     queryKey: ["/api/pages", pageId],
     enabled: !isNewPage && !!pageId,
-    staleTime: 0, // Always fetch fresh data
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes - improves navigation speed
+    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
     queryFn: async () => {
       const response = await fetch(`/api/pages/${pageId}`);
       if (!response.ok) throw new Error("Failed to load page");
@@ -202,15 +203,19 @@ export default function Editor() {
     onSuccess: async (response) => {
       const data = await response.json();
       setHasChanges(false);
-      queryClient.invalidateQueries({ queryKey: ["/api/pages", selectedStoreId] });
+      // Invalidate page list cache (lightweight endpoint)
+      queryClient.invalidateQueries({ queryKey: ["/api/pages/list"] });
       if (!isNewPage) {
-        queryClient.invalidateQueries({ queryKey: ["/api/pages", pageId] });
+        // Update the specific page cache with new data
+        queryClient.setQueryData(["/api/pages", pageId], data);
       }
       toast({
         title: "Page saved",
         description: "Your changes have been saved successfully.",
       });
       if (isNewPage && data.id) {
+        // Set cache for the new page
+        queryClient.setQueryData(["/api/pages", data.id], data);
         navigate(`/editor/${data.id}`, { replace: true });
       }
     },

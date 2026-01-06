@@ -59,9 +59,10 @@ export default function ABTestResults() {
   });
 
   const { data: pages = [] } = useQuery<Page[]>({
-    queryKey: ["/api/pages", selectedStoreId],
+    queryKey: ["/api/pages/list", selectedStoreId],
+    staleTime: 2 * 60 * 1000, // Cache for 2 minutes
     queryFn: async () => {
-      const url = selectedStoreId ? `/api/pages?storeId=${selectedStoreId}` : "/api/pages";
+      const url = selectedStoreId ? `/api/pages/list?storeId=${selectedStoreId}` : "/api/pages/list";
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch pages");
       return res.json();
