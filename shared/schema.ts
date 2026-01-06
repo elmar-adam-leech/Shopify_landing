@@ -227,6 +227,17 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
 });
 
+// User-store assignments for multi-tenancy access control
+export const userStoreAssignments = pgTable("user_store_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  storeId: varchar("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+  role: text("role", { enum: ["owner", "admin", "editor", "viewer"] }).notNull().default("editor"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  uniqueUserStore: uniqueIndex("user_store_unique_idx").on(table.userId, table.storeId),
+}));
+
 export const pages = pgTable("pages", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   storeId: varchar("store_id").references(() => stores.id, { onDelete: "cascade" }),
@@ -260,6 +271,7 @@ export type UTMParams = z.infer<typeof utmParamsSchema>;
 
 export const formSubmissions = pgTable("form_submissions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  storeId: varchar("store_id").references(() => stores.id, { onDelete: "cascade" }),
   pageId: varchar("page_id").notNull().references(() => pages.id),
   blockId: text("block_id").notNull(),
   data: jsonb("data").$type<Record<string, string>>().notNull(),
@@ -296,6 +308,7 @@ export type AnalyticsEventType = (typeof analyticsEventTypes)[number];
 
 export const analyticsEvents = pgTable("analytics_events", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  storeId: varchar("store_id").references(() => stores.id, { onDelete: "cascade" }),
   pageId: varchar("page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
   eventType: text("event_type", { enum: analyticsEventTypes }).notNull(),
   blockId: text("block_id"),
@@ -318,6 +331,7 @@ export const analyticsEvents = pgTable("analytics_events", {
 // A/B Tests table
 export const abTests = pgTable("ab_tests", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  storeId: varchar("store_id").references(() => stores.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description"),
   originalPageId: varchar("original_page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
@@ -481,6 +495,15 @@ export type Store = typeof stores.$inferSelect;
 
 export type InsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
+
+// User-store assignment types
+export const insertUserStoreAssignmentSchema = createInsertSchema(userStoreAssignments).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertUserStoreAssignmentValidation = z.infer<typeof insertUserStoreAssignmentSchema>;
+export type InsertUserStoreAssignment = typeof userStoreAssignments.$inferInsert;
+export type UserStoreAssignment = typeof userStoreAssignments.$inferSelect;
 
 export type InsertPage = typeof pages.$inferInsert;
 export type UpdatePage = Partial<InsertPage>;
