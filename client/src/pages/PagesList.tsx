@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { Plus, FileText, MoreHorizontal, Trash2, Copy, ExternalLink, Loader2, BarChart3, FlaskConical } from "lucide-react";
+import { Plus, FileText, MoreHorizontal, Trash2, Copy, ExternalLink, Loader2, BarChart3, FlaskConical, Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +24,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { TemplateLibrary } from "@/components/editor/TemplateLibrary";
+import { StoreSelector } from "@/components/StoreSelector";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Page, Block } from "@shared/schema";
@@ -100,7 +101,13 @@ export default function PagesList() {
               <p className="text-xs text-muted-foreground">Create landing pages for ads</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <StoreSelector />
+            <Link href="/stores">
+              <Button variant="ghost" size="icon" data-testid="button-stores">
+                <Store className="h-4 w-4" />
+              </Button>
+            </Link>
             <Link href="/ab-tests">
               <Button variant="outline" className="gap-2" data-testid="button-ab-tests">
                 <FlaskConical className="h-4 w-4" />
