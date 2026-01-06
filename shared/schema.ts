@@ -204,6 +204,23 @@ export const pixelSettingsSchema = z.object({
 export type PixelSettings = z.infer<typeof pixelSettingsSchema>;
 
 // Database tables
+
+// Stores table for multi-tenancy
+export const stores = pgTable("stores", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  shopifyDomain: text("shopify_domain").notNull(), // e.g., "mystore.myshopify.com"
+  shopifyApiKey: text("shopify_api_key"),
+  shopifyApiSecret: text("shopify_api_secret"),
+  shopifyAccessToken: text("shopify_access_token"),
+  twilioAccountSid: text("twilio_account_sid"),
+  twilioAuthToken: text("twilio_auth_token"),
+  twilioForwardTo: text("twilio_forward_to"), // Default number to forward calls to
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
@@ -212,8 +229,9 @@ export const users = pgTable("users", {
 
 export const pages = pgTable("pages", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  storeId: varchar("store_id").references(() => stores.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
-  slug: text("slug").notNull().unique(),
+  slug: text("slug").notNull(),
   blocks: jsonb("blocks").$type<Block[]>().notNull().default([]),
   pixelSettings: jsonb("pixel_settings").$type<PixelSettings>(),
   status: text("status", { enum: ["draft", "published"] }).notNull().default("draft"),
@@ -221,7 +239,9 @@ export const pages = pgTable("pages", {
   shopifyPageId: text("shopify_page_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  uniqueSlugPerStore: uniqueIndex("pages_slug_store_idx").on(table.slug, table.storeId),
+}));
 
 // UTM parameters schema
 export const utmParamsSchema = z.object({
@@ -325,7 +345,8 @@ export const abTestVariants = pgTable("ab_test_variants", {
 // Twilio tracking numbers for DNI (Dynamic Number Insertion)
 export const trackingNumbers = pgTable("tracking_numbers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  phoneNumber: text("phone_number").notNull().unique(),
+  storeId: varchar("store_id").references(() => stores.id, { onDelete: "cascade" }),
+  phoneNumber: text("phone_number").notNull(),
   gclid: text("gclid"),
   sessionId: text("session_id"),
   visitorId: text("visitor_id"),
@@ -334,11 +355,14 @@ export const trackingNumbers = pgTable("tracking_numbers", {
   isAvailable: boolean("is_available").notNull().default(true),
   forwardTo: text("forward_to"), // Number to forward calls to
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  uniquePhonePerStore: uniqueIndex("tracking_numbers_phone_store_idx").on(table.phoneNumber, table.storeId),
+}));
 
 // Call logs for tracking
 export const callLogs = pgTable("call_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  storeId: varchar("store_id").references(() => stores.id, { onDelete: "cascade" }),
   twilioCallSid: text("twilio_call_sid").notNull().unique(),
   trackingNumberId: varchar("tracking_number_id").references(() => trackingNumbers.id),
   fromNumber: text("from_number").notNull(),
@@ -352,7 +376,17 @@ export const callLogs = pgTable("call_logs", {
 });
 
 // Relations
-export const pagesRelations = relations(pages, ({ many }) => ({
+export const storesRelations = relations(stores, ({ many }) => ({
+  pages: many(pages),
+  trackingNumbers: many(trackingNumbers),
+  callLogs: many(callLogs),
+}));
+
+export const pagesRelations = relations(pages, ({ one, many }) => ({
+  store: one(stores, {
+    fields: [pages.storeId],
+    references: [stores.id],
+  }),
   formSubmissions: many(formSubmissions),
   versions: many(pageVersions),
   analyticsEvents: many(analyticsEvents),
@@ -400,6 +434,13 @@ export const abTestVariantsRelations = relations(abTestVariants, ({ one }) => ({
 }));
 
 // Insert schemas
+export const insertStoreSchema = createInsertSchema(stores).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const updateStoreSchema = insertStoreSchema.partial();
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -430,7 +471,14 @@ export const insertPageVersionSchema = createInsertSchema(pageVersions).omit({
 });
 export type InsertPageVersionValidation = z.infer<typeof insertPageVersionSchema>;
 
+// Types - Zod store types
+export type InsertStoreValidation = z.infer<typeof insertStoreSchema>;
+export type UpdateStoreValidation = z.infer<typeof updateStoreSchema>;
+
 // Types - Drizzle native types for database operations
+export type InsertStore = typeof stores.$inferInsert;
+export type Store = typeof stores.$inferSelect;
+
 export type InsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 
