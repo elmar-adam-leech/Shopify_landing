@@ -458,9 +458,9 @@ export async function registerRoutes(
   // Record an analytics event
   app.post("/api/analytics", async (req, res) => {
     try {
-      // Get storeId from the page if pageId is provided
-      let storeId: string | undefined | null = req.body.storeId;
-      if (req.body.pageId && !storeId) {
+      // Always derive storeId from the page for security (ignore client-provided storeId)
+      let storeId: string | undefined | null = undefined;
+      if (req.body.pageId) {
         const page = await storage.getPage(req.body.pageId);
         if (page) {
           storeId = page.storeId;
@@ -469,7 +469,7 @@ export async function registerRoutes(
       
       const validatedData = insertAnalyticsEventSchema.parse({
         ...req.body,
-        storeId,
+        storeId, // Override any client-provided storeId
       });
       const event = await storage.createAnalyticsEvent(validatedData as any);
       res.status(201).json(event);
@@ -579,13 +579,19 @@ export async function registerRoutes(
     try {
       const validatedData = insertAbTestSchema.parse(req.body);
       
-      // Verify the original page exists
+      // Verify the original page exists and derive storeId from it
       const page = await storage.getPage(validatedData.originalPageId);
       if (!page) {
         return res.status(400).json({ error: "Original page not found" });
       }
 
-      const test = await storage.createAbTest(validatedData as any);
+      // Override client-provided storeId with the page's storeId for security
+      const testData = {
+        ...validatedData,
+        storeId: page.storeId,
+      };
+
+      const test = await storage.createAbTest(testData as any);
       res.status(201).json(test);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -600,7 +606,11 @@ export async function registerRoutes(
   app.patch("/api/ab-tests/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      const test = await storage.updateAbTest(id, req.body);
+      
+      // Remove storeId and originalPageId from updates to prevent cross-tenant manipulation
+      const { storeId, originalPageId, ...allowedUpdates } = req.body;
+      
+      const test = await storage.updateAbTest(id, allowedUpdates);
       if (!test) {
         return res.status(404).json({ error: "A/B test not found" });
       }
@@ -649,6 +659,17 @@ export async function registerRoutes(
         return res.status(404).json({ error: "A/B test not found" });
       }
 
+      // Verify the variant's page belongs to the same store as the test (security check)
+      if (req.body.pageId) {
+        const variantPage = await storage.getPage(req.body.pageId);
+        if (!variantPage) {
+          return res.status(400).json({ error: "Variant page not found" });
+        }
+        if (variantPage.storeId !== test.storeId) {
+          return res.status(403).json({ error: "Variant page must belong to the same store as the test" });
+        }
+      }
+
       const validatedData = insertAbTestVariantSchema.parse({
         ...req.body,
         abTestId,
@@ -668,8 +689,44 @@ export async function registerRoutes(
   // Update variant
   app.patch("/api/ab-tests/:abTestId/variants/:variantId", async (req, res) => {
     try {
-      const { variantId } = req.params;
-      const variant = await storage.updateAbTestVariant(variantId, req.body);
+      const { abTestId, variantId } = req.params;
+      
+      // Verify the variant exists and belongs to this test
+      const existingVariant = await storage.getAbTestVariant(variantId);
+      if (!existingVariant) {
+        return res.status(404).json({ error: "Variant not found" });
+      }
+      if (existingVariant.abTestId !== abTestId) {
+        return res.status(403).json({ error: "Variant does not belong to this test" });
+      }
+      
+      // Load the test to verify store membership context
+      const test = await storage.getAbTest(abTestId);
+      if (!test) {
+        return res.status(404).json({ error: "A/B test not found" });
+      }
+      
+      // Verify the variant's current page belongs to the test's store (data consistency)
+      const currentPage = await storage.getPage(existingVariant.pageId);
+      if (!currentPage || currentPage.storeId !== test.storeId) {
+        return res.status(403).json({ error: "Access denied - store mismatch" });
+      }
+      
+      // Strip abTestId from updates to prevent reassignment to another test
+      const { abTestId: _, ...updateData } = req.body;
+      
+      // If pageId is being updated, verify it belongs to the same store as the test
+      if (updateData.pageId) {
+        const variantPage = await storage.getPage(updateData.pageId);
+        if (!variantPage) {
+          return res.status(400).json({ error: "Page not found" });
+        }
+        if (variantPage.storeId !== test.storeId) {
+          return res.status(403).json({ error: "Page must belong to the same store as the test" });
+        }
+      }
+      
+      const variant = await storage.updateAbTestVariant(variantId, updateData);
       if (!variant) {
         return res.status(404).json({ error: "Variant not found" });
       }
@@ -683,7 +740,29 @@ export async function registerRoutes(
   // Delete variant
   app.delete("/api/ab-tests/:abTestId/variants/:variantId", async (req, res) => {
     try {
-      const { variantId } = req.params;
+      const { abTestId, variantId } = req.params;
+      
+      // Verify the variant exists and belongs to this test
+      const existingVariant = await storage.getAbTestVariant(variantId);
+      if (!existingVariant) {
+        return res.status(404).json({ error: "Variant not found" });
+      }
+      if (existingVariant.abTestId !== abTestId) {
+        return res.status(403).json({ error: "Variant does not belong to this test" });
+      }
+      
+      // Load the test to verify store membership context
+      const test = await storage.getAbTest(abTestId);
+      if (!test) {
+        return res.status(404).json({ error: "A/B test not found" });
+      }
+      
+      // Verify the variant's page belongs to the test's store (data consistency)
+      const currentPage = await storage.getPage(existingVariant.pageId);
+      if (!currentPage || currentPage.storeId !== test.storeId) {
+        return res.status(403).json({ error: "Access denied - store mismatch" });
+      }
+      
       const deleted = await storage.deleteAbTestVariant(variantId);
       if (!deleted) {
         return res.status(404).json({ error: "Variant not found" });

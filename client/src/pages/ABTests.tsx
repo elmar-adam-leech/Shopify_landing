@@ -11,10 +11,12 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Plus, Play, Pause, Trash2, BarChart3, FlaskConical } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useStore } from "@/lib/store-context";
 import type { AbTest, Page } from "@shared/schema";
 
 export default function ABTests() {
   const { toast } = useToast();
+  const { selectedStoreId } = useStore();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newTestName, setNewTestName] = useState("");
   const [newTestDescription, setNewTestDescription] = useState("");
@@ -23,15 +25,28 @@ export default function ABTests() {
   const [goalType, setGoalType] = useState<"form_submission" | "button_click" | "page_view">("form_submission");
 
   const { data: tests = [], isLoading: testsLoading } = useQuery<AbTest[]>({
-    queryKey: ["/api/ab-tests"],
+    queryKey: ["/api/ab-tests", selectedStoreId],
+    queryFn: async () => {
+      const url = selectedStoreId ? `/api/ab-tests?storeId=${selectedStoreId}` : "/api/ab-tests";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch tests");
+      return res.json();
+    },
   });
 
   const { data: pages = [] } = useQuery<Page[]>({
-    queryKey: ["/api/pages"],
+    queryKey: ["/api/pages", selectedStoreId],
+    queryFn: async () => {
+      const url = selectedStoreId ? `/api/pages?storeId=${selectedStoreId}` : "/api/pages";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch pages");
+      return res.json();
+    },
   });
 
   const createTestMutation = useMutation({
     mutationFn: async () => {
+      // Note: storeId is derived from the page on the backend for security
       const response = await apiRequest("POST", "/api/ab-tests", {
         name: newTestName,
         description: newTestDescription,
@@ -42,7 +57,7 @@ export default function ABTests() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/ab-tests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ab-tests", selectedStoreId] });
       setCreateDialogOpen(false);
       setNewTestName("");
       setNewTestDescription("");
@@ -60,7 +75,7 @@ export default function ABTests() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/ab-tests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ab-tests", selectedStoreId] });
       toast({ title: "Test status updated" });
     },
   });
@@ -70,7 +85,7 @@ export default function ABTests() {
       await apiRequest("DELETE", `/api/ab-tests/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/ab-tests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ab-tests", selectedStoreId] });
       toast({ title: "Test deleted" });
     },
   });

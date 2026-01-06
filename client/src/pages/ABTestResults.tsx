@@ -13,6 +13,7 @@ import { ArrowLeft, Plus, Trophy, TrendingUp, Eye, FileText, MousePointer } from
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useStore } from "@/lib/store-context";
 import type { AbTest, AbTestVariant, Page } from "@shared/schema";
 
 type VariantResult = {
@@ -41,6 +42,7 @@ export default function ABTestResults() {
   const [, params] = useRoute("/ab-tests/:id/results");
   const testId = params?.id;
   const { toast } = useToast();
+  const { selectedStoreId } = useStore();
   const [addVariantOpen, setAddVariantOpen] = useState(false);
   const [variantName, setVariantName] = useState("");
   const [selectedPageId, setSelectedPageId] = useState("");
@@ -57,7 +59,13 @@ export default function ABTestResults() {
   });
 
   const { data: pages = [] } = useQuery<Page[]>({
-    queryKey: ["/api/pages"],
+    queryKey: ["/api/pages", selectedStoreId],
+    queryFn: async () => {
+      const url = selectedStoreId ? `/api/pages?storeId=${selectedStoreId}` : "/api/pages";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch pages");
+      return res.json();
+    },
   });
 
   const addVariantMutation = useMutation({
