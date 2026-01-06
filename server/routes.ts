@@ -317,6 +317,7 @@ export async function registerRoutes(
       
       const validatedData = insertFormSubmissionSchema.parse({
         ...formData,
+        blockId,
         pageId,
         storeId: page.storeId, // Inherit storeId from page
       });
