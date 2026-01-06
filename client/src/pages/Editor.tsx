@@ -47,6 +47,22 @@ const defaultBlockConfigs: Record<BlockType, Record<string, any>> = {
     showTitle: true,
     showAddToCart: true,
   },
+  "product-block": {
+    productId: "",
+    showImage: true,
+    showTitle: true,
+    showPrice: true,
+    showCompareAtPrice: true,
+    showDescription: true,
+    showVariants: true,
+    showQuantitySelector: true,
+    showAddToCart: true,
+    showBuyNow: false,
+    layout: "vertical",
+    imageSize: "large",
+    maxWidth: "medium",
+    alignment: "center",
+  },
   "text-block": {
     content: "Add your text here...",
     textAlign: "left",
@@ -549,6 +565,7 @@ export default function Editor() {
           onClose={() => setSettingsBlockId(null)}
           onUpdate={handleUpdateBlockConfig}
           onUpdateBlock={handleUpdateBlock}
+          storeId={pageData?.storeId || selectedStoreId || undefined}
         />
 
         <PixelSettingsDialog

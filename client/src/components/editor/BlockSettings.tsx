@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -13,8 +13,9 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Plus, Trash2, GripVertical, FlaskConical, Copy, Eye, Move, ChevronDown, ChevronUp, EyeOff } from "lucide-react";
-import type { Block, BlockType, BlockVariant, VisibilityCondition, VisibilityRules, BlockPosition } from "@shared/schema";
+import type { Block, BlockType, BlockVariant, VisibilityCondition, VisibilityRules, BlockPosition, ShopifyProduct } from "@shared/schema";
 import { v4 as uuidv4 } from "uuid";
+import { ProductPicker } from "./ProductPicker";
 
 interface BlockSettingsProps {
   block: Block | null;
@@ -22,6 +23,8 @@ interface BlockSettingsProps {
   onClose: () => void;
   onUpdate: (config: Record<string, any>) => void;
   onUpdateBlock?: (block: Block) => void;
+  storeId?: string;
+  userId?: string;
 }
 
 function HeroSettings({ config, onUpdate }: { config: Record<string, any>; onUpdate: (config: Record<string, any>) => void }) {
@@ -942,24 +945,89 @@ function ChatBlockSettings({ config, onUpdate }: { config: Record<string, any>; 
   );
 }
 
-function ProductBlockSettings({ config, onUpdate }: { config: Record<string, any>; onUpdate: (config: Record<string, any>) => void }) {
+function ProductBlockSettings({ 
+  config, 
+  onUpdate, 
+  storeId, 
+  userId 
+}: { 
+  config: Record<string, any>; 
+  onUpdate: (config: Record<string, any>) => void;
+  storeId?: string;
+  userId?: string;
+}) {
+  const handleProductSelect = useCallback((product: ShopifyProduct) => {
+    onUpdate({
+      ...config,
+      productId: product.id,
+      shopifyProductId: product.shopifyProductId,
+      productHandle: product.handle,
+      productTitle: product.title,
+      productImage: product.featuredImageUrl,
+      productPrice: product.price,
+      productCompareAtPrice: product.compareAtPrice,
+      productVendor: product.vendor,
+      productType: product.productType,
+      productDescription: product.description,
+      productStatus: product.status,
+      productTags: product.tags,
+      productData: product.productData,
+    });
+  }, [config, onUpdate]);
+
+  const selectedProduct = config.productId ? {
+    id: config.productId,
+    storeId: storeId || "",
+    shopifyProductId: config.shopifyProductId || "",
+    handle: config.productHandle || "",
+    title: config.productTitle || "Unknown Product",
+    vendor: config.productVendor || null,
+    productType: config.productType || null,
+    status: (config.productStatus || "active") as "active" | "draft" | "archived",
+    tags: config.productTags || null,
+    featuredImageUrl: config.productImage || null,
+    price: config.productPrice || null,
+    compareAtPrice: config.productCompareAtPrice || null,
+    description: config.productDescription || null,
+    productData: config.productData || null,
+    shopifyUpdatedAt: new Date(),
+    syncedAt: new Date(),
+    createdAt: new Date(),
+  } : null;
+
   return (
     <div className="space-y-6">
-      <div className="p-4 bg-muted rounded-lg">
-        <p className="text-sm text-muted-foreground text-center">
-          Connect to Shopify to select a product from your store
-        </p>
+      <div className="space-y-2">
+        <Label>Product</Label>
+        {storeId ? (
+          <ProductPicker
+            storeId={storeId}
+            userId={userId}
+            selectedProductId={config.productId}
+            selectedProduct={selectedProduct}
+            onSelect={handleProductSelect}
+          />
+        ) : (
+          <div className="p-4 bg-muted rounded-lg">
+            <p className="text-sm text-muted-foreground text-center">
+              Select a store to browse products
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="productId">Product ID (manual entry)</Label>
         <Input
           id="productId"
-          value={config.productId || ""}
-          onChange={(e) => onUpdate({ ...config, productId: e.target.value })}
+          value={config.shopifyProductId || config.productId || ""}
+          onChange={(e) => onUpdate({ ...config, productId: e.target.value, shopifyProductId: e.target.value })}
           placeholder="Enter Shopify product ID or handle"
           data-testid="input-product-id"
         />
+        <p className="text-xs text-muted-foreground">
+          Use the product picker above or enter a Shopify product ID manually
+        </p>
       </div>
 
       <div className="space-y-4">
@@ -1241,14 +1309,20 @@ function ProductBlockSettings({ config, onUpdate }: { config: Record<string, any
   );
 }
 
-function getSettingsComponent(type: BlockType, config: Record<string, any>, onUpdate: (config: Record<string, any>) => void) {
+function getSettingsComponent(
+  type: BlockType, 
+  config: Record<string, any>, 
+  onUpdate: (config: Record<string, any>) => void,
+  storeId?: string,
+  userId?: string
+) {
   switch (type) {
     case "hero-banner":
       return <HeroSettings config={config} onUpdate={onUpdate} />;
     case "product-grid":
       return <ProductGridSettings config={config} onUpdate={onUpdate} />;
     case "product-block":
-      return <ProductBlockSettings config={config} onUpdate={onUpdate} />;
+      return <ProductBlockSettings config={config} onUpdate={onUpdate} storeId={storeId} userId={userId} />;
     case "text-block":
       return <TextBlockSettings config={config} onUpdate={onUpdate} />;
     case "image-block":
@@ -1866,7 +1940,7 @@ function PositionPanel({ block, onUpdateBlock }: { block: Block; onUpdateBlock?:
   );
 }
 
-export function BlockSettings({ block, open, onClose, onUpdate, onUpdateBlock }: BlockSettingsProps) {
+export function BlockSettings({ block, open, onClose, onUpdate, onUpdateBlock, storeId, userId }: BlockSettingsProps) {
   const [activeTab, setActiveTab] = useState("settings");
   const [editingVariantId, setEditingVariantId] = useState<string | null>(null);
   
@@ -1955,7 +2029,7 @@ export function BlockSettings({ block, open, onClose, onUpdate, onUpdateBlock }:
                   </div>
                 </Card>
               )}
-              {getSettingsComponent(block.type, editingConfig, handleConfigUpdate)}
+              {getSettingsComponent(block.type, editingConfig, handleConfigUpdate, storeId, userId)}
             </TabsContent>
             <TabsContent value="position" className="mt-0">
               <PositionPanel block={block} onUpdateBlock={onUpdateBlock} />
