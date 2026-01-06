@@ -14,12 +14,13 @@ import {
 } from "@dnd-kit/core";
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { v4 as uuidv4 } from "uuid";
-import { ArrowLeft, Save, Eye, Settings, Loader2, Monitor, Tablet, Smartphone, History, FileSliders } from "lucide-react";
+import { ArrowLeft, Save, Eye, Settings, Loader2, Monitor, Tablet, Smartphone, History, FileSliders, Layers, List, Ruler, Grid3X3 } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { BlockLibrary } from "@/components/editor/BlockLibrary";
 import { EditorCanvas } from "@/components/editor/EditorCanvas";
+import { FreeformCanvas } from "@/components/editor/FreeformCanvas";
 import { BlockSettings } from "@/components/editor/BlockSettings";
 import { PixelSettingsDialog } from "@/components/editor/PixelSettings";
 import { PageSettingsDialog } from "@/components/editor/PageSettings";
@@ -28,7 +29,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { useStore } from "@/lib/store-context";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Page, Block, BlockType, PixelSettings } from "@shared/schema";
+import type { Page, Block, BlockType, PixelSettings, Section, BlockPosition } from "@shared/schema";
 
 const defaultBlockConfigs: Record<BlockType, Record<string, any>> = {
   "hero-banner": {
@@ -110,6 +111,7 @@ export default function Editor() {
   const isNewPage = pageId === "new";
 
   const [blocks, setBlocks] = useState<Block[]>([]);
+  const [sections, setSections] = useState<Section[]>([]);
   const [title, setTitle] = useState("Untitled Page");
   const [pixelSettings, setPixelSettings] = useState<PixelSettings>(defaultPixelSettings);
   const [allowIndexing, setAllowIndexing] = useState(true);
@@ -121,6 +123,9 @@ export default function Editor() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [viewportSize, setViewportSize] = useState<"desktop" | "tablet" | "mobile">("desktop");
+  const [layoutMode, setLayoutMode] = useState<"flow" | "freeform">("flow");
+  const [showRulers, setShowRulers] = useState(true);
+  const [showSnapGuides, setShowSnapGuides] = useState(true);
 
   // Load template blocks from sessionStorage if this is a new page
   useEffect(() => {
@@ -166,6 +171,7 @@ export default function Editor() {
   useEffect(() => {
     if (pageData && !isNewPage) {
       setBlocks(pageData.blocks || []);
+      setSections(pageData.sections || []);
       setTitle(pageData.title);
       setPixelSettings(pageData.pixelSettings || defaultPixelSettings);
       setAllowIndexing(pageData.allowIndexing ?? true);
@@ -180,6 +186,7 @@ export default function Editor() {
         title,
         slug,
         blocks,
+        sections,
         pixelSettings,
         allowIndexing,
         status: "draft" as const,
@@ -235,6 +242,16 @@ export default function Editor() {
         type: blockType,
         config: { ...defaultBlockConfigs[blockType] },
         order: blocks.length,
+        ...(layoutMode === "freeform" ? {
+          position: {
+            x: 50,
+            y: 50 + blocks.filter(b => b.position).length * 20,
+            width: blockType === "hero-banner" ? 400 : 300,
+            height: blockType === "hero-banner" ? 300 : 150,
+            zIndex: blocks.filter(b => b.position).length + 1,
+            locked: false,
+          }
+        } : {}),
       };
       setBlocks((prev) => [...prev, newBlock]);
       setHasChanges(true);
@@ -284,6 +301,20 @@ export default function Editor() {
   const handleUpdateBlock = useCallback((updatedBlock: Block) => {
     setBlocks((prev) =>
       prev.map((b) => (b.id === updatedBlock.id ? updatedBlock : b))
+    );
+    setHasChanges(true);
+  }, []);
+
+  const handleUpdateBlockPosition = useCallback((blockId: string, positionUpdate: Partial<BlockPosition>) => {
+    setBlocks((prev) =>
+      prev.map((b) => {
+        if (b.id !== blockId) return b;
+        const currentPosition = b.position || { x: 0, y: 0, width: 200, height: 100, zIndex: 1, locked: false };
+        return {
+          ...b,
+          position: { ...currentPosition, ...positionUpdate },
+        };
+      })
     );
     setHasChanges(true);
   }, []);
@@ -393,55 +424,116 @@ export default function Editor() {
           </aside>
 
           <main className="flex-1 overflow-hidden bg-muted/30 flex flex-col">
-            {/* Viewport Size Toggle */}
-            <div className="flex items-center justify-center gap-1 py-2 border-b bg-background">
-              <Button
-                variant={viewportSize === "desktop" ? "secondary" : "ghost"}
-                size="icon"
-                onClick={() => setViewportSize("desktop")}
-                data-testid="button-viewport-desktop"
-                className="toggle-elevate"
-              >
-                <Monitor className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={viewportSize === "tablet" ? "secondary" : "ghost"}
-                size="icon"
-                onClick={() => setViewportSize("tablet")}
-                data-testid="button-viewport-tablet"
-                className="toggle-elevate"
-              >
-                <Tablet className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={viewportSize === "mobile" ? "secondary" : "ghost"}
-                size="icon"
-                onClick={() => setViewportSize("mobile")}
-                data-testid="button-viewport-mobile"
-                className="toggle-elevate"
-              >
-                <Smartphone className="h-4 w-4" />
-              </Button>
+            {/* Viewport Size Toggle and Layout Mode */}
+            <div className="flex items-center justify-between py-2 px-4 border-b bg-background">
+              <div className="flex items-center gap-1">
+                <Button
+                  variant={layoutMode === "flow" ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={() => setLayoutMode("flow")}
+                  data-testid="button-layout-flow"
+                  className="gap-1.5"
+                >
+                  <List className="h-4 w-4" />
+                  Flow
+                </Button>
+                <Button
+                  variant={layoutMode === "freeform" ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={() => setLayoutMode("freeform")}
+                  data-testid="button-layout-freeform"
+                  className="gap-1.5"
+                >
+                  <Layers className="h-4 w-4" />
+                  Freeform
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <Button
+                  variant={viewportSize === "desktop" ? "secondary" : "ghost"}
+                  size="icon"
+                  onClick={() => setViewportSize("desktop")}
+                  data-testid="button-viewport-desktop"
+                >
+                  <Monitor className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant={viewportSize === "tablet" ? "secondary" : "ghost"}
+                  size="icon"
+                  onClick={() => setViewportSize("tablet")}
+                  data-testid="button-viewport-tablet"
+                >
+                  <Tablet className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant={viewportSize === "mobile" ? "secondary" : "ghost"}
+                  size="icon"
+                  onClick={() => setViewportSize("mobile")}
+                  data-testid="button-viewport-mobile"
+                >
+                  <Smartphone className="h-4 w-4" />
+                </Button>
+              </div>
+
+              {layoutMode === "freeform" && (
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant={showRulers ? "secondary" : "ghost"}
+                    size="icon"
+                    onClick={() => setShowRulers(!showRulers)}
+                    data-testid="button-toggle-rulers"
+                    title="Toggle rulers"
+                  >
+                    <Ruler className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant={showSnapGuides ? "secondary" : "ghost"}
+                    size="icon"
+                    onClick={() => setShowSnapGuides(!showSnapGuides)}
+                    data-testid="button-toggle-snap-guides"
+                    title="Toggle snap guides"
+                  >
+                    <Grid3X3 className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </div>
             
             {/* Canvas Container */}
             <div className="flex-1 overflow-auto flex justify-center py-4">
-              <div 
-                className={`transition-all duration-300 ${
-                  viewportSize === "desktop" ? "w-full max-w-none" :
-                  viewportSize === "tablet" ? "w-[768px]" : "w-[375px]"
-                }`}
-                style={{ minHeight: "100%" }}
-              >
-                <EditorCanvas
+              {layoutMode === "flow" ? (
+                <div 
+                  className={`transition-all duration-300 ${
+                    viewportSize === "desktop" ? "w-full max-w-none" :
+                    viewportSize === "tablet" ? "w-[768px]" : "w-[375px]"
+                  }`}
+                  style={{ minHeight: "100%" }}
+                >
+                  <EditorCanvas
+                    blocks={blocks.filter(b => !b.position)}
+                    selectedBlockId={selectedBlockId}
+                    onSelectBlock={setSelectedBlockId}
+                    onDeleteBlock={handleDeleteBlock}
+                    onDuplicateBlock={handleDuplicateBlock}
+                    onOpenSettings={setSettingsBlockId}
+                  />
+                </div>
+              ) : (
+                <FreeformCanvas
                   blocks={blocks}
+                  sections={sections}
                   selectedBlockId={selectedBlockId}
                   onSelectBlock={setSelectedBlockId}
                   onDeleteBlock={handleDeleteBlock}
                   onDuplicateBlock={handleDuplicateBlock}
                   onOpenSettings={setSettingsBlockId}
+                  onUpdateBlockPosition={handleUpdateBlockPosition}
+                  viewportSize={viewportSize}
+                  showRulers={showRulers}
+                  showSnapGuides={showSnapGuides}
                 />
-              </div>
+              )}
             </div>
           </main>
         </div>

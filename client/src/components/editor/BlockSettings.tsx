@@ -11,8 +11,8 @@ import { Slider } from "@/components/ui/slider";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, GripVertical, FlaskConical, Copy, Eye } from "lucide-react";
-import type { Block, BlockType, BlockVariant, VisibilityCondition, VisibilityRules } from "@shared/schema";
+import { Plus, Trash2, GripVertical, FlaskConical, Copy, Eye, Move } from "lucide-react";
+import type { Block, BlockType, BlockVariant, VisibilityCondition, VisibilityRules, BlockPosition } from "@shared/schema";
 import { v4 as uuidv4 } from "uuid";
 
 interface BlockSettingsProps {
@@ -1180,6 +1180,109 @@ function VisibilityPanel({
   );
 }
 
+function PositionPanel({ block, onUpdateBlock }: { block: Block; onUpdateBlock?: (block: Block) => void }) {
+  if (!block.position || !onUpdateBlock) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        <p>Position controls are only available for freeform blocks.</p>
+        <p className="text-sm mt-2">Switch to Freeform mode to enable pixel-perfect positioning.</p>
+      </div>
+    );
+  }
+
+  const position = block.position;
+
+  const handleUpdatePosition = (updates: Partial<BlockPosition>) => {
+    onUpdateBlock({
+      ...block,
+      position: { ...position, ...updates },
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="pos-x">X Position</Label>
+          <Input
+            id="pos-x"
+            type="number"
+            value={position.x}
+            onChange={(e) => handleUpdatePosition({ x: parseInt(e.target.value) || 0 })}
+            data-testid="input-position-x"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="pos-y">Y Position</Label>
+          <Input
+            id="pos-y"
+            type="number"
+            value={position.y}
+            onChange={(e) => handleUpdatePosition({ y: parseInt(e.target.value) || 0 })}
+            data-testid="input-position-y"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="pos-width">Width</Label>
+          <Input
+            id="pos-width"
+            type="number"
+            value={position.width}
+            onChange={(e) => handleUpdatePosition({ width: parseInt(e.target.value) || 100 })}
+            data-testid="input-position-width"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="pos-height">Height</Label>
+          <Input
+            id="pos-height"
+            type="number"
+            value={position.height}
+            onChange={(e) => handleUpdatePosition({ height: parseInt(e.target.value) || 100 })}
+            data-testid="input-position-height"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Z-Index (Layer Order): {position.zIndex}</Label>
+        <Slider
+          value={[position.zIndex]}
+          onValueChange={(value) => handleUpdatePosition({ zIndex: value[0] })}
+          min={1}
+          max={100}
+          step={1}
+          data-testid="slider-position-zindex"
+        />
+        <p className="text-xs text-muted-foreground">Higher values appear on top of lower values</p>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <div className="space-y-0.5">
+          <Label>Lock Position</Label>
+          <p className="text-xs text-muted-foreground">Prevent dragging and resizing</p>
+        </div>
+        <Switch
+          checked={position.locked}
+          onCheckedChange={(checked) => handleUpdatePosition({ locked: checked })}
+          data-testid="switch-position-locked"
+        />
+      </div>
+
+      <Card className="p-3 bg-muted/50">
+        <p className="text-sm font-medium mb-2">Responsive Breakpoints</p>
+        <p className="text-xs text-muted-foreground">
+          Use the viewport toggles in the editor toolbar to set different positions for tablet and mobile views.
+          Changes made in each viewport are saved separately.
+        </p>
+      </Card>
+    </div>
+  );
+}
+
 export function BlockSettings({ block, open, onClose, onUpdate, onUpdateBlock }: BlockSettingsProps) {
   const [activeTab, setActiveTab] = useState("settings");
   const [editingVariantId, setEditingVariantId] = useState<string | null>(null);
@@ -1230,10 +1333,16 @@ export function BlockSettings({ block, open, onClose, onUpdate, onUpdateBlock }:
           </SheetTitle>
         </SheetHeader>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
-          <TabsList className="grid grid-cols-3 mb-4">
+          <TabsList className={`grid mb-4 ${block.position ? 'grid-cols-4' : 'grid-cols-3'}`}>
             <TabsTrigger value="settings" data-testid="tab-block-settings">
               Settings
             </TabsTrigger>
+            {block.position && (
+              <TabsTrigger value="position" data-testid="tab-block-position">
+                <Move className="h-4 w-4 mr-1" />
+                Position
+              </TabsTrigger>
+            )}
             <TabsTrigger value="visibility" data-testid="tab-block-visibility">
               <Eye className="h-4 w-4 mr-1" />
               Visibility
@@ -1264,6 +1373,9 @@ export function BlockSettings({ block, open, onClose, onUpdate, onUpdateBlock }:
                 </Card>
               )}
               {getSettingsComponent(block.type, editingConfig, handleConfigUpdate)}
+            </TabsContent>
+            <TabsContent value="position" className="mt-0">
+              <PositionPanel block={block} onUpdateBlock={onUpdateBlock} />
             </TabsContent>
             <TabsContent value="visibility" className="mt-0">
               <VisibilityPanel block={block} onUpdateBlock={onUpdateBlock} />

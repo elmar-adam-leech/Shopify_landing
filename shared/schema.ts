@@ -137,6 +137,44 @@ export const blockVariantSchema = z.object({
 
 export type BlockVariant = z.infer<typeof blockVariantSchema>;
 
+// Positioning schema for freeform canvas mode
+export const blockPositionSchema = z.object({
+  x: z.number().default(0),
+  y: z.number().default(0),
+  width: z.number().default(200),
+  height: z.number().default(100),
+  zIndex: z.number().default(1),
+  locked: z.boolean().default(false),
+  // Responsive breakpoint positions (optional overrides)
+  tablet: z.object({
+    x: z.number().optional(),
+    y: z.number().optional(),
+    width: z.number().optional(),
+    height: z.number().optional(),
+  }).optional(),
+  mobile: z.object({
+    x: z.number().optional(),
+    y: z.number().optional(),
+    width: z.number().optional(),
+    height: z.number().optional(),
+  }).optional(),
+});
+
+export type BlockPosition = z.infer<typeof blockPositionSchema>;
+
+// Section schema for grouping blocks with layout modes
+export const sectionSchema = z.object({
+  id: z.string(),
+  name: z.string().default("Section"),
+  layoutMode: z.enum(["flow", "freeform"]).default("flow"),
+  height: z.number().default(400), // Height in pixels for freeform mode
+  backgroundColor: z.string().optional(),
+  backgroundImage: z.string().optional(),
+  blocks: z.array(z.string()).default([]), // Block IDs in this section
+});
+
+export type Section = z.infer<typeof sectionSchema>;
+
 // Visibility condition schema for query string personalization
 export const visibilityConditionSchema = z.object({
   id: z.string(),
@@ -178,6 +216,10 @@ export const blockSchema = z.object({
   abTestEnabled: z.boolean().optional(),
   // Visibility rules for query string personalization
   visibilityRules: visibilityRulesSchema.optional(),
+  // Section ID this block belongs to (optional, for backward compatibility)
+  sectionId: z.string().optional(),
+  // Positioning for freeform layout mode
+  position: blockPositionSchema.optional(),
 });
 
 export type Block = z.infer<typeof blockSchema>;
@@ -244,6 +286,7 @@ export const pages = pgTable("pages", {
   title: text("title").notNull(),
   slug: text("slug").notNull(),
   blocks: jsonb("blocks").$type<Block[]>().notNull().default([]),
+  sections: jsonb("sections").$type<Section[]>().default([]),
   pixelSettings: jsonb("pixel_settings").$type<PixelSettings>(),
   status: text("status", { enum: ["draft", "published"] }).notNull().default("draft"),
   allowIndexing: boolean("allow_indexing").notNull().default(true),
