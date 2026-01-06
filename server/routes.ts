@@ -307,6 +307,7 @@ export async function registerRoutes(
   app.post("/api/pages/:pageId/submissions", async (req, res) => {
     try {
       const { pageId } = req.params;
+      const { blockId, ...formData } = req.body;
       
       // Check if page exists and get its storeId
       const page = await storage.getPage(pageId);
@@ -315,12 +316,50 @@ export async function registerRoutes(
       }
       
       const validatedData = insertFormSubmissionSchema.parse({
-        ...req.body,
+        ...formData,
         pageId,
         storeId: page.storeId, // Inherit storeId from page
       });
       
       const submission = await storage.createFormSubmission(validatedData as any);
+      
+      // Find the form block to get webhook configuration
+      if (blockId && page.blocks) {
+        const formBlock = page.blocks.find((b: any) => b.id === blockId && b.type === "form-block");
+        if (formBlock?.config?.webhooks) {
+          // Send to each enabled webhook asynchronously
+          const webhookPromises = formBlock.config.webhooks
+            .filter((webhook: any) => webhook.enabled && webhook.url)
+            .map(async (webhook: any) => {
+              try {
+                const webhookPayload = {
+                  formData: submission.data,
+                  pageId,
+                  pageTitle: page.title,
+                  pageSlug: page.slug,
+                  submittedAt: submission.submittedAt || new Date().toISOString(),
+                  submissionId: submission.id,
+                };
+                
+                await fetch(webhook.url, {
+                  method: webhook.method || "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    ...(webhook.headers || {}),
+                  },
+                  body: JSON.stringify(webhookPayload),
+                });
+                console.log(`Webhook sent to ${webhook.name || webhook.url}`);
+              } catch (webhookError) {
+                console.error(`Webhook failed for ${webhook.name || webhook.url}:`, webhookError);
+              }
+            });
+          
+          // Don't wait for webhooks to complete - fire and forget
+          Promise.all(webhookPromises).catch(console.error);
+        }
+      }
+      
       res.status(201).json(submission);
     } catch (error) {
       if (error instanceof z.ZodError) {

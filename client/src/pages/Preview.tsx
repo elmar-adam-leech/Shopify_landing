@@ -598,6 +598,13 @@ function generatePixelScripts(settings: any): string {
   return scripts.join("\n");
 }
 
+// Helper to get URL parameter value
+function getUrlParam(paramName: string): string {
+  if (typeof window === "undefined") return "";
+  const urlParams = new URLSearchParams(window.location.search);
+  return urlParams.get(paramName) || "";
+}
+
 // Interactive form block component with state for form submission
 function FormBlockPreview({ 
   block, 
@@ -610,6 +617,26 @@ function FormBlockPreview({
 }) {
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
+
+  // Auto-populate hidden fields with URL params on mount
+  useEffect(() => {
+    const hiddenFields = (config.fields || []).filter((f: any) => f.type === "hidden");
+    const autoCapturedData: Record<string, string> = {};
+    
+    hiddenFields.forEach((field: any) => {
+      const paramName = field.autoCapture === "custom" ? field.customParam : field.autoCapture;
+      if (paramName) {
+        const value = getUrlParam(paramName);
+        if (value) {
+          autoCapturedData[field.id] = value;
+        }
+      }
+    });
+    
+    if (Object.keys(autoCapturedData).length > 0) {
+      setFormData(prev => ({ ...prev, ...autoCapturedData }));
+    }
+  }, [config.fields]);
 
   const handleFieldChange = (fieldId: string, value: string) => {
     setFormData(prev => ({ ...prev, [fieldId]: value }));
@@ -629,8 +656,8 @@ function FormBlockPreview({
         data-testid={`preview-block-${block.id}`}
       >
         <div className="max-w-md mx-auto text-center">
-          <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-            <p className="text-green-800 font-medium">
+          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-6">
+            <p className="text-green-800 dark:text-green-200 font-medium">
               {config.successMessage || "Thank you for your submission!"}
             </p>
           </div>
@@ -639,31 +666,203 @@ function FormBlockPreview({
     );
   }
 
+  const renderNameField = (field: any) => {
+    const format = field.nameFormat || "full";
+    
+    if (format === "full") {
+      return (
+        <input
+          type="text"
+          className="w-full px-3 py-2 border rounded-lg bg-background"
+          placeholder={field.placeholder || "Full Name"}
+          value={formData[field.id] || ""}
+          onChange={(e) => handleFieldChange(field.id, e.target.value)}
+          required={field.required}
+          data-testid={`form-field-${field.id}`}
+        />
+      );
+    }
+    
+    if (format === "first_last") {
+      return (
+        <div className="grid grid-cols-2 gap-2">
+          <input
+            type="text"
+            className="w-full px-3 py-2 border rounded-lg bg-background"
+            placeholder="First Name"
+            value={formData[`${field.id}_first`] || ""}
+            onChange={(e) => handleFieldChange(`${field.id}_first`, e.target.value)}
+            required={field.required}
+            data-testid={`form-field-${field.id}-first`}
+          />
+          <input
+            type="text"
+            className="w-full px-3 py-2 border rounded-lg bg-background"
+            placeholder="Last Name"
+            value={formData[`${field.id}_last`] || ""}
+            onChange={(e) => handleFieldChange(`${field.id}_last`, e.target.value)}
+            required={field.required}
+            data-testid={`form-field-${field.id}-last`}
+          />
+        </div>
+      );
+    }
+    
+    return (
+      <div className="grid grid-cols-3 gap-2">
+        <input
+          type="text"
+          className="w-full px-3 py-2 border rounded-lg bg-background"
+          placeholder="First"
+          value={formData[`${field.id}_first`] || ""}
+          onChange={(e) => handleFieldChange(`${field.id}_first`, e.target.value)}
+          required={field.required}
+          data-testid={`form-field-${field.id}-first`}
+        />
+        <input
+          type="text"
+          className="w-full px-3 py-2 border rounded-lg bg-background"
+          placeholder="Middle"
+          value={formData[`${field.id}_middle`] || ""}
+          onChange={(e) => handleFieldChange(`${field.id}_middle`, e.target.value)}
+          data-testid={`form-field-${field.id}-middle`}
+        />
+        <input
+          type="text"
+          className="w-full px-3 py-2 border rounded-lg bg-background"
+          placeholder="Last"
+          value={formData[`${field.id}_last`] || ""}
+          onChange={(e) => handleFieldChange(`${field.id}_last`, e.target.value)}
+          required={field.required}
+          data-testid={`form-field-${field.id}-last`}
+        />
+      </div>
+    );
+  };
+
+  const renderAddressField = (field: any) => {
+    const components = field.addressComponents || { street: true, city: true, state: true, zip: true };
+    
+    return (
+      <div className="space-y-2">
+        {components.street && (
+          <input
+            type="text"
+            className="w-full px-3 py-2 border rounded-lg bg-background"
+            placeholder={field.placeholder || "Street Address"}
+            value={formData[`${field.id}_street`] || ""}
+            onChange={(e) => handleFieldChange(`${field.id}_street`, e.target.value)}
+            required={field.required}
+            data-testid={`form-field-${field.id}-street`}
+          />
+        )}
+        {components.street2 && (
+          <input
+            type="text"
+            className="w-full px-3 py-2 border rounded-lg bg-background"
+            placeholder="Apt, Suite, etc. (optional)"
+            value={formData[`${field.id}_street2`] || ""}
+            onChange={(e) => handleFieldChange(`${field.id}_street2`, e.target.value)}
+            data-testid={`form-field-${field.id}-street2`}
+          />
+        )}
+        <div className="grid grid-cols-2 gap-2">
+          {components.city && (
+            <input
+              type="text"
+              className="w-full px-3 py-2 border rounded-lg bg-background"
+              placeholder="City"
+              value={formData[`${field.id}_city`] || ""}
+              onChange={(e) => handleFieldChange(`${field.id}_city`, e.target.value)}
+              required={field.required}
+              data-testid={`form-field-${field.id}-city`}
+            />
+          )}
+          {components.state && (
+            <input
+              type="text"
+              className="w-full px-3 py-2 border rounded-lg bg-background"
+              placeholder="State"
+              value={formData[`${field.id}_state`] || ""}
+              onChange={(e) => handleFieldChange(`${field.id}_state`, e.target.value)}
+              required={field.required}
+              data-testid={`form-field-${field.id}-state`}
+            />
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {components.zip && (
+            <input
+              type="text"
+              className="w-full px-3 py-2 border rounded-lg bg-background"
+              placeholder="ZIP Code"
+              value={formData[`${field.id}_zip`] || ""}
+              onChange={(e) => handleFieldChange(`${field.id}_zip`, e.target.value)}
+              required={field.required}
+              data-testid={`form-field-${field.id}-zip`}
+            />
+          )}
+          {components.country && (
+            <input
+              type="text"
+              className="w-full px-3 py-2 border rounded-lg bg-background"
+              placeholder="Country"
+              value={formData[`${field.id}_country`] || ""}
+              onChange={(e) => handleFieldChange(`${field.id}_country`, e.target.value)}
+              data-testid={`form-field-${field.id}-country`}
+            />
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderField = (field: any) => {
     const value = formData[field.id] || "";
     
     switch (field.type) {
+      case "hidden":
+        return null;
+      case "name":
+        return renderNameField(field);
+      case "address":
+        return renderAddressField(field);
+      case "checkbox":
+        return (
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              className="w-4 h-4 rounded border"
+              checked={value === "true"}
+              onChange={(e) => handleFieldChange(field.id, e.target.checked ? "true" : "false")}
+              required={field.required}
+              data-testid={`form-field-${field.id}`}
+            />
+            <span className="text-sm">{field.label}</span>
+          </div>
+        );
       case "textarea":
         return (
           <textarea
-            className="w-full px-3 py-2 border rounded-lg"
-            placeholder={field.label}
+            className="w-full px-3 py-2 border rounded-lg bg-background"
+            placeholder={field.placeholder || field.label}
             value={value}
             onChange={(e) => handleFieldChange(field.id, e.target.value)}
             required={field.required}
+            rows={4}
             data-testid={`form-field-${field.id}`}
           />
         );
       case "select":
         return (
           <select
-            className="w-full px-3 py-2 border rounded-lg"
+            className="w-full px-3 py-2 border rounded-lg bg-background"
             value={value}
             onChange={(e) => handleFieldChange(field.id, e.target.value)}
             required={field.required}
             data-testid={`form-field-${field.id}`}
           >
-            <option value="">Select {field.label}</option>
+            <option value="">{field.placeholder || `Select ${field.label}`}</option>
             {(field.options || []).map((option: string, index: number) => (
               <option key={index} value={option}>{option}</option>
             ))}
@@ -673,8 +872,8 @@ function FormBlockPreview({
         return (
           <input
             type={field.type}
-            className="w-full px-3 py-2 border rounded-lg"
-            placeholder={field.label}
+            className="w-full px-3 py-2 border rounded-lg bg-background"
+            placeholder={field.placeholder || field.label}
             value={value}
             onChange={(e) => handleFieldChange(field.id, e.target.value)}
             required={field.required}
@@ -683,6 +882,8 @@ function FormBlockPreview({
         );
     }
   };
+
+  const visibleFields = (config.fields || []).filter((f: any) => f.type !== "hidden");
 
   return (
     <section
@@ -695,18 +896,20 @@ function FormBlockPreview({
           <h2 className="text-2xl font-bold mb-6 text-center">{config.title}</h2>
         )}
         <form className="space-y-4" onSubmit={handleSubmit}>
-          {(config.fields || []).map((field: any) => (
+          {visibleFields.map((field: any) => (
             <div key={field.id}>
-              <label className="block text-sm font-medium mb-1">
-                {field.label}
-                {field.required && <span className="text-red-500 ml-1">*</span>}
-              </label>
+              {field.type !== "checkbox" && (
+                <label className="block text-sm font-medium mb-1">
+                  {field.label}
+                  {field.required && <span className="text-red-500 ml-1">*</span>}
+                </label>
+              )}
               {renderField(field)}
             </div>
           ))}
           <button
             type="submit"
-            className="w-full py-3 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg transition-colors"
+            className="w-full py-3 bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-lg transition-colors"
             data-testid="form-submit-button"
           >
             {config.submitText || "Submit"}
@@ -856,9 +1059,10 @@ export default function Preview() {
     }
   }, [pageId, abTestInfo]);
 
-  // Handle form submission with pixel event firing
-  const handleFormSubmit = useCallback((blockId: string, config: any, formData: Record<string, string>) => {
+  // Handle form submission with pixel event firing and API submission
+  const handleFormSubmit = useCallback(async (blockId: string, config: any, formData: Record<string, string>) => {
     if (pageId) {
+      // Track event for analytics
       trackEvent(
         pageId, 
         "form_submission", 
@@ -877,6 +1081,24 @@ export default function Preview() {
           value: config.conversionValue || 0,
           currency: "USD",
         }, page.pixelSettings);
+      }
+      
+      // Submit form data to API (which will trigger webhooks)
+      try {
+        const utmParams = JSON.parse(localStorage.getItem("utm_params") || "{}");
+        await fetch(`/api/pages/${pageId}/submissions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            blockId,
+            data: formData,
+            utmParams,
+            referrer: document.referrer || null,
+            landingPage: window.location.href,
+          }),
+        });
+      } catch (error) {
+        console.error("Failed to submit form:", error);
       }
     }
   }, [pageId, abTestInfo, page?.pixelSettings]);

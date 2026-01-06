@@ -77,9 +77,36 @@ export const buttonBlockConfigSchema = z.object({
 export const formFieldSchema = z.object({
   id: z.string(),
   label: z.string(),
-  type: z.enum(["text", "email", "phone", "textarea", "select"]),
+  type: z.enum(["text", "email", "phone", "textarea", "select", "hidden", "address", "name", "checkbox"]),
   required: z.boolean().default(false),
   options: z.array(z.string()).optional(),
+  placeholder: z.string().optional(),
+  // For hidden fields - auto-capture from URL params
+  autoCapture: z.enum([
+    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+    "gclid", "fbclid", "ttclid", "msclkid", "custom"
+  ]).optional(),
+  customParam: z.string().optional(), // Used when autoCapture is "custom"
+  // For address fields - which components to show
+  addressComponents: z.object({
+    street: z.boolean().default(true),
+    street2: z.boolean().default(false),
+    city: z.boolean().default(true),
+    state: z.boolean().default(true),
+    zip: z.boolean().default(true),
+    country: z.boolean().default(false),
+  }).optional(),
+  // For name fields - format
+  nameFormat: z.enum(["full", "first_last", "first_middle_last"]).optional(),
+});
+
+export const webhookConfigSchema = z.object({
+  id: z.string(),
+  url: z.string(),
+  enabled: z.boolean().default(true),
+  name: z.string().optional(),
+  method: z.enum(["POST", "PUT"]).default("POST"),
+  headers: z.record(z.string()).optional(),
 });
 
 export const formBlockConfigSchema = z.object({
@@ -93,7 +120,16 @@ export const formBlockConfigSchema = z.object({
   fireConversionEvent: z.boolean().default(true),
   conversionEvent: z.enum(pixelEventTypes).default("Lead"),
   conversionValue: z.number().optional(),
+  // Webhook routing
+  webhooks: z.array(webhookConfigSchema).optional(),
+  emailNotification: z.object({
+    enabled: z.boolean().default(false),
+    toEmail: z.string().optional(),
+    subject: z.string().optional(),
+  }).optional(),
 });
+
+export type WebhookConfig = z.infer<typeof webhookConfigSchema>;
 
 export const phoneBlockConfigSchema = z.object({
   phoneNumber: z.string().default("+1 (555) 000-0000"),
