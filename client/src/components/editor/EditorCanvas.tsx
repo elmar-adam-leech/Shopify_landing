@@ -11,6 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Block } from "@shared/schema";
 import { HeroBlockPreview } from "./blocks/HeroBlockPreview";
 import { ProductGridPreview } from "./blocks/ProductGridPreview";
+import { ProductBlockPreview } from "./blocks/ProductBlockPreview";
 import { TextBlockPreview } from "./blocks/TextBlockPreview";
 import { ImageBlockPreview } from "./blocks/ImageBlockPreview";
 import { ButtonBlockPreview } from "./blocks/ButtonBlockPreview";
@@ -42,6 +43,8 @@ function getBlockPreview(block: Block) {
       return <HeroBlockPreview config={block.config} />;
     case "product-grid":
       return <ProductGridPreview config={block.config} />;
+    case "product-block":
+      return <ProductBlockPreview config={block.config} />;
     case "text-block":
       return <TextBlockPreview config={block.config} />;
     case "image-block":

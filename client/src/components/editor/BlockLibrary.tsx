@@ -2,6 +2,7 @@ import { useDraggable } from "@dnd-kit/core";
 import { 
   Layout, 
   Grid3X3, 
+  Package,
   Type, 
   Image, 
   MousePointer, 
@@ -56,6 +57,13 @@ const blockLibrary: BlockLibraryItem[] = [
     label: "Product Grid",
     description: "Display products from your store",
     icon: <Grid3X3 className="h-5 w-5" />,
+    category: "products",
+  },
+  {
+    type: "product-block",
+    label: "Product Block",
+    description: "Display a single product with all details",
+    icon: <Package className="h-5 w-5" />,
     category: "products",
   },
   {

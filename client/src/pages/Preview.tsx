@@ -417,6 +417,158 @@ function renderBlock(block: Block) {
         </section>
       );
 
+    case "product-block":
+      const productMaxWidthClasses: Record<string, string> = {
+        narrow: "max-w-sm",
+        medium: "max-w-lg",
+        wide: "max-w-2xl",
+        full: "max-w-full",
+      };
+      const productImageSizeClasses: Record<string, string> = {
+        small: "h-48",
+        medium: "h-64",
+        large: "h-80",
+        full: "h-96",
+      };
+      const productLayout = config.layout || "vertical";
+      const productImagePosition = config.imagePosition || "left";
+      const isProductHorizontal = productLayout === "horizontal";
+      const isProductGallery = productLayout === "gallery";
+      
+      return (
+        <section
+          key={block.id}
+          className="py-8 px-6"
+          style={{ textAlign: config.alignment || "center" }}
+          data-testid={`preview-block-${block.id}`}
+        >
+          <div className={`${productMaxWidthClasses[config.maxWidth] || productMaxWidthClasses.medium} mx-auto border rounded-lg overflow-hidden bg-white dark:bg-gray-900`}>
+            <div className={`${isProductHorizontal ? "flex flex-row" : "flex flex-col"}`}>
+              {config.showImage !== false && (
+                <div className={`${isProductHorizontal ? (productImagePosition === "right" ? "order-2" : "order-1") : ""} ${isProductHorizontal ? "w-1/2" : "w-full"}`}>
+                  <div className={`${productImageSizeClasses[config.imageSize] || productImageSizeClasses.large} bg-gray-100 dark:bg-gray-800 flex items-center justify-center`}>
+                    <svg className="w-16 h-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                    </svg>
+                  </div>
+                  {config.showThumbnails !== false && isProductGallery && (
+                    <div className="flex gap-2 p-3 justify-center">
+                      {[1, 2, 3, 4].map((i) => (
+                        <div key={i} className="h-16 w-16 bg-gray-100 dark:bg-gray-800 rounded" />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              <div className={`${isProductHorizontal ? (productImagePosition === "right" ? "order-1" : "order-2") : ""} ${isProductHorizontal ? "w-1/2" : "w-full"} p-6 space-y-4 text-left`}>
+                {config.showVendor && (
+                  <p className="text-sm text-gray-500 uppercase tracking-wide">Vendor Name</p>
+                )}
+                
+                {config.showTitle !== false && (
+                  <h2 className="text-2xl font-bold">Product Title</h2>
+                )}
+
+                {config.showSku && (
+                  <p className="text-xs text-gray-500">SKU: ABC-12345</p>
+                )}
+                
+                {config.showPrice !== false && (
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="text-2xl font-bold text-blue-600">$99.00</span>
+                    {config.showCompareAtPrice !== false && (
+                      <>
+                        <span className="text-lg text-gray-400 line-through">$129.00</span>
+                        <span className="px-2 py-0.5 bg-green-100 text-green-800 text-sm rounded">Save 23%</span>
+                      </>
+                    )}
+                  </div>
+                )}
+                
+                {config.showDescription !== false && (
+                  <p className="text-gray-600 dark:text-gray-300">
+                    Product description will appear here. Add compelling copy about features and benefits.
+                  </p>
+                )}
+
+                {config.showTags && (
+                  <div className="flex gap-2 flex-wrap">
+                    <span className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-sm rounded">Tag 1</span>
+                    <span className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-sm rounded">Tag 2</span>
+                  </div>
+                )}
+
+                {config.showMetafields && (
+                  <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded space-y-1">
+                    <p className="text-sm font-medium">Custom Fields</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Material: Premium Cotton</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Care: Machine Washable</p>
+                  </div>
+                )}
+                
+                {config.showVariants !== false && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-sm font-medium block mb-2">Size</label>
+                      <select className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800">
+                        <option>Small</option>
+                        <option>Medium</option>
+                        <option>Large</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium block mb-2">Color</label>
+                      <div className="flex gap-2">
+                        {["bg-gray-900", "bg-gray-400", "bg-blue-600", "bg-red-500"].map((color, i) => (
+                          <button key={i} className={`w-8 h-8 rounded-full ${color} ${i === 0 ? "ring-2 ring-blue-500 ring-offset-2" : ""}`} />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {config.showQuantitySelector !== false && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium">Quantity:</span>
+                    <div className="flex items-center border rounded">
+                      <button className="px-3 py-1 hover:bg-gray-100 dark:hover:bg-gray-800">-</button>
+                      <span className="px-4">1</span>
+                      <button className="px-3 py-1 hover:bg-gray-100 dark:hover:bg-gray-800">+</button>
+                    </div>
+                  </div>
+                )}
+                
+                <div className="flex gap-3 flex-wrap pt-2">
+                  {config.showAddToCart !== false && (
+                    <button 
+                      className="flex-1 py-3 px-6 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
+                      data-testid="button-product-add-cart"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                      {config.addToCartText || "Add to Cart"}
+                    </button>
+                  )}
+                  {config.showBuyNow && (
+                    <button 
+                      className="flex-1 py-3 px-6 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 font-medium rounded-lg flex items-center justify-center gap-2"
+                      data-testid="button-product-buy-now"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      {config.buyNowText || "Buy Now"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      );
+
     case "form-block":
       return (
         <section

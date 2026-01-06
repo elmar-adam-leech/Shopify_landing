@@ -8,6 +8,7 @@ import { relations } from "drizzle-orm";
 export const blockTypes = [
   "hero-banner",
   "product-grid",
+  "product-block",
   "text-block",
   "image-block",
   "button-block",
@@ -35,6 +36,52 @@ export const productGridConfigSchema = z.object({
   showPrice: z.boolean().default(true),
   showTitle: z.boolean().default(true),
   showAddToCart: z.boolean().default(true),
+});
+
+// Single product block - displays one product with configurable components
+export const productBlockConfigSchema = z.object({
+  // Product selection
+  productId: z.string().optional(),
+  productHandle: z.string().optional(),
+  
+  // Component visibility toggles
+  showImage: z.boolean().default(true),
+  showTitle: z.boolean().default(true),
+  showPrice: z.boolean().default(true),
+  showCompareAtPrice: z.boolean().default(true),
+  showDescription: z.boolean().default(true),
+  showVariants: z.boolean().default(true),
+  showQuantitySelector: z.boolean().default(true),
+  showAddToCart: z.boolean().default(true),
+  showBuyNow: z.boolean().default(false),
+  showVendor: z.boolean().default(false),
+  showSku: z.boolean().default(false),
+  showTags: z.boolean().default(false),
+  showMetafields: z.boolean().default(false),
+  
+  // Metafields to display (when showMetafields is true)
+  metafieldKeys: z.array(z.string()).default([]),
+  
+  // Layout options
+  layout: z.enum(["vertical", "horizontal", "gallery"]).default("vertical"),
+  imagePosition: z.enum(["left", "right", "top"]).default("top"),
+  imageSize: z.enum(["small", "medium", "large", "full"]).default("large"),
+  
+  // Image gallery options
+  showThumbnails: z.boolean().default(true),
+  enableZoom: z.boolean().default(false),
+  
+  // Styling
+  alignment: z.enum(["left", "center", "right"]).default("center"),
+  maxWidth: z.enum(["narrow", "medium", "wide", "full"]).default("medium"),
+  
+  // Button customization
+  addToCartText: z.string().default("Add to Cart"),
+  buyNowText: z.string().default("Buy Now"),
+  
+  // Conversion tracking
+  trackAddToCart: z.boolean().default(true),
+  trackBuyNow: z.boolean().default(true),
 });
 
 export const textBlockConfigSchema = z.object({
@@ -146,6 +193,7 @@ export const chatBlockConfigSchema = z.object({
 
 export type HeroBlockConfig = z.infer<typeof heroBlockConfigSchema>;
 export type ProductGridConfig = z.infer<typeof productGridConfigSchema>;
+export type ProductBlockConfig = z.infer<typeof productBlockConfigSchema>;
 export type TextBlockConfig = z.infer<typeof textBlockConfigSchema>;
 export type ImageBlockConfig = z.infer<typeof imageBlockConfigSchema>;
 export type ButtonBlockConfig = z.infer<typeof buttonBlockConfigSchema>;
@@ -156,6 +204,7 @@ export type ChatBlockConfig = z.infer<typeof chatBlockConfigSchema>;
 export type BlockConfig = 
   | HeroBlockConfig 
   | ProductGridConfig 
+  | ProductBlockConfig
   | TextBlockConfig 
   | ImageBlockConfig 
   | ButtonBlockConfig 
