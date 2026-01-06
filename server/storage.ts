@@ -6,6 +6,7 @@ import {
   analyticsEvents,
   abTests,
   abTestVariants,
+  userStoreAssignments,
   type User, 
   type InsertUser,
   type Page,
@@ -21,6 +22,8 @@ import {
   type InsertAbTest,
   type AbTestVariant,
   type InsertAbTestVariant,
+  type UserStoreAssignment,
+  type InsertUserStoreAssignment,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, max, and, gte, lte, sql, count } from "drizzle-orm";
@@ -76,6 +79,12 @@ export interface IStorage {
   createAbTestVariant(variant: InsertAbTestVariant): Promise<AbTestVariant>;
   updateAbTestVariant(id: string, variant: Partial<InsertAbTestVariant>): Promise<AbTestVariant | undefined>;
   deleteAbTestVariant(id: string): Promise<boolean>;
+
+  // User-Store Assignments
+  getUserStoreAssignments(userId: string): Promise<UserStoreAssignment[]>;
+  getStoreUserAssignments(storeId: string): Promise<UserStoreAssignment[]>;
+  createUserStoreAssignment(assignment: InsertUserStoreAssignment): Promise<UserStoreAssignment>;
+  deleteUserStoreAssignment(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -366,6 +375,36 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAbTestVariant(id: string): Promise<boolean> {
     const result = await db.delete(abTestVariants).where(eq(abTestVariants.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // User-Store Assignments
+  async getUserStoreAssignments(userId: string): Promise<UserStoreAssignment[]> {
+    return db
+      .select()
+      .from(userStoreAssignments)
+      .where(eq(userStoreAssignments.userId, userId))
+      .orderBy(userStoreAssignments.createdAt);
+  }
+
+  async getStoreUserAssignments(storeId: string): Promise<UserStoreAssignment[]> {
+    return db
+      .select()
+      .from(userStoreAssignments)
+      .where(eq(userStoreAssignments.storeId, storeId))
+      .orderBy(userStoreAssignments.createdAt);
+  }
+
+  async createUserStoreAssignment(assignment: InsertUserStoreAssignment): Promise<UserStoreAssignment> {
+    const [result] = await db
+      .insert(userStoreAssignments)
+      .values(assignment as any)
+      .returning();
+    return result;
+  }
+
+  async deleteUserStoreAssignment(id: string): Promise<boolean> {
+    const result = await db.delete(userStoreAssignments).where(eq(userStoreAssignments.id, id)).returning();
     return result.length > 0;
   }
 }

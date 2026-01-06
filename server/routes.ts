@@ -120,6 +120,69 @@ export async function registerRoutes(
     }
   });
 
+  // ============== USER-STORE ASSIGNMENT ROUTES ==============
+
+  // Get users assigned to a store
+  app.get("/api/stores/:storeId/users", async (req, res) => {
+    try {
+      const { storeId } = req.params;
+      const assignments = await storage.getStoreUserAssignments(storeId);
+      res.json(assignments);
+    } catch (error) {
+      console.error("Error fetching store users:", error);
+      res.status(500).json({ error: "Failed to fetch store users" });
+    }
+  });
+
+  // Get stores assigned to a user
+  app.get("/api/users/:userId/stores", async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const assignments = await storage.getUserStoreAssignments(userId);
+      res.json(assignments);
+    } catch (error) {
+      console.error("Error fetching user stores:", error);
+      res.status(500).json({ error: "Failed to fetch user stores" });
+    }
+  });
+
+  // Assign user to store
+  app.post("/api/stores/:storeId/users", async (req, res) => {
+    try {
+      const { storeId } = req.params;
+      const { userId, role } = req.body;
+      
+      if (!userId) {
+        return res.status(400).json({ error: "userId is required" });
+      }
+      
+      const assignment = await storage.createUserStoreAssignment({
+        userId,
+        storeId,
+        role: role || "editor",
+      });
+      res.status(201).json(assignment);
+    } catch (error) {
+      console.error("Error assigning user to store:", error);
+      res.status(500).json({ error: "Failed to assign user to store" });
+    }
+  });
+
+  // Remove user from store
+  app.delete("/api/stores/:storeId/users/:assignmentId", async (req, res) => {
+    try {
+      const { assignmentId } = req.params;
+      const deleted = await storage.deleteUserStoreAssignment(assignmentId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Assignment not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error removing user from store:", error);
+      res.status(500).json({ error: "Failed to remove user from store" });
+    }
+  });
+
   // ============== PAGE ROUTES ==============
   
   // Get all pages (optionally filtered by storeId)
@@ -177,7 +240,7 @@ export async function registerRoutes(
       const validatedData = insertPageSchema.parse(req.body);
       
       // Check if slug already exists within the same store
-      const existingPage = await storage.getPageBySlug(validatedData.slug, validatedData.storeId);
+      const existingPage = await storage.getPageBySlug(validatedData.slug, validatedData.storeId ?? undefined);
       if (existingPage) {
         // Append timestamp to make slug unique
         validatedData.slug = `${validatedData.slug}-${Date.now()}`;
@@ -208,7 +271,7 @@ export async function registerRoutes(
       
       // If slug is being updated, check for conflicts within the same store
       if (validatedData.slug && validatedData.slug !== existingPage.slug) {
-        const slugConflict = await storage.getPageBySlug(validatedData.slug, existingPage.storeId);
+        const slugConflict = await storage.getPageBySlug(validatedData.slug, existingPage.storeId ?? undefined);
         if (slugConflict && slugConflict.id !== id) {
           validatedData.slug = `${validatedData.slug}-${Date.now()}`;
         }
@@ -245,7 +308,7 @@ export async function registerRoutes(
     try {
       const { pageId } = req.params;
       
-      // Check if page exists
+      // Check if page exists and get its storeId
       const page = await storage.getPage(pageId);
       if (!page) {
         return res.status(404).json({ error: "Page not found" });
@@ -254,6 +317,7 @@ export async function registerRoutes(
       const validatedData = insertFormSubmissionSchema.parse({
         ...req.body,
         pageId,
+        storeId: page.storeId, // Inherit storeId from page
       });
       
       const submission = await storage.createFormSubmission(validatedData as any);
@@ -394,7 +458,19 @@ export async function registerRoutes(
   // Record an analytics event
   app.post("/api/analytics", async (req, res) => {
     try {
-      const validatedData = insertAnalyticsEventSchema.parse(req.body);
+      // Get storeId from the page if pageId is provided
+      let storeId: string | undefined | null = req.body.storeId;
+      if (req.body.pageId && !storeId) {
+        const page = await storage.getPage(req.body.pageId);
+        if (page) {
+          storeId = page.storeId;
+        }
+      }
+      
+      const validatedData = insertAnalyticsEventSchema.parse({
+        ...req.body,
+        storeId,
+      });
       const event = await storage.createAnalyticsEvent(validatedData as any);
       res.status(201).json(event);
     } catch (error) {
