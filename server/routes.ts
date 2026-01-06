@@ -183,6 +183,176 @@ export async function registerRoutes(
     }
   });
 
+  // ============== SHOPIFY PRODUCTS ROUTES ==============
+
+  // Get products for a store (with search and pagination)
+  app.get("/api/stores/:storeId/products", async (req, res) => {
+    try {
+      const { storeId } = req.params;
+      const search = req.query.search as string | undefined;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const offset = parseInt(req.query.offset as string) || 0;
+      const status = req.query.status as string | undefined;
+
+      const products = await storage.getShopifyProducts(storeId, { search, limit, offset, status });
+      const total = await storage.countShopifyProducts(storeId);
+      
+      res.json({
+        products,
+        total,
+        limit,
+        offset,
+        hasMore: offset + products.length < total,
+      });
+    } catch (error) {
+      console.error("Error fetching products:", error);
+      res.status(500).json({ error: "Failed to fetch products" });
+    }
+  });
+
+  // Get single product by ID
+  app.get("/api/products/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const product = await storage.getShopifyProduct(id);
+      if (!product) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+      res.json(product);
+    } catch (error) {
+      console.error("Error fetching product:", error);
+      res.status(500).json({ error: "Failed to fetch product" });
+    }
+  });
+
+  // Get product by Shopify ID or handle
+  app.get("/api/stores/:storeId/products/lookup", async (req, res) => {
+    try {
+      const { storeId } = req.params;
+      const shopifyId = req.query.shopifyId as string | undefined;
+      const handle = req.query.handle as string | undefined;
+
+      let product;
+      if (shopifyId) {
+        product = await storage.getShopifyProductByShopifyId(storeId, shopifyId);
+      } else if (handle) {
+        product = await storage.getShopifyProductByHandle(storeId, handle);
+      } else {
+        return res.status(400).json({ error: "shopifyId or handle is required" });
+      }
+
+      if (!product) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+      res.json(product);
+    } catch (error) {
+      console.error("Error looking up product:", error);
+      res.status(500).json({ error: "Failed to lookup product" });
+    }
+  });
+
+  // Get user's favorite products
+  app.get("/api/users/:userId/products/favorites", async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const storeId = req.query.storeId as string | undefined;
+      const favorites = await storage.getUserProductFavorites(userId, storeId);
+      res.json(favorites);
+    } catch (error) {
+      console.error("Error fetching favorites:", error);
+      res.status(500).json({ error: "Failed to fetch favorites" });
+    }
+  });
+
+  // Add product to favorites
+  app.post("/api/users/:userId/products/:productId/favorite", async (req, res) => {
+    try {
+      const { userId, productId } = req.params;
+      const favorite = await storage.addUserProductFavorite(userId, productId);
+      res.status(201).json(favorite);
+    } catch (error) {
+      console.error("Error adding favorite:", error);
+      res.status(500).json({ error: "Failed to add favorite" });
+    }
+  });
+
+  // Remove product from favorites
+  app.delete("/api/users/:userId/products/:productId/favorite", async (req, res) => {
+    try {
+      const { userId, productId } = req.params;
+      const removed = await storage.removeUserProductFavorite(userId, productId);
+      if (!removed) {
+        return res.status(404).json({ error: "Favorite not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error removing favorite:", error);
+      res.status(500).json({ error: "Failed to remove favorite" });
+    }
+  });
+
+  // Check if product is favorite
+  app.get("/api/users/:userId/products/:productId/favorite", async (req, res) => {
+    try {
+      const { userId, productId } = req.params;
+      const isFavorite = await storage.isProductFavorite(userId, productId);
+      res.json({ isFavorite });
+    } catch (error) {
+      console.error("Error checking favorite:", error);
+      res.status(500).json({ error: "Failed to check favorite" });
+    }
+  });
+
+  // Manual sync trigger (placeholder - will be implemented with Shopify OAuth)
+  app.post("/api/stores/:storeId/sync", async (req, res) => {
+    try {
+      const { storeId } = req.params;
+      
+      // Create sync log
+      const syncLog = await storage.createStoreSyncLog({
+        storeId,
+        syncType: "manual",
+        status: "started",
+      });
+      
+      // TODO: Implement actual Shopify sync when OAuth is connected
+      // For now, just mark as completed
+      await storage.updateStoreSyncLog(syncLog.id, {
+        status: "completed",
+        completedAt: new Date(),
+        productsAdded: 0,
+        productsUpdated: 0,
+        productsRemoved: 0,
+      });
+      
+      res.json({ 
+        message: "Sync initiated",
+        syncId: syncLog.id,
+        note: "Shopify OAuth connection required for actual sync"
+      });
+    } catch (error) {
+      console.error("Error starting sync:", error);
+      res.status(500).json({ error: "Failed to start sync" });
+    }
+  });
+
+  // Get latest sync status
+  app.get("/api/stores/:storeId/sync/status", async (req, res) => {
+    try {
+      const { storeId } = req.params;
+      const syncLog = await storage.getLatestStoreSyncLog(storeId);
+      const productCount = await storage.countShopifyProducts(storeId);
+      
+      res.json({
+        lastSync: syncLog || null,
+        productCount,
+      });
+    } catch (error) {
+      console.error("Error fetching sync status:", error);
+      res.status(500).json({ error: "Failed to fetch sync status" });
+    }
+  });
+
   // ============== PAGE ROUTES ==============
   
   // Lightweight page list - excludes heavy block data for faster loading

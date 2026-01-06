@@ -501,6 +501,57 @@ export const trackingNumbers = pgTable("tracking_numbers", {
   uniquePhonePerStore: uniqueIndex("tracking_numbers_phone_store_idx").on(table.phoneNumber, table.storeId),
 }));
 
+// Shopify products cache table
+export const shopifyProducts = pgTable("shopify_products", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  storeId: varchar("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+  shopifyProductId: text("shopify_product_id").notNull(),
+  handle: text("handle").notNull(),
+  title: text("title").notNull(),
+  vendor: text("vendor"),
+  productType: text("product_type"),
+  status: text("status", { enum: ["active", "draft", "archived"] }).default("active"),
+  tags: text("tags").array(),
+  featuredImageUrl: text("featured_image_url"),
+  price: text("price"), // Stored as string for currency formatting
+  compareAtPrice: text("compare_at_price"),
+  description: text("description"),
+  // Full product data JSON for rendering
+  productData: jsonb("product_data").$type<Record<string, any>>().notNull(),
+  // Sync metadata
+  shopifyUpdatedAt: timestamp("shopify_updated_at"),
+  syncedAt: timestamp("synced_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  uniqueProductPerStore: uniqueIndex("shopify_products_store_product_idx").on(table.storeId, table.shopifyProductId),
+  titleSearchIdx: uniqueIndex("shopify_products_title_idx").on(table.storeId, table.title),
+  handleIdx: uniqueIndex("shopify_products_handle_idx").on(table.storeId, table.handle),
+}));
+
+// User product favorites for quick access in editor
+export const userProductFavorites = pgTable("user_product_favorites", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  productId: varchar("product_id").notNull().references(() => shopifyProducts.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  uniqueUserProduct: uniqueIndex("user_product_favorites_unique_idx").on(table.userId, table.productId),
+}));
+
+// Store sync logs for tracking Shopify data refreshes
+export const storeSyncLogs = pgTable("store_sync_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  storeId: varchar("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+  syncType: text("sync_type", { enum: ["manual", "webhook", "scheduled"] }).notNull(),
+  status: text("status", { enum: ["started", "completed", "failed"] }).notNull(),
+  productsAdded: integer("products_added").default(0),
+  productsUpdated: integer("products_updated").default(0),
+  productsRemoved: integer("products_removed").default(0),
+  errorMessage: text("error_message"),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+});
+
 // Call logs for tracking
 export const callLogs = pgTable("call_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -522,6 +573,46 @@ export const storesRelations = relations(stores, ({ many }) => ({
   pages: many(pages),
   trackingNumbers: many(trackingNumbers),
   callLogs: many(callLogs),
+  shopifyProducts: many(shopifyProducts),
+  syncLogs: many(storeSyncLogs),
+  userAssignments: many(userStoreAssignments),
+}));
+
+export const shopifyProductsRelations = relations(shopifyProducts, ({ one, many }) => ({
+  store: one(stores, {
+    fields: [shopifyProducts.storeId],
+    references: [stores.id],
+  }),
+  favorites: many(userProductFavorites),
+}));
+
+export const userProductFavoritesRelations = relations(userProductFavorites, ({ one }) => ({
+  user: one(users, {
+    fields: [userProductFavorites.userId],
+    references: [users.id],
+  }),
+  product: one(shopifyProducts, {
+    fields: [userProductFavorites.productId],
+    references: [shopifyProducts.id],
+  }),
+}));
+
+export const storeSyncLogsRelations = relations(storeSyncLogs, ({ one }) => ({
+  store: one(stores, {
+    fields: [storeSyncLogs.storeId],
+    references: [stores.id],
+  }),
+}));
+
+export const userStoreAssignmentsRelations = relations(userStoreAssignments, ({ one }) => ({
+  user: one(users, {
+    fields: [userStoreAssignments.userId],
+    references: [users.id],
+  }),
+  store: one(stores, {
+    fields: [userStoreAssignments.storeId],
+    references: [stores.id],
+  }),
 }));
 
 export const pagesRelations = relations(pages, ({ one, many }) => ({
@@ -687,3 +778,31 @@ export const insertCallLogSchema = createInsertSchema(callLogs).omit({
 export type InsertCallLogValidation = z.infer<typeof insertCallLogSchema>;
 export type InsertCallLog = typeof callLogs.$inferInsert;
 export type CallLog = typeof callLogs.$inferSelect;
+
+// Shopify product types
+export const insertShopifyProductSchema = createInsertSchema(shopifyProducts).omit({
+  id: true,
+  createdAt: true,
+  syncedAt: true,
+});
+export type InsertShopifyProductValidation = z.infer<typeof insertShopifyProductSchema>;
+export type InsertShopifyProduct = typeof shopifyProducts.$inferInsert;
+export type ShopifyProduct = typeof shopifyProducts.$inferSelect;
+
+// User product favorite types
+export const insertUserProductFavoriteSchema = createInsertSchema(userProductFavorites).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertUserProductFavoriteValidation = z.infer<typeof insertUserProductFavoriteSchema>;
+export type InsertUserProductFavorite = typeof userProductFavorites.$inferInsert;
+export type UserProductFavorite = typeof userProductFavorites.$inferSelect;
+
+// Store sync log types
+export const insertStoreSyncLogSchema = createInsertSchema(storeSyncLogs).omit({
+  id: true,
+  startedAt: true,
+});
+export type InsertStoreSyncLogValidation = z.infer<typeof insertStoreSyncLogSchema>;
+export type InsertStoreSyncLog = typeof storeSyncLogs.$inferInsert;
+export type StoreSyncLog = typeof storeSyncLogs.$inferSelect;

@@ -7,6 +7,9 @@ import {
   abTests,
   abTestVariants,
   userStoreAssignments,
+  shopifyProducts,
+  userProductFavorites,
+  storeSyncLogs,
   type User, 
   type InsertUser,
   type Page,
@@ -24,9 +27,15 @@ import {
   type InsertAbTestVariant,
   type UserStoreAssignment,
   type InsertUserStoreAssignment,
+  type ShopifyProduct,
+  type InsertShopifyProduct,
+  type UserProductFavorite,
+  type InsertUserProductFavorite,
+  type StoreSyncLog,
+  type InsertStoreSyncLog,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, max, and, gte, lte, sql, count } from "drizzle-orm";
+import { eq, desc, max, and, gte, lte, sql, count, ilike, or } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -85,6 +94,29 @@ export interface IStorage {
   getStoreUserAssignments(storeId: string): Promise<UserStoreAssignment[]>;
   createUserStoreAssignment(assignment: InsertUserStoreAssignment): Promise<UserStoreAssignment>;
   deleteUserStoreAssignment(id: string): Promise<boolean>;
+
+  // Shopify Products
+  getShopifyProducts(storeId: string, options?: { search?: string; limit?: number; offset?: number; status?: string }): Promise<ShopifyProduct[]>;
+  getShopifyProduct(id: string): Promise<ShopifyProduct | undefined>;
+  getShopifyProductByShopifyId(storeId: string, shopifyProductId: string): Promise<ShopifyProduct | undefined>;
+  getShopifyProductByHandle(storeId: string, handle: string): Promise<ShopifyProduct | undefined>;
+  createShopifyProduct(product: InsertShopifyProduct): Promise<ShopifyProduct>;
+  updateShopifyProduct(id: string, product: Partial<InsertShopifyProduct>): Promise<ShopifyProduct | undefined>;
+  upsertShopifyProduct(storeId: string, shopifyProductId: string, product: Omit<InsertShopifyProduct, 'storeId' | 'shopifyProductId'>): Promise<ShopifyProduct>;
+  deleteShopifyProduct(id: string): Promise<boolean>;
+  deleteShopifyProductByShopifyId(storeId: string, shopifyProductId: string): Promise<boolean>;
+  countShopifyProducts(storeId: string): Promise<number>;
+
+  // User Product Favorites
+  getUserProductFavorites(userId: string, storeId?: string): Promise<ShopifyProduct[]>;
+  addUserProductFavorite(userId: string, productId: string): Promise<UserProductFavorite>;
+  removeUserProductFavorite(userId: string, productId: string): Promise<boolean>;
+  isProductFavorite(userId: string, productId: string): Promise<boolean>;
+
+  // Store Sync Logs
+  createStoreSyncLog(log: InsertStoreSyncLog): Promise<StoreSyncLog>;
+  updateStoreSyncLog(id: string, log: Partial<InsertStoreSyncLog>): Promise<StoreSyncLog | undefined>;
+  getLatestStoreSyncLog(storeId: string): Promise<StoreSyncLog | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -406,6 +438,204 @@ export class DatabaseStorage implements IStorage {
   async deleteUserStoreAssignment(id: string): Promise<boolean> {
     const result = await db.delete(userStoreAssignments).where(eq(userStoreAssignments.id, id)).returning();
     return result.length > 0;
+  }
+
+  // Shopify Products
+  async getShopifyProducts(storeId: string, options?: { search?: string; limit?: number; offset?: number; status?: string }): Promise<ShopifyProduct[]> {
+    const limit = options?.limit || 50;
+    const offset = options?.offset || 0;
+    
+    let conditions = [eq(shopifyProducts.storeId, storeId)];
+    
+    if (options?.status) {
+      conditions.push(eq(shopifyProducts.status, options.status as any));
+    }
+    
+    if (options?.search) {
+      const searchTerm = `%${options.search}%`;
+      conditions.push(
+        or(
+          ilike(shopifyProducts.title, searchTerm),
+          ilike(shopifyProducts.handle, searchTerm),
+          ilike(shopifyProducts.vendor, searchTerm)
+        )!
+      );
+    }
+    
+    return db
+      .select()
+      .from(shopifyProducts)
+      .where(and(...conditions))
+      .orderBy(desc(shopifyProducts.syncedAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  async getShopifyProduct(id: string): Promise<ShopifyProduct | undefined> {
+    const [product] = await db.select().from(shopifyProducts).where(eq(shopifyProducts.id, id));
+    return product || undefined;
+  }
+
+  async getShopifyProductByShopifyId(storeId: string, shopifyProductId: string): Promise<ShopifyProduct | undefined> {
+    const [product] = await db
+      .select()
+      .from(shopifyProducts)
+      .where(and(eq(shopifyProducts.storeId, storeId), eq(shopifyProducts.shopifyProductId, shopifyProductId)));
+    return product || undefined;
+  }
+
+  async getShopifyProductByHandle(storeId: string, handle: string): Promise<ShopifyProduct | undefined> {
+    const [product] = await db
+      .select()
+      .from(shopifyProducts)
+      .where(and(eq(shopifyProducts.storeId, storeId), eq(shopifyProducts.handle, handle)));
+    return product || undefined;
+  }
+
+  async createShopifyProduct(product: InsertShopifyProduct): Promise<ShopifyProduct> {
+    const [result] = await db
+      .insert(shopifyProducts)
+      .values(product as any)
+      .returning();
+    return result;
+  }
+
+  async updateShopifyProduct(id: string, product: Partial<InsertShopifyProduct>): Promise<ShopifyProduct | undefined> {
+    const [result] = await db
+      .update(shopifyProducts)
+      .set({ ...product, syncedAt: new Date() } as any)
+      .where(eq(shopifyProducts.id, id))
+      .returning();
+    return result || undefined;
+  }
+
+  async upsertShopifyProduct(storeId: string, shopifyProductId: string, product: Omit<InsertShopifyProduct, 'storeId' | 'shopifyProductId'>): Promise<ShopifyProduct> {
+    const existing = await this.getShopifyProductByShopifyId(storeId, shopifyProductId);
+    
+    if (existing) {
+      const updated = await this.updateShopifyProduct(existing.id, product);
+      return updated!;
+    } else {
+      return this.createShopifyProduct({
+        storeId,
+        shopifyProductId,
+        ...product,
+      } as InsertShopifyProduct);
+    }
+  }
+
+  async deleteShopifyProduct(id: string): Promise<boolean> {
+    const result = await db.delete(shopifyProducts).where(eq(shopifyProducts.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async deleteShopifyProductByShopifyId(storeId: string, shopifyProductId: string): Promise<boolean> {
+    const result = await db
+      .delete(shopifyProducts)
+      .where(and(eq(shopifyProducts.storeId, storeId), eq(shopifyProducts.shopifyProductId, shopifyProductId)))
+      .returning();
+    return result.length > 0;
+  }
+
+  async countShopifyProducts(storeId: string): Promise<number> {
+    const [result] = await db
+      .select({ count: count() })
+      .from(shopifyProducts)
+      .where(eq(shopifyProducts.storeId, storeId));
+    return result?.count || 0;
+  }
+
+  // User Product Favorites
+  async getUserProductFavorites(userId: string, storeId?: string): Promise<ShopifyProduct[]> {
+    const conditions = storeId 
+      ? and(eq(userProductFavorites.userId, userId), eq(shopifyProducts.storeId, storeId))
+      : eq(userProductFavorites.userId, userId);
+    
+    return db
+      .select({
+        id: shopifyProducts.id,
+        storeId: shopifyProducts.storeId,
+        shopifyProductId: shopifyProducts.shopifyProductId,
+        handle: shopifyProducts.handle,
+        title: shopifyProducts.title,
+        vendor: shopifyProducts.vendor,
+        productType: shopifyProducts.productType,
+        status: shopifyProducts.status,
+        tags: shopifyProducts.tags,
+        featuredImageUrl: shopifyProducts.featuredImageUrl,
+        price: shopifyProducts.price,
+        compareAtPrice: shopifyProducts.compareAtPrice,
+        description: shopifyProducts.description,
+        productData: shopifyProducts.productData,
+        shopifyUpdatedAt: shopifyProducts.shopifyUpdatedAt,
+        syncedAt: shopifyProducts.syncedAt,
+        createdAt: shopifyProducts.createdAt,
+      })
+      .from(userProductFavorites)
+      .innerJoin(shopifyProducts, eq(userProductFavorites.productId, shopifyProducts.id))
+      .where(conditions);
+  }
+
+  async addUserProductFavorite(userId: string, productId: string): Promise<UserProductFavorite> {
+    const [result] = await db
+      .insert(userProductFavorites)
+      .values({ userId, productId } as any)
+      .onConflictDoNothing()
+      .returning();
+    
+    if (!result) {
+      // Already exists, fetch it
+      const [existing] = await db
+        .select()
+        .from(userProductFavorites)
+        .where(and(eq(userProductFavorites.userId, userId), eq(userProductFavorites.productId, productId)));
+      return existing;
+    }
+    return result;
+  }
+
+  async removeUserProductFavorite(userId: string, productId: string): Promise<boolean> {
+    const result = await db
+      .delete(userProductFavorites)
+      .where(and(eq(userProductFavorites.userId, userId), eq(userProductFavorites.productId, productId)))
+      .returning();
+    return result.length > 0;
+  }
+
+  async isProductFavorite(userId: string, productId: string): Promise<boolean> {
+    const [result] = await db
+      .select()
+      .from(userProductFavorites)
+      .where(and(eq(userProductFavorites.userId, userId), eq(userProductFavorites.productId, productId)));
+    return !!result;
+  }
+
+  // Store Sync Logs
+  async createStoreSyncLog(log: InsertStoreSyncLog): Promise<StoreSyncLog> {
+    const [result] = await db
+      .insert(storeSyncLogs)
+      .values(log as any)
+      .returning();
+    return result;
+  }
+
+  async updateStoreSyncLog(id: string, log: Partial<InsertStoreSyncLog>): Promise<StoreSyncLog | undefined> {
+    const [result] = await db
+      .update(storeSyncLogs)
+      .set(log as any)
+      .where(eq(storeSyncLogs.id, id))
+      .returning();
+    return result || undefined;
+  }
+
+  async getLatestStoreSyncLog(storeId: string): Promise<StoreSyncLog | undefined> {
+    const [result] = await db
+      .select()
+      .from(storeSyncLogs)
+      .where(eq(storeSyncLogs.storeId, storeId))
+      .orderBy(desc(storeSyncLogs.startedAt))
+      .limit(1);
+    return result || undefined;
   }
 }
 
