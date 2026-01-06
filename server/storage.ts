@@ -62,7 +62,7 @@ export interface IStorage {
   }>;
 
   // A/B Tests
-  getAllAbTests(): Promise<AbTest[]>;
+  getAllAbTests(storeId?: string): Promise<AbTest[]>;
   getAbTest(id: string): Promise<AbTest | undefined>;
   getAbTestByPageId(pageId: string): Promise<AbTest | undefined>;
   getActiveAbTestForPage(pageId: string): Promise<AbTest | undefined>;
@@ -257,7 +257,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   // A/B Tests
-  async getAllAbTests(): Promise<AbTest[]> {
+  async getAllAbTests(storeId?: string): Promise<AbTest[]> {
+    if (storeId) {
+      return db.select().from(abTests).where(eq(abTests.storeId, storeId)).orderBy(desc(abTests.createdAt));
+    }
     return db.select().from(abTests).orderBy(desc(abTests.createdAt));
   }
 

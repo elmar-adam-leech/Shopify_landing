@@ -454,10 +454,11 @@ export async function registerRoutes(
   // A/B TEST ENDPOINTS
   // =====================
 
-  // Get all A/B tests
-  app.get("/api/ab-tests", async (_req, res) => {
+  // Get all A/B tests (optionally filtered by storeId)
+  app.get("/api/ab-tests", async (req, res) => {
     try {
-      const tests = await storage.getAllAbTests();
+      const storeId = req.query.storeId as string | undefined;
+      const tests = await storage.getAllAbTests(storeId);
       res.json(tests);
     } catch (error) {
       console.error("Error fetching A/B tests:", error);
