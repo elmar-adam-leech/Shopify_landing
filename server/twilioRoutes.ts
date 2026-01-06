@@ -17,9 +17,14 @@ export function registerTwilioRoutes(app: Express) {
   // DNI (Dynamic Number Insertion) - Get tracking number for GCLID
   app.get("/api/get-tracking-number", async (req: Request, res: Response) => {
     try {
-      const { gclid, sessionId, visitorId } = req.query;
+      const { gclid, sessionId, visitorId, storeId } = req.query;
+
+      if (!storeId) {
+        return res.status(400).json({ error: "storeId is required" });
+      }
 
       const result = await getOrAssignTrackingNumber(
+        storeId as string,
         gclid as string | undefined,
         sessionId as string | undefined,
         visitorId as string | undefined
@@ -50,11 +55,12 @@ export function registerTwilioRoutes(app: Express) {
 
       console.log(`Incoming call: ${From} -> ${To} (CallSid: ${CallSid})`);
 
-      // Look up the tracking number to get GCLID
+      // Look up the tracking number to get GCLID and storeId
       const trackingNumber = await getTrackingNumberByPhone(To);
       const gclid = trackingNumber?.gclid || null;
+      const storeId = trackingNumber?.storeId || undefined;
 
-      // Log the call
+      // Log the call with storeId
       await logCall({
         twilioCallSid: CallSid,
         trackingNumberId: trackingNumber?.id,
@@ -62,13 +68,15 @@ export function registerTwilioRoutes(app: Express) {
         toNumber: To,
         gclid: gclid || undefined,
         callStatus: CallStatus,
+        storeId,
       });
 
-      // Create Shopify customer with GCLID tag
+      // Create Shopify customer with GCLID tag using store-specific credentials
       const customer = await createShopifyCustomer({
         phone: From,
         gclid: gclid || undefined,
         additionalTags: ["phone-call"],
+        storeId,
       });
 
       if (customer) {
@@ -114,10 +122,11 @@ export function registerTwilioRoutes(app: Express) {
     }
   });
 
-  // Manage tracking numbers pool
-  app.get("/api/tracking-numbers", async (_req: Request, res: Response) => {
+  // Manage tracking numbers pool (optionally filtered by storeId)
+  app.get("/api/tracking-numbers", async (req: Request, res: Response) => {
     try {
-      const numbers = await getAllTrackingNumbers();
+      const storeId = req.query.storeId as string | undefined;
+      const numbers = await getAllTrackingNumbers(storeId);
       res.json(numbers);
     } catch (error) {
       console.error("Error fetching tracking numbers:", error);
@@ -127,13 +136,16 @@ export function registerTwilioRoutes(app: Express) {
 
   app.post("/api/tracking-numbers", async (req: Request, res: Response) => {
     try {
-      const { phoneNumber, forwardTo } = req.body;
+      const { storeId, phoneNumber, forwardTo } = req.body;
 
+      if (!storeId) {
+        return res.status(400).json({ error: "storeId is required" });
+      }
       if (!phoneNumber) {
         return res.status(400).json({ error: "phoneNumber is required" });
       }
 
-      const number = await addTrackingNumber(phoneNumber, forwardTo);
+      const number = await addTrackingNumber(storeId, phoneNumber, forwardTo);
       res.status(201).json(number);
     } catch (error) {
       console.error("Error adding tracking number:", error);

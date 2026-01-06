@@ -1,3 +1,7 @@
+import { db } from "../db";
+import { stores } from "@shared/schema";
+import { eq } from "drizzle-orm";
+
 const SHOPIFY_API_VERSION = "2024-10";
 
 interface ShopifyCustomer {
@@ -14,10 +18,11 @@ interface CreateCustomerResponse {
   customer: ShopifyCustomer;
 }
 
-interface ShopifyConfig {
+export interface ShopifyConfig {
   apiKey: string;
   apiSecret: string;
   storeUrl: string;
+  accessToken?: string;
 }
 
 function getShopifyConfig(): ShopifyConfig | null {
@@ -33,13 +38,43 @@ function getShopifyConfig(): ShopifyConfig | null {
   return { apiKey, apiSecret, storeUrl };
 }
 
+export async function getShopifyConfigForStore(storeId: string): Promise<ShopifyConfig | null> {
+  const [store] = await db.select().from(stores).where(eq(stores.id, storeId)).limit(1);
+  
+  if (!store || !store.shopifyDomain) {
+    return null;
+  }
+  
+  if (store.shopifyAccessToken) {
+    return {
+      apiKey: store.shopifyApiKey || "",
+      apiSecret: store.shopifyApiSecret || "",
+      storeUrl: store.shopifyDomain,
+      accessToken: store.shopifyAccessToken,
+    };
+  }
+  
+  if (!store.shopifyApiKey || !store.shopifyApiSecret) {
+    return null;
+  }
+  
+  return {
+    apiKey: store.shopifyApiKey,
+    apiSecret: store.shopifyApiSecret,
+    storeUrl: store.shopifyDomain,
+  };
+}
+
 function getShopifyApiUrl(storeUrl: string): string {
   const cleanUrl = storeUrl.replace(/^https?:\/\//, "").replace(/\/$/, "");
   return `https://${cleanUrl}/admin/api/${SHOPIFY_API_VERSION}`;
 }
 
-function getAuthHeader(apiKey: string, apiSecret: string): string {
-  return "Basic " + Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
+function getAuthHeader(config: ShopifyConfig): { [key: string]: string } {
+  if (config.accessToken) {
+    return { "X-Shopify-Access-Token": config.accessToken };
+  }
+  return { Authorization: "Basic " + Buffer.from(`${config.apiKey}:${config.apiSecret}`).toString("base64") };
 }
 
 export async function createShopifyCustomer(data: {
@@ -52,8 +87,18 @@ export async function createShopifyCustomer(data: {
   utmMedium?: string;
   utmCampaign?: string;
   additionalTags?: string[];
+  storeId?: string;
 }): Promise<ShopifyCustomer | null> {
-  const config = getShopifyConfig();
+  let config: ShopifyConfig | null = null;
+  
+  if (data.storeId) {
+    config = await getShopifyConfigForStore(data.storeId);
+  }
+  
+  if (!config) {
+    config = getShopifyConfig();
+  }
+  
   if (!config) {
     console.error("Cannot create Shopify customer: credentials not configured");
     return null;
@@ -98,7 +143,7 @@ export async function createShopifyCustomer(data: {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: getAuthHeader(config.apiKey, config.apiSecret),
+        ...getAuthHeader(config),
       },
       body: JSON.stringify(customerPayload),
     });
@@ -138,7 +183,7 @@ async function findExistingCustomerByPhone(
       method: "GET",
       headers: {
         "Content-Type": "application/json",
-        Authorization: getAuthHeader(config.apiKey, config.apiSecret),
+        ...getAuthHeader(config),
       },
     });
     
@@ -170,7 +215,7 @@ export async function updateCustomerTags(
       method: "GET",
       headers: {
         "Content-Type": "application/json",
-        Authorization: getAuthHeader(config.apiKey, config.apiSecret),
+        ...getAuthHeader(config),
       },
     });
     
@@ -188,7 +233,7 @@ export async function updateCustomerTags(
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        Authorization: getAuthHeader(config.apiKey, config.apiSecret),
+        ...getAuthHeader(config),
       },
       body: JSON.stringify({
         customer: {

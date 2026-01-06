@@ -1,11 +1,35 @@
 import Twilio from "twilio";
 import { db } from "../db";
-import { trackingNumbers, callLogs } from "@shared/schema";
+import { trackingNumbers, callLogs, stores } from "@shared/schema";
 import { eq, and, lt, gt, isNull, or } from "drizzle-orm";
 
 const ASSIGNMENT_DURATION_MINUTES = 60;
 
-function getTwilioClient() {
+interface TwilioCredentials {
+  accountSid: string;
+  authToken: string;
+  forwardTo?: string;
+}
+
+async function getStoreCredentials(storeId: string): Promise<TwilioCredentials | null> {
+  const [store] = await db.select().from(stores).where(eq(stores.id, storeId)).limit(1);
+  
+  if (!store || !store.twilioAccountSid || !store.twilioAuthToken) {
+    return null;
+  }
+  
+  return {
+    accountSid: store.twilioAccountSid,
+    authToken: store.twilioAuthToken,
+    forwardTo: store.twilioForwardTo || undefined,
+  };
+}
+
+function getTwilioClient(credentials?: TwilioCredentials) {
+  if (credentials) {
+    return Twilio(credentials.accountSid, credentials.authToken);
+  }
+  
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
   
@@ -18,19 +42,21 @@ function getTwilioClient() {
 }
 
 export async function getOrAssignTrackingNumber(
+  storeId: string,
   gclid?: string,
   sessionId?: string,
   visitorId?: string
 ): Promise<{ phoneNumber: string; isNew: boolean } | null> {
   const now = new Date();
   
-  // First check for existing active assignment by GCLID
+  // First check for existing active assignment by GCLID for this store
   if (gclid) {
     const existing = await db
       .select()
       .from(trackingNumbers)
       .where(
         and(
+          eq(trackingNumbers.storeId, storeId),
           eq(trackingNumbers.gclid, gclid),
           eq(trackingNumbers.isAvailable, false),
           gt(trackingNumbers.expiresAt, now) // Not yet expired
@@ -50,6 +76,7 @@ export async function getOrAssignTrackingNumber(
       .from(trackingNumbers)
       .where(
         and(
+          eq(trackingNumbers.storeId, storeId),
           eq(trackingNumbers.isAvailable, false),
           gt(trackingNumbers.expiresAt, now),
           or(
@@ -65,16 +92,16 @@ export async function getOrAssignTrackingNumber(
     }
   }
   
-  await expireOldAssignments();
+  await expireOldAssignments(storeId);
   
   const available = await db
     .select()
     .from(trackingNumbers)
-    .where(eq(trackingNumbers.isAvailable, true))
+    .where(and(eq(trackingNumbers.storeId, storeId), eq(trackingNumbers.isAvailable, true)))
     .limit(1);
   
   if (available.length === 0) {
-    console.warn("No tracking numbers available in pool");
+    console.warn("No tracking numbers available in pool for store:", storeId);
     return null;
   }
   
@@ -126,6 +153,7 @@ export async function logCall(data: {
   callDuration?: number;
   shopifyCustomerId?: string;
   metadata?: Record<string, any>;
+  storeId?: string;
 }) {
   const [callLog] = await db.insert(callLogs).values(data).returning();
   return callLog;
@@ -146,8 +174,17 @@ export async function updateCallLog(twilioCallSid: string, updates: Partial<{
   return updated;
 }
 
-export async function expireOldAssignments() {
+export async function expireOldAssignments(storeId?: string) {
   const now = new Date();
+  
+  const conditions = [
+    eq(trackingNumbers.isAvailable, false),
+    lt(trackingNumbers.expiresAt, now),
+  ];
+  
+  if (storeId) {
+    conditions.push(eq(trackingNumbers.storeId, storeId));
+  }
   
   await db
     .update(trackingNumbers)
@@ -159,18 +196,14 @@ export async function expireOldAssignments() {
       expiresAt: null,
       isAvailable: true,
     })
-    .where(
-      and(
-        eq(trackingNumbers.isAvailable, false),
-        lt(trackingNumbers.expiresAt, now)
-      )
-    );
+    .where(and(...conditions));
 }
 
-export async function addTrackingNumber(phoneNumber: string, forwardTo?: string) {
+export async function addTrackingNumber(storeId: string, phoneNumber: string, forwardTo?: string) {
   const [number] = await db
     .insert(trackingNumbers)
     .values({
+      storeId,
       phoneNumber,
       forwardTo,
       isAvailable: true,
@@ -181,7 +214,10 @@ export async function addTrackingNumber(phoneNumber: string, forwardTo?: string)
   return number;
 }
 
-export async function getAllTrackingNumbers() {
+export async function getAllTrackingNumbers(storeId?: string) {
+  if (storeId) {
+    return db.select().from(trackingNumbers).where(eq(trackingNumbers.storeId, storeId));
+  }
   return db.select().from(trackingNumbers);
 }
 
@@ -203,4 +239,4 @@ export function generateTwimlMessage(message: string): string {
 </Response>`;
 }
 
-export { getTwilioClient };
+export { getTwilioClient, getStoreCredentials };
