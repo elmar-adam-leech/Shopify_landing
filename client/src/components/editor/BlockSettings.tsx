@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,23 @@ import { Plus, Trash2, GripVertical, FlaskConical, Copy, Eye, Move, ChevronDown,
 import type { Block, BlockType, BlockVariant, VisibilityCondition, VisibilityRules, BlockPosition, ShopifyProduct } from "@shared/schema";
 import { v4 as uuidv4 } from "uuid";
 import { ProductPicker } from "./ProductPicker";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface BlockSettingsProps {
   block: Block | null;
@@ -409,18 +426,37 @@ function ButtonBlockSettings({ config, onUpdate }: { config: Record<string, any>
   );
 }
 
-function FormFieldEditor({ field, index, onUpdate, onRemove }: { 
+function SortableFormField({ field, index, onUpdate, onRemove }: { 
   field: any; 
   index: number; 
   onUpdate: (updates: Record<string, any>) => void;
   onRemove: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: field.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
 
   return (
-    <div className="border rounded-lg bg-muted/50">
+    <div 
+      ref={setNodeRef} 
+      style={style}
+      className={`border rounded-lg bg-muted/50 ${isDragging ? "opacity-50" : ""}`}
+    >
       <div className="flex items-center gap-2 p-3">
-        <GripVertical className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
+          <GripVertical className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+        </div>
         <Input
           value={field.label}
           onChange={(e) => onUpdate({ label: e.target.value })}
@@ -679,9 +715,166 @@ function WebhookEditor({ webhooks, onUpdate }: {
   );
 }
 
+function SortableStep({ 
+  step, 
+  index, 
+  fields, 
+  onUpdate, 
+  onRemove 
+}: { 
+  step: any; 
+  index: number; 
+  fields: any[]; 
+  onUpdate: (updates: Record<string, any>) => void; 
+  onRemove: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: step.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="border rounded-lg bg-background"
+    >
+      <div className="flex items-center gap-2 p-3">
+        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
+          <GripVertical className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+        </div>
+        <Input
+          value={step.title}
+          onChange={(e) => onUpdate({ title: e.target.value })}
+          placeholder="Step Title"
+          className="flex-1"
+          data-testid={`input-step-title-${index}`}
+        />
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setExpanded(!expanded)}
+          data-testid={`button-expand-step-${index}`}
+        >
+          {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onRemove}
+          className="text-destructive"
+          data-testid={`button-remove-step-${index}`}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {expanded && (
+        <div className="p-3 pt-0 space-y-3 border-t mt-2">
+          <div className="space-y-2">
+            <Label className="text-sm">Description (optional)</Label>
+            <Input
+              value={step.description || ""}
+              onChange={(e) => onUpdate({ description: e.target.value })}
+              placeholder="Brief description for this step"
+              data-testid={`input-step-description-${index}`}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm">Assign Fields to This Step</Label>
+            <div className="space-y-1 max-h-40 overflow-y-auto">
+              {fields.map((field: any) => (
+                <div key={field.id} className="flex items-center gap-2 p-2 rounded-md bg-muted">
+                  <Switch
+                    checked={(step.fieldIds || []).includes(field.id)}
+                    onCheckedChange={(checked) => {
+                      const currentIds = step.fieldIds || [];
+                      const newIds = checked 
+                        ? [...currentIds, field.id]
+                        : currentIds.filter((id: string) => id !== field.id);
+                      onUpdate({ fieldIds: newIds });
+                    }}
+                    data-testid={`switch-step-field-${field.id}-${index}`}
+                  />
+                  <span className="text-sm">{field.label}</span>
+                  {field.type === "hidden" && (
+                    <Badge variant="secondary" className="text-xs">Hidden</Badge>
+                  )}
+                </div>
+              ))}
+              {fields.length === 0 && (
+                <p className="text-sm text-muted-foreground p-2">No fields defined yet</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FormBlockSettings({ config, onUpdate }: { config: Record<string, any>; onUpdate: (config: Record<string, any>) => void }) {
   const fields = config.fields || [];
   const webhooks = config.webhooks || [];
+  const steps = config.steps || [];
+  const isMultiStep = config.isMultiStep || false;
+
+  // Normalize step field assignments on mount - clean up any orphaned field references
+  const normalizedOnce = useRef(false);
+  useEffect(() => {
+    if (!normalizedOnce.current && isMultiStep && steps.length > 0) {
+      const validFieldIds = new Set(fields.map((f: any) => f.id));
+      let hasOrphanedRefs = false;
+      
+      const cleanedSteps = steps.map((step: any) => {
+        const cleanedIds = (step.fieldIds || []).filter((id: string) => validFieldIds.has(id));
+        if (cleanedIds.length !== (step.fieldIds || []).length) {
+          hasOrphanedRefs = true;
+        }
+        return { ...step, fieldIds: cleanedIds };
+      });
+      
+      if (hasOrphanedRefs) {
+        onUpdate({ ...config, steps: cleanedSteps });
+      }
+      normalizedOnce.current = true;
+    }
+  }, [isMultiStep, steps, fields, config, onUpdate]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleFieldDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    
+    const oldIndex = fields.findIndex((f: any) => f.id === active.id);
+    const newIndex = fields.findIndex((f: any) => f.id === over.id);
+    
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const newFields = arrayMove(fields, oldIndex, newIndex);
+      onUpdate({ ...config, fields: newFields });
+    }
+  };
 
   const addField = (type: string = "text") => {
     const newField: any = {
@@ -711,8 +904,16 @@ function FormBlockSettings({ config, onUpdate }: { config: Record<string, any>; 
   };
 
   const removeField = (index: number) => {
+    const removedFieldId = fields[index]?.id;
     const newFields = fields.filter((_: any, i: number) => i !== index);
-    onUpdate({ ...config, fields: newFields });
+    
+    // Clean up orphaned field references from steps
+    const newSteps = steps.map((step: any) => ({
+      ...step,
+      fieldIds: (step.fieldIds || []).filter((id: string) => id !== removedFieldId)
+    }));
+    
+    onUpdate({ ...config, fields: newFields, steps: newSteps });
   };
 
   return (
@@ -755,17 +956,160 @@ function FormBlockSettings({ config, onUpdate }: { config: Record<string, any>; 
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <div className="space-y-2">
-          {fields.map((field: any, index: number) => (
-            <FormFieldEditor
-              key={field.id}
-              field={field}
-              index={index}
-              onUpdate={(updates) => updateField(index, updates)}
-              onRemove={() => removeField(index)}
-            />
-          ))}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleFieldDragEnd}
+        >
+          <SortableContext
+            items={fields.map((f: any) => f.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="space-y-2">
+              {fields.map((field: any, index: number) => (
+                <SortableFormField
+                  key={field.id}
+                  field={field}
+                  index={index}
+                  onUpdate={(updates: Record<string, any>) => updateField(index, updates)}
+                  onRemove={() => removeField(index)}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      </div>
+
+      <div className="space-y-4 border-t pt-4">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <Label htmlFor="isMultiStep">Enable Multi-Step Form</Label>
+            <p className="text-xs text-muted-foreground">Split form into multiple steps</p>
+          </div>
+          <Switch
+            id="isMultiStep"
+            checked={isMultiStep}
+            onCheckedChange={(checked) => {
+              const updates: Record<string, any> = { ...config, isMultiStep: checked };
+              if (checked && steps.length === 0) {
+                updates.steps = [
+                  { id: uuidv4(), title: "Step 1", description: "", fieldIds: [] },
+                  { id: uuidv4(), title: "Step 2", description: "", fieldIds: [] },
+                ];
+              }
+              onUpdate(updates);
+            }}
+            data-testid="switch-multi-step"
+          />
         </div>
+
+        {isMultiStep && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <Label>Form Steps</Label>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  const newStep = {
+                    id: uuidv4(),
+                    title: `Step ${steps.length + 1}`,
+                    description: "",
+                    fieldIds: [],
+                  };
+                  onUpdate({ ...config, steps: [...steps, newStep] });
+                }}
+                data-testid="button-add-step"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add Step
+              </Button>
+            </div>
+
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={(event: DragEndEvent) => {
+                const { active, over } = event;
+                if (!over || active.id === over.id) return;
+                
+                const oldIndex = steps.findIndex((s: any) => s.id === active.id);
+                const newIndex = steps.findIndex((s: any) => s.id === over.id);
+                
+                if (oldIndex !== -1 && newIndex !== -1) {
+                  const newSteps = arrayMove(steps, oldIndex, newIndex);
+                  onUpdate({ ...config, steps: newSteps });
+                }
+              }}
+            >
+              <SortableContext
+                items={steps.map((s: any) => s.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-2">
+                  {steps.map((step: any, index: number) => (
+                    <SortableStep
+                      key={step.id}
+                      step={step}
+                      index={index}
+                      fields={fields}
+                      onUpdate={(updates: Record<string, any>) => {
+                        const newSteps = [...steps];
+                        newSteps[index] = { ...newSteps[index], ...updates };
+                        onUpdate({ ...config, steps: newSteps });
+                      }}
+                      onRemove={() => {
+                        const newSteps = steps.filter((_: any, i: number) => i !== index);
+                        onUpdate({ ...config, steps: newSteps });
+                      }}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <Label htmlFor="showProgressBar">Show Progress Bar</Label>
+                <Switch
+                  id="showProgressBar"
+                  checked={config.showProgressBar !== false}
+                  onCheckedChange={(checked) => onUpdate({ ...config, showProgressBar: checked })}
+                  data-testid="switch-progress-bar"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <Label htmlFor="showStepNumbers">Show Step Numbers</Label>
+                <Switch
+                  id="showStepNumbers"
+                  checked={config.showStepNumbers !== false}
+                  onCheckedChange={(checked) => onUpdate({ ...config, showStepNumbers: checked })}
+                  data-testid="switch-step-numbers"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="prevButtonText">Previous Button Text</Label>
+                <Input
+                  id="prevButtonText"
+                  value={config.prevButtonText || "Previous"}
+                  onChange={(e) => onUpdate({ ...config, prevButtonText: e.target.value })}
+                  placeholder="Previous"
+                  data-testid="input-prev-button"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="nextButtonText">Next Button Text</Label>
+                <Input
+                  id="nextButtonText"
+                  value={config.nextButtonText || "Next"}
+                  onChange={(e) => onUpdate({ ...config, nextButtonText: e.target.value })}
+                  placeholder="Next"
+                  data-testid="input-next-button"
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="space-y-2">

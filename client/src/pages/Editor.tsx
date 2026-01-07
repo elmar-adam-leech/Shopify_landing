@@ -6,12 +6,14 @@ import {
   DragOverlay,
   closestCenter,
   pointerWithin,
+  rectIntersection,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   type DragStartEvent,
   type DragEndEvent,
+  type DragMoveEvent,
 } from "@dnd-kit/core";
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { v4 as uuidv4 } from "uuid";
@@ -143,6 +145,7 @@ export default function Editor() {
   const [layoutMode, setLayoutMode] = useState<"flow" | "freeform">("flow");
   const [showRulers, setShowRulers] = useState(true);
   const [showSnapGuides, setShowSnapGuides] = useState(true);
+  const [dragPointerPosition, setDragPointerPosition] = useState<{ x: number; y: number } | null>(null);
 
   // Load template blocks from sessionStorage if this is a new page
   useEffect(() => {
@@ -249,9 +252,22 @@ export default function Editor() {
     setActiveId(String(event.active.id));
   }, []);
 
+  const handleDragMove = useCallback((event: DragMoveEvent) => {
+    if (event.activatorEvent && 'clientX' in event.activatorEvent) {
+      const { clientX, clientY } = event.activatorEvent as MouseEvent;
+      const delta = event.delta;
+      setDragPointerPosition({
+        x: clientX + delta.x,
+        y: clientY + delta.y,
+      });
+    }
+  }, []);
+
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
+    const pointerPos = dragPointerPosition;
+    setDragPointerPosition(null);
 
     if (!over) return;
 
@@ -259,29 +275,69 @@ export default function Editor() {
 
     if (activeData?.isLibraryItem) {
       const blockType = activeData.type as BlockType;
-      const newBlock: Block = {
-        id: uuidv4(),
-        type: blockType,
-        config: { ...defaultBlockConfigs[blockType] },
-        order: blocks.length,
-        ...(layoutMode === "freeform" ? {
+      
+      if (layoutMode === "freeform") {
+        const canvasElement = document.querySelector('[data-testid="freeform-canvas"]');
+        let x = 50;
+        let y = 50;
+        
+        if (canvasElement && pointerPos) {
+          const canvasRect = canvasElement.getBoundingClientRect();
+          const showRulersOffset = showRulers ? 20 : 0;
+          x = Math.max(0, pointerPos.x - canvasRect.left - showRulersOffset);
+          y = Math.max(0, pointerPos.y - canvasRect.top - showRulersOffset);
+        }
+        
+        const newBlock: Block = {
+          id: uuidv4(),
+          type: blockType,
+          config: { ...defaultBlockConfigs[blockType] },
+          order: blocks.length,
           position: {
-            x: 50,
-            y: 50 + blocks.filter(b => b.position).length * 20,
+            x,
+            y,
             width: blockType === "hero-banner" ? 400 : 300,
             height: blockType === "hero-banner" ? 300 : 150,
             zIndex: blocks.filter(b => b.position).length + 1,
             locked: false,
+          },
+        };
+        setBlocks((prev) => [...prev, newBlock]);
+        setHasChanges(true);
+        setSelectedBlockId(newBlock.id);
+      } else {
+        const overData = over.data.current;
+        let insertIndex = blocks.length;
+        
+        if (overData?.sortable?.index !== undefined) {
+          insertIndex = overData.sortable.index;
+        } else if (over.id !== "editor-canvas") {
+          const overIndex = blocks.findIndex(b => b.id === over.id);
+          if (overIndex !== -1) {
+            insertIndex = overIndex + 1;
           }
-        } : {}),
-      };
-      setBlocks((prev) => [...prev, newBlock]);
-      setHasChanges(true);
-      setSelectedBlockId(newBlock.id);
+        }
+        
+        const newBlock: Block = {
+          id: uuidv4(),
+          type: blockType,
+          config: { ...defaultBlockConfigs[blockType] },
+          order: insertIndex,
+        };
+        
+        setBlocks((prev) => {
+          const updated = [...prev];
+          updated.splice(insertIndex, 0, newBlock);
+          return updated.map((item, index) => ({ ...item, order: index }));
+        });
+        setHasChanges(true);
+        setSelectedBlockId(newBlock.id);
+      }
     } else if (active.id !== over.id) {
       setBlocks((items) => {
         const oldIndex = items.findIndex((item) => item.id === active.id);
         const newIndex = items.findIndex((item) => item.id === over.id);
+        if (oldIndex === -1 || newIndex === -1) return items;
         const newItems = arrayMove(items, oldIndex, newIndex).map((item, index) => ({
           ...item,
           order: index,
@@ -290,7 +346,7 @@ export default function Editor() {
         return newItems;
       });
     }
-  }, [blocks.length]);
+  }, [blocks, layoutMode, dragPointerPosition, showRulers]);
 
   const handleDeleteBlock = useCallback((id: string) => {
     setBlocks((prev) => prev.filter((b) => b.id !== id));
@@ -358,6 +414,7 @@ export default function Editor() {
       sensors={sensors}
       collisionDetection={collisionDetection}
       onDragStart={handleDragStart}
+      onDragMove={handleDragMove}
       onDragEnd={handleDragEnd}
     >
       <div className="h-screen flex flex-col bg-background">

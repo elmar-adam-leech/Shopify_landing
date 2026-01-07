@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useState } from "react";
 import type { ProductBlockConfig } from "@shared/schema";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ interface ProductBlockPreviewProps {
 
 export const ProductBlockPreview = memo(function ProductBlockPreview({ config }: ProductBlockPreviewProps) {
   const settings = config as ProductBlockConfig;
+  const [quantity, setQuantity] = useState(1);
   
   const {
     showImage = true,
@@ -190,11 +191,30 @@ export const ProductBlockPreview = memo(function ProductBlockPreview({ config }:
               <div className="flex items-center gap-3">
                 <span className="text-sm font-medium">Quantity:</span>
                 <div className="flex items-center border rounded-md">
-                  <Button variant="ghost" size="icon" className="h-9 w-9" disabled>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-9 w-9" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setQuantity(Math.max(1, quantity - 1));
+                    }}
+                    disabled={quantity <= 1}
+                    data-testid="button-quantity-minus"
+                  >
                     <Minus className="h-4 w-4" />
                   </Button>
-                  <span className="w-12 text-center">1</span>
-                  <Button variant="ghost" size="icon" className="h-9 w-9" disabled>
+                  <span className="w-12 text-center">{quantity}</span>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-9 w-9"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setQuantity(quantity + 1);
+                    }}
+                    data-testid="button-quantity-plus"
+                  >
                     <Plus className="h-4 w-4" />
                   </Button>
                 </div>

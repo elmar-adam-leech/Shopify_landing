@@ -156,6 +156,16 @@ export const webhookConfigSchema = z.object({
   headers: z.record(z.string()).optional(),
 });
 
+// Form step schema for multi-step forms
+export const formStepSchema = z.object({
+  id: z.string(),
+  title: z.string().default("Step"),
+  description: z.string().optional(),
+  fieldIds: z.array(z.string()).default([]),
+});
+
+export type FormStep = z.infer<typeof formStepSchema>;
+
 export const formBlockConfigSchema = z.object({
   title: z.string().default("Contact Us"),
   fields: z.array(formFieldSchema).default([
@@ -167,6 +177,13 @@ export const formBlockConfigSchema = z.object({
   fireConversionEvent: z.boolean().default(true),
   conversionEvent: z.enum(pixelEventTypes).default("Lead"),
   conversionValue: z.number().optional(),
+  // Multi-step form configuration
+  isMultiStep: z.boolean().default(false),
+  steps: z.array(formStepSchema).optional(),
+  showProgressBar: z.boolean().default(true),
+  showStepNumbers: z.boolean().default(true),
+  prevButtonText: z.string().default("Previous"),
+  nextButtonText: z.string().default("Next"),
   // Webhook routing
   webhooks: z.array(webhookConfigSchema).optional(),
   emailNotification: z.object({
@@ -247,15 +264,30 @@ export const blockPositionSchema = z.object({
 
 export type BlockPosition = z.infer<typeof blockPositionSchema>;
 
+// Column schema for column layouts
+export const columnSchema = z.object({
+  id: z.string(),
+  width: z.number().min(1).max(12).default(6), // 12-column grid system
+  widthTablet: z.number().min(1).max(12).optional(), // Responsive override
+  widthMobile: z.number().min(1).max(12).optional(), // Responsive override
+  blockIds: z.array(z.string()).default([]), // Block IDs in this column
+});
+
+export type Column = z.infer<typeof columnSchema>;
+
 // Section schema for grouping blocks with layout modes
 export const sectionSchema = z.object({
   id: z.string(),
   name: z.string().default("Section"),
-  layoutMode: z.enum(["flow", "freeform"]).default("flow"),
+  layoutMode: z.enum(["flow", "freeform"]).default("flow"), // "columns" reserved for future
   height: z.number().default(400), // Height in pixels for freeform mode
   backgroundColor: z.string().optional(),
   backgroundImage: z.string().optional(),
   blocks: z.array(z.string()).default([]), // Block IDs in this section
+  // Column layout configuration (reserved for future use)
+  columns: z.array(columnSchema).optional(),
+  columnGap: z.enum(["none", "small", "medium", "large"]).default("medium"),
+  reverseOnMobile: z.boolean().default(false), // Stack columns in reverse on mobile
 });
 
 export type Section = z.infer<typeof sectionSchema>;
