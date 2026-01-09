@@ -36,6 +36,12 @@ The core entities are:
 - Hero Banner, Product Grid, Text Block, Image Block
 - Button Block, Form Block, Phone Block, Chat Block
 
+### Editor Features
+- **Flow-based Layout**: Blocks are arranged vertically with drag-and-drop reordering (freeform positioning removed)
+- **Responsive Preview**: Desktop/tablet/mobile viewport toggle for preview sizing
+- **Multi-step Forms**: Forms support multiple steps with field assignment and navigation
+- **Custom Pixel Events**: Define custom events that can be triggered by form submissions, button clicks, and product actions
+
 ### A/B Testing (Block-Level)
 - Each block can have multiple variants with different configurations
 - Traffic percentage controls for variant distribution

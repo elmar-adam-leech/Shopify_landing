@@ -5,25 +5,21 @@ import {
   DndContext,
   DragOverlay,
   closestCenter,
-  pointerWithin,
-  rectIntersection,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   type DragStartEvent,
   type DragEndEvent,
-  type DragMoveEvent,
 } from "@dnd-kit/core";
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { v4 as uuidv4 } from "uuid";
-import { ArrowLeft, Save, Eye, Settings, Loader2, Monitor, Tablet, Smartphone, History, FileSliders, Layers, List, Ruler, Grid3X3 } from "lucide-react";
+import { ArrowLeft, Save, Eye, Settings, Loader2, Monitor, Tablet, Smartphone, History, FileSliders } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { BlockLibrary } from "@/components/editor/BlockLibrary";
 import { EditorCanvas } from "@/components/editor/EditorCanvas";
-import { FreeformCanvas } from "@/components/editor/FreeformCanvas";
 import { BlockSettings } from "@/components/editor/BlockSettings";
 import { PixelSettingsDialog } from "@/components/editor/PixelSettings";
 import { PageSettingsDialog } from "@/components/editor/PageSettings";
@@ -142,10 +138,6 @@ export default function Editor() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [viewportSize, setViewportSize] = useState<"desktop" | "tablet" | "mobile">("desktop");
-  const [layoutMode, setLayoutMode] = useState<"flow" | "freeform">("flow");
-  const [showRulers, setShowRulers] = useState(true);
-  const [showSnapGuides, setShowSnapGuides] = useState(true);
-  const [dragPointerPosition, setDragPointerPosition] = useState<{ x: number; y: number } | null>(null);
 
   // Load template blocks from sessionStorage if this is a new page
   useEffect(() => {
@@ -252,22 +244,9 @@ export default function Editor() {
     setActiveId(String(event.active.id));
   }, []);
 
-  const handleDragMove = useCallback((event: DragMoveEvent) => {
-    if (event.activatorEvent && 'clientX' in event.activatorEvent) {
-      const { clientX, clientY } = event.activatorEvent as MouseEvent;
-      const delta = event.delta;
-      setDragPointerPosition({
-        x: clientX + delta.x,
-        y: clientY + delta.y,
-      });
-    }
-  }, []);
-
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
-    const pointerPos = dragPointerPosition;
-    setDragPointerPosition(null);
 
     if (!over) return;
 
@@ -275,64 +254,32 @@ export default function Editor() {
 
     if (activeData?.isLibraryItem) {
       const blockType = activeData.type as BlockType;
+      const overData = over.data.current;
+      let insertIndex = blocks.length;
       
-      if (layoutMode === "freeform") {
-        const canvasElement = document.querySelector('[data-testid="freeform-canvas"]');
-        let x = 50;
-        let y = 50;
-        
-        if (canvasElement && pointerPos) {
-          const canvasRect = canvasElement.getBoundingClientRect();
-          const showRulersOffset = showRulers ? 20 : 0;
-          x = Math.max(0, pointerPos.x - canvasRect.left - showRulersOffset);
-          y = Math.max(0, pointerPos.y - canvasRect.top - showRulersOffset);
+      if (overData?.sortable?.index !== undefined) {
+        insertIndex = overData.sortable.index;
+      } else if (over.id !== "editor-canvas") {
+        const overIndex = blocks.findIndex(b => b.id === over.id);
+        if (overIndex !== -1) {
+          insertIndex = overIndex + 1;
         }
-        
-        const newBlock: Block = {
-          id: uuidv4(),
-          type: blockType,
-          config: { ...defaultBlockConfigs[blockType] },
-          order: blocks.length,
-          position: {
-            x,
-            y,
-            width: blockType === "hero-banner" ? 400 : 300,
-            height: blockType === "hero-banner" ? 300 : 150,
-            zIndex: blocks.filter(b => b.position).length + 1,
-            locked: false,
-          },
-        };
-        setBlocks((prev) => [...prev, newBlock]);
-        setHasChanges(true);
-        setSelectedBlockId(newBlock.id);
-      } else {
-        const overData = over.data.current;
-        let insertIndex = blocks.length;
-        
-        if (overData?.sortable?.index !== undefined) {
-          insertIndex = overData.sortable.index;
-        } else if (over.id !== "editor-canvas") {
-          const overIndex = blocks.findIndex(b => b.id === over.id);
-          if (overIndex !== -1) {
-            insertIndex = overIndex + 1;
-          }
-        }
-        
-        const newBlock: Block = {
-          id: uuidv4(),
-          type: blockType,
-          config: { ...defaultBlockConfigs[blockType] },
-          order: insertIndex,
-        };
-        
-        setBlocks((prev) => {
-          const updated = [...prev];
-          updated.splice(insertIndex, 0, newBlock);
-          return updated.map((item, index) => ({ ...item, order: index }));
-        });
-        setHasChanges(true);
-        setSelectedBlockId(newBlock.id);
       }
+      
+      const newBlock: Block = {
+        id: uuidv4(),
+        type: blockType,
+        config: { ...defaultBlockConfigs[blockType] },
+        order: insertIndex,
+      };
+      
+      setBlocks((prev) => {
+        const updated = [...prev];
+        updated.splice(insertIndex, 0, newBlock);
+        return updated.map((item, index) => ({ ...item, order: index }));
+      });
+      setHasChanges(true);
+      setSelectedBlockId(newBlock.id);
     } else if (active.id !== over.id) {
       setBlocks((items) => {
         const oldIndex = items.findIndex((item) => item.id === active.id);
@@ -346,7 +293,7 @@ export default function Editor() {
         return newItems;
       });
     }
-  }, [blocks, layoutMode, dragPointerPosition, showRulers]);
+  }, [blocks]);
 
   const handleDeleteBlock = useCallback((id: string) => {
     setBlocks((prev) => prev.filter((b) => b.id !== id));
@@ -383,20 +330,6 @@ export default function Editor() {
     setHasChanges(true);
   }, []);
 
-  const handleUpdateBlockPosition = useCallback((blockId: string, positionUpdate: Partial<BlockPosition>) => {
-    setBlocks((prev) =>
-      prev.map((b) => {
-        if (b.id !== blockId) return b;
-        const currentPosition = b.position || { x: 0, y: 0, width: 200, height: 100, zIndex: 1, locked: false };
-        return {
-          ...b,
-          position: { ...currentPosition, ...positionUpdate },
-        };
-      })
-    );
-    setHasChanges(true);
-  }, []);
-
   const selectedBlock = blocks.find((b) => b.id === settingsBlockId) || null;
 
   if (!isNewPage && isLoading) {
@@ -407,14 +340,11 @@ export default function Editor() {
     );
   }
 
-  const collisionDetection = layoutMode === "freeform" ? pointerWithin : closestCenter;
-
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={collisionDetection}
+      collisionDetection={closestCenter}
       onDragStart={handleDragStart}
-      onDragMove={handleDragMove}
       onDragEnd={handleDragEnd}
     >
       <div className="h-screen flex flex-col bg-background">
@@ -505,31 +435,8 @@ export default function Editor() {
           </aside>
 
           <main className="flex-1 overflow-hidden bg-muted/30 flex flex-col">
-            {/* Viewport Size Toggle and Layout Mode */}
-            <div className="flex items-center justify-between py-2 px-4 border-b bg-background">
-              <div className="flex items-center gap-1">
-                <Button
-                  variant={layoutMode === "flow" ? "secondary" : "ghost"}
-                  size="sm"
-                  onClick={() => setLayoutMode("flow")}
-                  data-testid="button-layout-flow"
-                  className="gap-1.5"
-                >
-                  <List className="h-4 w-4" />
-                  Flow
-                </Button>
-                <Button
-                  variant={layoutMode === "freeform" ? "secondary" : "ghost"}
-                  size="sm"
-                  onClick={() => setLayoutMode("freeform")}
-                  data-testid="button-layout-freeform"
-                  className="gap-1.5"
-                >
-                  <Layers className="h-4 w-4" />
-                  Freeform
-                </Button>
-              </div>
-
+            {/* Viewport Size Toggle */}
+            <div className="flex items-center justify-center py-2 px-4 border-b bg-background">
               <div className="flex items-center gap-1">
                 <Button
                   variant={viewportSize === "desktop" ? "secondary" : "ghost"}
@@ -556,65 +463,26 @@ export default function Editor() {
                   <Smartphone className="h-4 w-4" />
                 </Button>
               </div>
-
-              {layoutMode === "freeform" && (
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant={showRulers ? "secondary" : "ghost"}
-                    size="icon"
-                    onClick={() => setShowRulers(!showRulers)}
-                    data-testid="button-toggle-rulers"
-                    title="Toggle rulers"
-                  >
-                    <Ruler className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant={showSnapGuides ? "secondary" : "ghost"}
-                    size="icon"
-                    onClick={() => setShowSnapGuides(!showSnapGuides)}
-                    data-testid="button-toggle-snap-guides"
-                    title="Toggle snap guides"
-                  >
-                    <Grid3X3 className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
             </div>
             
             {/* Canvas Container */}
             <div className="flex-1 overflow-auto flex justify-center py-4">
-              {layoutMode === "flow" ? (
-                <div 
-                  className={`transition-all duration-300 ${
-                    viewportSize === "desktop" ? "w-full max-w-none" :
-                    viewportSize === "tablet" ? "w-[768px]" : "w-[375px]"
-                  }`}
-                  style={{ minHeight: "100%" }}
-                >
-                  <EditorCanvas
-                    blocks={blocks.filter(b => !b.position)}
-                    selectedBlockId={selectedBlockId}
-                    onSelectBlock={setSelectedBlockId}
-                    onDeleteBlock={handleDeleteBlock}
-                    onDuplicateBlock={handleDuplicateBlock}
-                    onOpenSettings={setSettingsBlockId}
-                  />
-                </div>
-              ) : (
-                <FreeformCanvas
+              <div 
+                className={`transition-all duration-300 ${
+                  viewportSize === "desktop" ? "w-full max-w-none" :
+                  viewportSize === "tablet" ? "w-[768px]" : "w-[375px]"
+                }`}
+                style={{ minHeight: "100%" }}
+              >
+                <EditorCanvas
                   blocks={blocks}
-                  sections={sections}
                   selectedBlockId={selectedBlockId}
                   onSelectBlock={setSelectedBlockId}
                   onDeleteBlock={handleDeleteBlock}
                   onDuplicateBlock={handleDuplicateBlock}
                   onOpenSettings={setSettingsBlockId}
-                  onUpdateBlockPosition={handleUpdateBlockPosition}
-                  viewportSize={viewportSize}
-                  showRulers={showRulers}
-                  showSnapGuides={showSnapGuides}
                 />
-              )}
+              </div>
             </div>
           </main>
         </div>

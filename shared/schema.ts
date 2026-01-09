@@ -55,6 +55,11 @@ export const productBlockConfigSchema = z.object({
   showAddToCart: z.boolean().default(true),
   showBuyNow: z.boolean().default(false),
   showVendor: z.boolean().default(false),
+  
+  // Custom events to fire on Add to Cart (array of custom event IDs)
+  addToCartCustomEventIds: z.array(z.string()).default([]),
+  // Custom events to fire on Buy Now (array of custom event IDs)
+  buyNowCustomEventIds: z.array(z.string()).default([]),
   showSku: z.boolean().default(false),
   showTags: z.boolean().default(false),
   showMetafields: z.boolean().default(false),
@@ -119,6 +124,8 @@ export const buttonBlockConfigSchema = z.object({
   trackConversion: z.boolean().default(false),
   conversionEvent: z.enum(pixelEventTypes).default("AddToCart"),
   conversionValue: z.number().optional(),
+  // Custom events to fire on button click (array of custom event IDs)
+  customEventIds: z.array(z.string()).default([]),
 });
 
 export const formFieldSchema = z.object({
@@ -177,6 +184,8 @@ export const formBlockConfigSchema = z.object({
   fireConversionEvent: z.boolean().default(true),
   conversionEvent: z.enum(pixelEventTypes).default("Lead"),
   conversionValue: z.number().optional(),
+  // Custom events to fire on form submit (array of custom event IDs)
+  customEventIds: z.array(z.string()).default([]),
   // Multi-step form configuration
   isMultiStep: z.boolean().default(false),
   steps: z.array(formStepSchema).optional(),
@@ -239,7 +248,7 @@ export const blockVariantSchema = z.object({
 
 export type BlockVariant = z.infer<typeof blockVariantSchema>;
 
-// Positioning schema for freeform canvas mode
+// Positioning schema (legacy, kept for backwards compatibility)
 export const blockPositionSchema = z.object({
   x: z.number().default(0),
   y: z.number().default(0),
@@ -279,8 +288,8 @@ export type Column = z.infer<typeof columnSchema>;
 export const sectionSchema = z.object({
   id: z.string(),
   name: z.string().default("Section"),
-  layoutMode: z.enum(["flow", "freeform"]).default("flow"), // "columns" reserved for future
-  height: z.number().default(400), // Height in pixels for freeform mode
+  layoutMode: z.enum(["flow", "freeform"]).default("flow"), // "freeform" kept for backwards compatibility
+  height: z.number().default(400), // Height in pixels for section
   backgroundColor: z.string().optional(),
   backgroundImage: z.string().optional(),
   blocks: z.array(z.string()).default([]), // Block IDs in this section
@@ -335,11 +344,27 @@ export const blockSchema = z.object({
   visibilityRules: visibilityRulesSchema.optional(),
   // Section ID this block belongs to (optional, for backward compatibility)
   sectionId: z.string().optional(),
-  // Positioning for freeform layout mode
+  // Positioning (legacy, kept for backwards compatibility)
   position: blockPositionSchema.optional(),
 });
 
 export type Block = z.infer<typeof blockSchema>;
+
+// Custom pixel event schema
+export const customPixelEventSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  // Which platforms to fire this event on
+  platforms: z.object({
+    meta: z.boolean().default(true),
+    google: z.boolean().default(true),
+    tiktok: z.boolean().default(true),
+    pinterest: z.boolean().default(true),
+  }).default({}),
+});
+
+export type CustomPixelEvent = z.infer<typeof customPixelEventSchema>;
 
 // Pixel settings schema
 export const pixelSettingsSchema = z.object({
@@ -358,6 +383,8 @@ export const pixelSettingsSchema = z.object({
     purchase: z.boolean().default(true),
     lead: z.boolean().default(true),
   }).default({}),
+  // Custom events defined by the user
+  customEvents: z.array(customPixelEventSchema).default([]),
 });
 
 export type PixelSettings = z.infer<typeof pixelSettingsSchema>;
