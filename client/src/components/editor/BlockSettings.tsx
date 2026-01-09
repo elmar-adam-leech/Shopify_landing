@@ -718,16 +718,26 @@ function WebhookEditor({ webhooks, onUpdate }: {
 function SortableStep({ 
   step, 
   index, 
-  fields, 
+  fields,
+  allSteps,
   onUpdate, 
   onRemove 
 }: { 
   step: any; 
   index: number; 
-  fields: any[]; 
+  fields: any[];
+  allSteps: any[];
   onUpdate: (updates: Record<string, any>) => void; 
   onRemove: () => void;
 }) {
+  const getFieldAssignedToOtherStep = (fieldId: string) => {
+    for (const s of allSteps) {
+      if (s.id !== step.id && (s.fieldIds || []).includes(fieldId)) {
+        return s.title || 'another step';
+      }
+    }
+    return null;
+  };
   const [expanded, setExpanded] = useState(false);
   const {
     attributes,
@@ -794,25 +804,35 @@ function SortableStep({
           <div className="space-y-2">
             <Label className="text-sm">Assign Fields to This Step</Label>
             <div className="space-y-1 max-h-40 overflow-y-auto">
-              {fields.map((field: any) => (
-                <div key={field.id} className="flex items-center gap-2 p-2 rounded-md bg-muted">
-                  <Switch
-                    checked={(step.fieldIds || []).includes(field.id)}
-                    onCheckedChange={(checked) => {
-                      const currentIds = step.fieldIds || [];
-                      const newIds = checked 
-                        ? [...currentIds, field.id]
-                        : currentIds.filter((id: string) => id !== field.id);
-                      onUpdate({ fieldIds: newIds });
-                    }}
-                    data-testid={`switch-step-field-${field.id}-${index}`}
-                  />
-                  <span className="text-sm">{field.label}</span>
-                  {field.type === "hidden" && (
-                    <Badge variant="secondary" className="text-xs">Hidden</Badge>
-                  )}
-                </div>
-              ))}
+              {fields.map((field: any) => {
+                const assignedTo = getFieldAssignedToOtherStep(field.id);
+                const isAssignedElsewhere = assignedTo !== null;
+                const isInThisStep = (step.fieldIds || []).includes(field.id);
+                
+                return (
+                  <div key={field.id} className={`flex items-center gap-2 p-2 rounded-md ${isAssignedElsewhere ? 'bg-muted/50' : 'bg-muted'}`}>
+                    <Switch
+                      checked={isInThisStep}
+                      disabled={isAssignedElsewhere}
+                      onCheckedChange={(checked) => {
+                        const currentIds = step.fieldIds || [];
+                        const newIds = checked 
+                          ? [...currentIds, field.id]
+                          : currentIds.filter((id: string) => id !== field.id);
+                        onUpdate({ fieldIds: newIds });
+                      }}
+                      data-testid={`switch-step-field-${field.id}-${index}`}
+                    />
+                    <span className={`text-sm ${isAssignedElsewhere ? 'text-muted-foreground' : ''}`}>{field.label}</span>
+                    {field.type === "hidden" && (
+                      <Badge variant="secondary" className="text-xs">Hidden</Badge>
+                    )}
+                    {isAssignedElsewhere && (
+                      <span className="text-xs text-muted-foreground">(in {assignedTo})</span>
+                    )}
+                  </div>
+                );
+              })}
               {fields.length === 0 && (
                 <p className="text-sm text-muted-foreground p-2">No fields defined yet</p>
               )}
@@ -1053,6 +1073,7 @@ function FormBlockSettings({ config, onUpdate }: { config: Record<string, any>; 
                       step={step}
                       index={index}
                       fields={fields}
+                      allSteps={steps}
                       onUpdate={(updates: Record<string, any>) => {
                         const newSteps = [...steps];
                         newSteps[index] = { ...newSteps[index], ...updates };
