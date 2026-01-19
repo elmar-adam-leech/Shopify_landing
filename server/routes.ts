@@ -1,12 +1,35 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertPageSchema, updatePageSchema, insertFormSubmissionSchema, insertAnalyticsEventSchema, insertAbTestSchema, insertAbTestVariantSchema, insertStoreSchema, updateStoreSchema, stores } from "@shared/schema";
+import { insertPageSchema, updatePageSchema, insertFormSubmissionSchema, insertAnalyticsEventSchema, insertAbTestSchema, insertAbTestVariantSchema, insertStoreSchema, updateStoreSchema, stores, type Page } from "@shared/schema";
 import { z } from "zod";
 import { registerTwilioRoutes } from "./twilioRoutes";
 import shopifyAuthRouter from "./shopify-auth";
+import { resolveStoreContext } from "./store-middleware";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
+
+function validatePageAccess(page: Page | undefined, storeId: string | undefined): { valid: boolean; error?: string; statusCode?: number } {
+  if (!page) {
+    return { valid: false, error: "Page not found", statusCode: 404 };
+  }
+  if (page.storeId) {
+    if (!storeId) {
+      return { valid: false, error: "Store context required to access this page", statusCode: 401 };
+    }
+    if (page.storeId !== storeId) {
+      return { valid: false, error: "Access denied - page belongs to different store", statusCode: 403 };
+    }
+  }
+  return { valid: true };
+}
+
+function requireStoreContext(storeId: string | undefined): { valid: boolean; error?: string } {
+  if (!storeId) {
+    return { valid: false, error: "Store context required - provide shop or storeId parameter" };
+  }
+  return { valid: true };
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -15,6 +38,9 @@ export async function registerRoutes(
   
   // Register Shopify OAuth routes
   app.use(shopifyAuthRouter);
+  
+  // Apply store context middleware to resolve shop/storeId to store context
+  app.use(resolveStoreContext);
   
   // ============== STORE ROUTES ==============
   
@@ -358,7 +384,12 @@ export async function registerRoutes(
   // Lightweight page list - excludes heavy block data for faster loading
   app.get("/api/pages/list", async (req, res) => {
     try {
-      const storeId = req.query.storeId as string | undefined;
+      // Require store context for private page listing
+      const storeId = req.storeContext?.storeId;
+      const storeCheck = requireStoreContext(storeId);
+      if (!storeCheck.valid) {
+        return res.status(401).json({ error: storeCheck.error });
+      }
       const pages = await storage.getAllPages(storeId);
       // Return lightweight page summaries without blocks/sections
       const lightweightPages = pages.map(page => ({
@@ -379,10 +410,15 @@ export async function registerRoutes(
     }
   });
   
-  // Get all pages with full data (optionally filtered by storeId)
+  // Get all pages with full data (filtered by store context)
   app.get("/api/pages", async (req, res) => {
     try {
-      const storeId = req.query.storeId as string | undefined;
+      // Require store context for private page listing
+      const storeId = req.storeContext?.storeId;
+      const storeCheck = requireStoreContext(storeId);
+      if (!storeCheck.valid) {
+        return res.status(401).json({ error: storeCheck.error });
+      }
       const pages = await storage.getAllPages(storeId);
       res.json(pages);
     } catch (error) {
@@ -396,9 +432,13 @@ export async function registerRoutes(
     try {
       const { id } = req.params;
       const page = await storage.getPage(id);
-      if (!page) {
-        return res.status(404).json({ error: "Page not found" });
+      const storeId = req.storeContext?.storeId;
+      
+      const access = validatePageAccess(page, storeId);
+      if (!access.valid) {
+        return res.status(access.statusCode || 403).json({ error: access.error });
       }
+      
       res.json(page);
     } catch (error) {
       console.error("Error fetching page:", error);
@@ -431,7 +471,13 @@ export async function registerRoutes(
   // Create new page
   app.post("/api/pages", async (req, res) => {
     try {
-      const validatedData = insertPageSchema.parse(req.body);
+      // Always use store context storeId if available (ignore client-provided storeId for security)
+      const storeId = req.storeContext?.storeId || null;
+      const bodyWithStore = {
+        ...req.body,
+        storeId: storeId,
+      };
+      const validatedData = insertPageSchema.parse(bodyWithStore);
       
       // Check if slug already exists within the same store
       const existingPage = await storage.getPageBySlug(validatedData.slug, validatedData.storeId ?? undefined);
@@ -455,17 +501,22 @@ export async function registerRoutes(
   app.patch("/api/pages/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      const validatedData = updatePageSchema.parse(req.body);
+      const storeId = req.storeContext?.storeId;
       
-      // Check if page exists
+      // Check if page exists and validate access
       const existingPage = await storage.getPage(id);
-      if (!existingPage) {
-        return res.status(404).json({ error: "Page not found" });
+      const access = validatePageAccess(existingPage, storeId);
+      if (!access.valid) {
+        return res.status(access.statusCode || 403).json({ error: access.error });
       }
       
+      // Prevent changing storeId (remove from update data)
+      const { storeId: _, ...updateData } = req.body;
+      const validatedData = updatePageSchema.parse(updateData);
+      
       // If slug is being updated, check for conflicts within the same store
-      if (validatedData.slug && validatedData.slug !== existingPage.slug) {
-        const slugConflict = await storage.getPageBySlug(validatedData.slug, existingPage.storeId ?? undefined);
+      if (validatedData.slug && validatedData.slug !== existingPage!.slug) {
+        const slugConflict = await storage.getPageBySlug(validatedData.slug, existingPage!.storeId ?? undefined);
         if (slugConflict && slugConflict.id !== id) {
           validatedData.slug = `${validatedData.slug}-${Date.now()}`;
         }
@@ -486,6 +537,15 @@ export async function registerRoutes(
   app.delete("/api/pages/:id", async (req, res) => {
     try {
       const { id } = req.params;
+      const storeId = req.storeContext?.storeId;
+      
+      // Check page exists and validate access before delete
+      const existingPage = await storage.getPage(id);
+      const access = validatePageAccess(existingPage, storeId);
+      if (!access.valid) {
+        return res.status(access.statusCode || 403).json({ error: access.error });
+      }
+      
       const deleted = await storage.deletePage(id);
       if (!deleted) {
         return res.status(404).json({ error: "Page not found" });

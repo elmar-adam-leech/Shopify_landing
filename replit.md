@@ -25,12 +25,20 @@ Preferred communication style: Simple, everyday language.
 - **Database ORM**: Drizzle ORM with PostgreSQL
 - **Schema Validation**: Zod for runtime type checking
 
+### Shopify OAuth Integration
+- **OAuth Flow**: `/api/auth/shopify` initiates OAuth, `/api/auth/callback` handles token exchange
+- **Multi-tenancy**: All pages are scoped to stores via `storeId` foreign key
+- **Session Storage**: OAuth sessions stored in `shopify_sessions` table
+- **Webhook**: `/api/webhooks/app-uninstalled` handles app uninstallation
+- **Environment Variables**: `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_SCOPES`, `HOST_URL`
+
 ### Data Model
 The core entities are:
-- **Pages**: Landing pages with title, slug, blocks array, pixel settings, and publish status
+- **Stores**: Shopify stores with OAuth credentials, install status, and settings
+- **Pages**: Landing pages with title, slug, blocks array, pixel settings, and publish status (scoped to store)
 - **Blocks**: JSON structure containing block type, configuration, and order
-- **Form Submissions**: Captured form data linked to pages
-- **Users**: Basic user accounts
+- **Form Submissions**: Captured form data linked to pages and stores
+- **Users**: Basic user accounts with store role assignments
 
 ### Page Builder Block Types
 - Hero Banner, Product Grid, Text Block, Image Block
