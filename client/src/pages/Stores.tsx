@@ -20,9 +20,6 @@ export default function Stores() {
   const [formData, setFormData] = useState({
     name: "",
     shopifyDomain: "",
-    shopifyApiKey: "",
-    shopifyApiSecret: "",
-    shopifyAccessToken: "",
     twilioAccountSid: "",
     twilioAuthToken: "",
     twilioForwardTo: "",
@@ -80,9 +77,6 @@ export default function Stores() {
     setFormData({
       name: "",
       shopifyDomain: "",
-      shopifyApiKey: "",
-      shopifyApiSecret: "",
-      shopifyAccessToken: "",
       twilioAccountSid: "",
       twilioAuthToken: "",
       twilioForwardTo: "",
@@ -94,9 +88,6 @@ export default function Stores() {
     setFormData({
       name: store.name,
       shopifyDomain: store.shopifyDomain,
-      shopifyApiKey: store.shopifyApiKey || "",
-      shopifyApiSecret: store.shopifyApiSecret || "",
-      shopifyAccessToken: store.shopifyAccessToken || "",
       twilioAccountSid: store.twilioAccountSid || "",
       twilioAuthToken: store.twilioAuthToken || "",
       twilioForwardTo: store.twilioForwardTo || "",
@@ -171,86 +162,55 @@ export default function Stores() {
                           placeholder="mystore.myshopify.com"
                           data-testid="input-shopify-domain"
                         />
+                        <p className="text-xs text-muted-foreground">
+                          {editingStore ? "Connected via Shopify OAuth" : "You'll connect via Shopify OAuth after creating the store"}
+                        </p>
                       </div>
                     </div>
                   </div>
 
-                  <div className="space-y-4">
-                    <h3 className="font-medium text-sm text-muted-foreground">Shopify API Credentials</h3>
-                    <div className="grid gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="shopifyApiKey">API Key</Label>
-                        <Input
-                          id="shopifyApiKey"
-                          type="password"
-                          value={formData.shopifyApiKey}
-                          onChange={(e) => setFormData({ ...formData, shopifyApiKey: e.target.value })}
-                          placeholder={editingStore?.shopifyApiKey ? "***configured***" : "Enter API key"}
-                          data-testid="input-shopify-api-key"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="shopifyApiSecret">API Secret</Label>
-                        <Input
-                          id="shopifyApiSecret"
-                          type="password"
-                          value={formData.shopifyApiSecret}
-                          onChange={(e) => setFormData({ ...formData, shopifyApiSecret: e.target.value })}
-                          placeholder={editingStore?.shopifyApiSecret ? "***configured***" : "Enter API secret"}
-                          data-testid="input-shopify-api-secret"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="shopifyAccessToken">Access Token</Label>
-                        <Input
-                          id="shopifyAccessToken"
-                          type="password"
-                          value={formData.shopifyAccessToken}
-                          onChange={(e) => setFormData({ ...formData, shopifyAccessToken: e.target.value })}
-                          placeholder={editingStore?.shopifyAccessToken ? "***configured***" : "Enter access token"}
-                          data-testid="input-shopify-access-token"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <h3 className="font-medium text-sm text-muted-foreground">Twilio Call Tracking (Optional)</h3>
-                    <div className="grid gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="twilioAccountSid">Account SID</Label>
-                        <Input
-                          id="twilioAccountSid"
-                          type="password"
-                          value={formData.twilioAccountSid}
-                          onChange={(e) => setFormData({ ...formData, twilioAccountSid: e.target.value })}
-                          placeholder={editingStore?.twilioAccountSid ? "***configured***" : "Enter Twilio Account SID"}
-                          data-testid="input-twilio-account-sid"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="twilioAuthToken">Auth Token</Label>
-                        <Input
-                          id="twilioAuthToken"
-                          type="password"
-                          value={formData.twilioAuthToken}
-                          onChange={(e) => setFormData({ ...formData, twilioAuthToken: e.target.value })}
-                          placeholder={editingStore?.twilioAuthToken ? "***configured***" : "Enter Twilio Auth Token"}
-                          data-testid="input-twilio-auth-token"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="twilioForwardTo">Forward Calls To</Label>
-                        <Input
-                          id="twilioForwardTo"
-                          value={formData.twilioForwardTo}
-                          onChange={(e) => setFormData({ ...formData, twilioForwardTo: e.target.value })}
-                          placeholder="+1234567890"
-                          data-testid="input-twilio-forward-to"
-                        />
+                  {editingStore && (
+                    <div className="space-y-4">
+                      <h3 className="font-medium text-sm text-muted-foreground">Call Tracking (Optional)</h3>
+                      <p className="text-xs text-muted-foreground">
+                        By default, we use our built-in call tracking. Only configure this if you want to use your own Twilio account.
+                      </p>
+                      <div className="grid gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="twilioAccountSid">Twilio Account SID</Label>
+                          <Input
+                            id="twilioAccountSid"
+                            type="password"
+                            value={formData.twilioAccountSid}
+                            onChange={(e) => setFormData({ ...formData, twilioAccountSid: e.target.value })}
+                            placeholder={editingStore?.twilioAccountSid ? "***configured***" : "Leave blank to use default"}
+                            data-testid="input-twilio-account-sid"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="twilioAuthToken">Twilio Auth Token</Label>
+                          <Input
+                            id="twilioAuthToken"
+                            type="password"
+                            value={formData.twilioAuthToken}
+                            onChange={(e) => setFormData({ ...formData, twilioAuthToken: e.target.value })}
+                            placeholder={editingStore?.twilioAuthToken ? "***configured***" : "Leave blank to use default"}
+                            data-testid="input-twilio-auth-token"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="twilioForwardTo">Forward Calls To</Label>
+                          <Input
+                            id="twilioForwardTo"
+                            value={formData.twilioForwardTo}
+                            onChange={(e) => setFormData({ ...formData, twilioForwardTo: e.target.value })}
+                            placeholder="+1234567890"
+                            data-testid="input-twilio-forward-to"
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
                 <DialogFooter>
                   <Button 
@@ -340,11 +300,11 @@ export default function Stores() {
                 </CardHeader>
                 <CardContent>
                   <div className="flex flex-wrap gap-2 text-xs">
-                    <span className={`px-2 py-1 rounded-full ${store.shopifyApiKey ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" : "bg-muted text-muted-foreground"}`}>
-                      Shopify: {store.shopifyApiKey ? "Connected" : "Not configured"}
+                    <span className={`px-2 py-1 rounded-full ${store.shopifyAccessToken ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" : "bg-muted text-muted-foreground"}`}>
+                      Shopify: {store.shopifyAccessToken ? "Connected" : "Pending OAuth"}
                     </span>
-                    <span className={`px-2 py-1 rounded-full ${store.twilioAccountSid ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" : "bg-muted text-muted-foreground"}`}>
-                      Twilio: {store.twilioAccountSid ? "Connected" : "Not configured"}
+                    <span className="px-2 py-1 rounded-full bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                      Call Tracking: {store.twilioAccountSid ? "Custom" : "Default"}
                     </span>
                   </div>
                 </CardContent>

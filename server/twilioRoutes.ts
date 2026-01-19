@@ -1,5 +1,4 @@
 import type { Express, Request, Response } from "express";
-import Twilio from "twilio";
 import {
   getOrAssignTrackingNumber,
   getTrackingNumberByPhone,
@@ -11,6 +10,8 @@ import {
   expireOldAssignments,
   generateTwimlForward,
   generateTwimlMessage,
+  getTwilioClient,
+  getStoreCredentials,
 } from "./lib/twilio";
 import { createShopifyCustomer, isShopifyConfigured } from "./lib/shopify";
 import { db } from "./db";
@@ -356,14 +357,14 @@ export function registerTwilioRoutes(app: Express) {
         return res.status(401).json({ error: "Store context required" });
       }
 
-      const accountSid = process.env.TWILIO_ACCOUNT_SID;
-      const authToken = process.env.TWILIO_AUTH_TOKEN;
+      // Try store-specific credentials first, fall back to app-level
+      const storeCredentials = await getStoreCredentials(storeId);
+      const client = getTwilioClient(storeCredentials || undefined);
 
-      if (!accountSid || !authToken) {
+      if (!client) {
         return res.status(503).json({ error: "Twilio not configured" });
       }
 
-      const client = Twilio(accountSid, authToken);
       const areaCode = req.query.areaCode as string | undefined;
       const country = (req.query.country as string) || "US";
       const limit = parseInt(req.query.limit as string) || 10;
@@ -404,14 +405,14 @@ export function registerTwilioRoutes(app: Express) {
         return res.status(400).json({ error: "phoneNumber and forwardTo are required" });
       }
 
-      const accountSid = process.env.TWILIO_ACCOUNT_SID;
-      const authToken = process.env.TWILIO_AUTH_TOKEN;
+      // Try store-specific credentials first, fall back to app-level
+      const storeCredentials = await getStoreCredentials(storeId);
+      const client = getTwilioClient(storeCredentials || undefined);
 
-      if (!accountSid || !authToken) {
+      if (!client) {
         return res.status(503).json({ error: "Twilio not configured" });
       }
 
-      const client = Twilio(accountSid, authToken);
       const hostUrl = process.env.HOST_URL || "";
 
       const purchasedNumber = await client.incomingPhoneNumbers.create({
