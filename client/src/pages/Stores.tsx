@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useSearch } from "wouter";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -8,14 +9,27 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Store, ArrowLeft, Settings, Trash2 } from "lucide-react";
+import { Plus, Store, ArrowLeft, Settings, Trash2, Link as LinkIcon } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import type { Store as StoreType } from "@shared/schema";
 
 export default function Stores() {
   const { toast } = useToast();
+  const searchString = useSearch();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingStore, setEditingStore] = useState<StoreType | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchString);
+    const connectedShop = params.get("connected");
+    if (connectedShop) {
+      toast({ 
+        title: "Store connected!",
+        description: `Successfully connected to ${connectedShop}`
+      });
+      window.history.replaceState({}, "", "/stores");
+    }
+  }, [searchString, toast]);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -298,7 +312,7 @@ export default function Stores() {
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-3">
                   <div className="flex flex-wrap gap-2 text-xs">
                     <span className={`px-2 py-1 rounded-full ${store.shopifyAccessToken ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" : "bg-muted text-muted-foreground"}`}>
                       Shopify: {store.shopifyAccessToken ? "Connected" : "Pending OAuth"}
@@ -307,6 +321,20 @@ export default function Stores() {
                       Call Tracking: {store.twilioAccountSid ? "Custom" : "Default"}
                     </span>
                   </div>
+                  {!store.shopifyAccessToken && (
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      className="w-full"
+                      onClick={() => {
+                        window.location.href = `/api/auth/shopify?shop=${encodeURIComponent(store.shopifyDomain)}`;
+                      }}
+                      data-testid={`button-connect-shopify-${store.id}`}
+                    >
+                      <LinkIcon className="h-4 w-4 mr-2" />
+                      Connect to Shopify
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             ))}

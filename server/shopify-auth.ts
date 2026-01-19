@@ -172,7 +172,7 @@ router.get("/api/auth/callback", async (req: Request, res: Response) => {
       onlineAccessInfo: undefined,
     } as any);
 
-    res.redirect(`/editor?shop=${encodeURIComponent(shop)}&installed=true`);
+    res.redirect(`/stores?connected=${encodeURIComponent(shop)}`);
   } catch (error) {
     console.error("OAuth callback error:", error);
     res.status(500).json({ error: "Authentication failed" });
