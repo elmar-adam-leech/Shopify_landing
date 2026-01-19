@@ -88,6 +88,21 @@ The core entities are:
 - TikTok Pixel
 - Pinterest Tag
 
+### Shopify Customer Creation
+- **Form Submissions**: Creates Shopify customers when form block has `createShopifyCustomer` enabled
+- **Phone Calls**: Creates Shopify customers from Twilio call tracking events
+- **Tagging**: Automatic source tags (`source:page-slug`, `page:title`, `form-lead`/`phone-lead`)
+- **UTM Support**: UTM parameters passed through to customer notes
+- **OAuth Scopes**: Requires `write_customers` and `read_customers` scopes
+
+### Twilio Call Tracking Integration
+- **Dynamic Number Insertion (DNI)**: Swap phone numbers based on GCLID/UTM parameters
+- **Tracking Numbers**: Per-store tracking numbers with forwarding configuration
+- **Call Logging**: All calls logged with GCLID, duration, and status
+- **Webhooks**: `/api/incoming-call` and `/api/call-status` for Twilio callbacks
+- **Number Management**: `/api/twilio/available-numbers` and `/api/twilio/purchase-number` endpoints
+- **Environment Variables**: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`
+
 ### Development Tools
 - **Vite**: Frontend development server with HMR
 - **esbuild**: Production server bundling
