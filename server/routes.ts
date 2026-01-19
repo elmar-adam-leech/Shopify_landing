@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { insertPageSchema, updatePageSchema, insertFormSubmissionSchema, insertAnalyticsEventSchema, insertAbTestSchema, insertAbTestVariantSchema, insertStoreSchema, updateStoreSchema, stores } from "@shared/schema";
 import { z } from "zod";
 import { registerTwilioRoutes } from "./twilioRoutes";
+import shopifyAuthRouter from "./shopify-auth";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
 
@@ -11,6 +12,9 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  
+  // Register Shopify OAuth routes
+  app.use(shopifyAuthRouter);
   
   // ============== STORE ROUTES ==============
   
@@ -21,8 +25,6 @@ export async function registerRoutes(
       // Don't expose sensitive credentials in list view
       const safeStores = allStores.map(s => ({
         ...s,
-        shopifyApiKey: s.shopifyApiKey ? "***configured***" : null,
-        shopifyApiSecret: s.shopifyApiSecret ? "***configured***" : null,
         shopifyAccessToken: s.shopifyAccessToken ? "***configured***" : null,
         twilioAccountSid: s.twilioAccountSid ? "***configured***" : null,
         twilioAuthToken: s.twilioAuthToken ? "***configured***" : null,
@@ -45,8 +47,6 @@ export async function registerRoutes(
       // Mask sensitive fields
       const safeStore = {
         ...store,
-        shopifyApiKey: store.shopifyApiKey ? "***configured***" : null,
-        shopifyApiSecret: store.shopifyApiSecret ? "***configured***" : null,
         shopifyAccessToken: store.shopifyAccessToken ? "***configured***" : null,
         twilioAccountSid: store.twilioAccountSid ? "***configured***" : null,
         twilioAuthToken: store.twilioAuthToken ? "***configured***" : null,

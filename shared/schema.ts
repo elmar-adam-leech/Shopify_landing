@@ -391,14 +391,18 @@ export type PixelSettings = z.infer<typeof pixelSettingsSchema>;
 
 // Database tables
 
-// Stores table for multi-tenancy
+// Stores table for multi-tenancy (Shopify OAuth)
 export const stores = pgTable("stores", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
-  shopifyDomain: text("shopify_domain").notNull(), // e.g., "mystore.myshopify.com"
-  shopifyApiKey: text("shopify_api_key"),
-  shopifyApiSecret: text("shopify_api_secret"),
-  shopifyAccessToken: text("shopify_access_token"),
+  shopifyDomain: text("shopify_domain").notNull().unique(), // e.g., "mystore.myshopify.com"
+  shopifyAccessToken: text("shopify_access_token"), // OAuth access token
+  shopifyScopes: text("shopify_scopes"), // Comma-separated list of granted scopes
+  // Installation status
+  installState: text("install_state", { enum: ["pending", "installed", "uninstalled"] }).notNull().default("pending"),
+  installedAt: timestamp("installed_at"),
+  uninstalledAt: timestamp("uninstalled_at"),
+  // Twilio integration
   twilioAccountSid: text("twilio_account_sid"),
   twilioAuthToken: text("twilio_auth_token"),
   twilioForwardTo: text("twilio_forward_to"), // Default number to forward calls to
@@ -609,6 +613,20 @@ export const storeSyncLogs = pgTable("store_sync_logs", {
   errorMessage: text("error_message"),
   startedAt: timestamp("started_at").defaultNow().notNull(),
   completedAt: timestamp("completed_at"),
+});
+
+// Shopify OAuth sessions (required by @shopify/shopify-api)
+export const shopifySessions = pgTable("shopify_sessions", {
+  id: varchar("id").primaryKey(), // Session ID from Shopify
+  shop: text("shop").notNull(),
+  state: text("state"),
+  isOnline: boolean("is_online").notNull().default(false),
+  scope: text("scope"),
+  accessToken: text("access_token"),
+  expires: timestamp("expires"),
+  onlineAccessInfo: jsonb("online_access_info").$type<Record<string, any>>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 // Call logs for tracking
