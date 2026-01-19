@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import Twilio from "twilio";
 import {
   getOrAssignTrackingNumber,
   getTrackingNumberByPhone,
@@ -12,6 +13,9 @@ import {
   generateTwimlMessage,
 } from "./lib/twilio";
 import { createShopifyCustomer, isShopifyConfigured } from "./lib/shopify";
+import { db } from "./db";
+import { pages } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 export function registerTwilioRoutes(app: Express) {
   // DNI (Dynamic Number Insertion) - Get tracking number for GCLID
@@ -71,11 +75,28 @@ export function registerTwilioRoutes(app: Express) {
         storeId,
       });
 
+      // Build customer tags including source information
+      const customerTags: string[] = ["phone-call", "twilio-lead"];
+      
+      // Get page info for source tagging if we have a storeId
+      if (storeId) {
+        const [storePage] = await db
+          .select()
+          .from(pages)
+          .where(eq(pages.storeId, storeId))
+          .limit(1);
+        
+        if (storePage) {
+          customerTags.push(`source:${storePage.slug}`);
+          customerTags.push(`page:${storePage.title}`);
+        }
+      }
+
       // Create Shopify customer with GCLID tag using store-specific credentials
       const customer = await createShopifyCustomer({
         phone: From,
         gclid: gclid || undefined,
-        additionalTags: ["phone-call"],
+        additionalTags: customerTags,
         storeId,
       });
 
@@ -325,6 +346,96 @@ export function registerTwilioRoutes(app: Express) {
 <!-- <a href="tel:+15551234567" data-dni-phone data-dni-display>+1 (555) 123-4567</a> -->`;
 
     res.type("text/plain").send(snippet);
+  });
+
+  // Search available Twilio phone numbers
+  app.get("/api/twilio/available-numbers", async (req: Request, res: Response) => {
+    try {
+      const storeId = (req as any).storeContext?.storeId;
+      if (!storeId) {
+        return res.status(401).json({ error: "Store context required" });
+      }
+
+      const accountSid = process.env.TWILIO_ACCOUNT_SID;
+      const authToken = process.env.TWILIO_AUTH_TOKEN;
+
+      if (!accountSid || !authToken) {
+        return res.status(503).json({ error: "Twilio not configured" });
+      }
+
+      const client = Twilio(accountSid, authToken);
+      const areaCode = req.query.areaCode as string | undefined;
+      const country = (req.query.country as string) || "US";
+      const limit = parseInt(req.query.limit as string) || 10;
+
+      const searchParams: any = { limit };
+      if (areaCode) {
+        searchParams.areaCode = areaCode;
+      }
+
+      const numbers = await client.availablePhoneNumbers(country).local.list(searchParams);
+
+      res.json(numbers.map((num) => ({
+        phoneNumber: num.phoneNumber,
+        friendlyName: num.friendlyName,
+        locality: num.locality,
+        region: num.region,
+        capabilities: {
+          voice: num.capabilities.voice,
+          sms: num.capabilities.sms,
+        },
+      })));
+    } catch (error: any) {
+      console.error("Error searching available numbers:", error);
+      res.status(500).json({ error: error.message || "Failed to search numbers" });
+    }
+  });
+
+  // Purchase a Twilio phone number
+  app.post("/api/twilio/purchase-number", async (req: Request, res: Response) => {
+    try {
+      const storeId = (req as any).storeContext?.storeId;
+      if (!storeId) {
+        return res.status(401).json({ error: "Store context required" });
+      }
+
+      const { phoneNumber, forwardTo } = req.body;
+      if (!phoneNumber || !forwardTo) {
+        return res.status(400).json({ error: "phoneNumber and forwardTo are required" });
+      }
+
+      const accountSid = process.env.TWILIO_ACCOUNT_SID;
+      const authToken = process.env.TWILIO_AUTH_TOKEN;
+
+      if (!accountSid || !authToken) {
+        return res.status(503).json({ error: "Twilio not configured" });
+      }
+
+      const client = Twilio(accountSid, authToken);
+      const hostUrl = process.env.HOST_URL || "";
+
+      const purchasedNumber = await client.incomingPhoneNumbers.create({
+        phoneNumber,
+        voiceUrl: `${hostUrl}/api/incoming-call`,
+        voiceMethod: "POST",
+        statusCallback: `${hostUrl}/api/call-status`,
+        statusCallbackMethod: "POST",
+      });
+
+      const trackingNumber = await addTrackingNumber(storeId, purchasedNumber.phoneNumber, forwardTo);
+
+      res.json({ 
+        success: true, 
+        trackingNumber: {
+          id: trackingNumber?.id,
+          phoneNumber: purchasedNumber.phoneNumber,
+          forwardTo,
+        }
+      });
+    } catch (error: any) {
+      console.error("Error purchasing number:", error);
+      res.status(500).json({ error: error.message || "Failed to purchase number" });
+    }
   });
 
   console.log("Twilio call tracking routes registered");

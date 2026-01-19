@@ -47,22 +47,14 @@ export async function getShopifyConfigForStore(storeId: string): Promise<Shopify
   
   if (store.shopifyAccessToken) {
     return {
-      apiKey: store.shopifyApiKey || "",
-      apiSecret: store.shopifyApiSecret || "",
+      apiKey: process.env.SHOPIFY_API_KEY || "",
+      apiSecret: process.env.SHOPIFY_API_SECRET || "",
       storeUrl: store.shopifyDomain,
       accessToken: store.shopifyAccessToken,
     };
   }
   
-  if (!store.shopifyApiKey || !store.shopifyApiSecret) {
-    return null;
-  }
-  
-  return {
-    apiKey: store.shopifyApiKey,
-    apiSecret: store.shopifyApiSecret,
-    storeUrl: store.shopifyDomain,
-  };
+  return null;
 }
 
 function getShopifyApiUrl(storeUrl: string): string {

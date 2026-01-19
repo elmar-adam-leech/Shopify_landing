@@ -22,7 +22,7 @@ export function isShopifyConfigured(): boolean {
 const shopifyConfig = {
   apiKey: getEnvVar("SHOPIFY_API_KEY"),
   apiSecretKey: getEnvVar("SHOPIFY_API_SECRET"),
-  scopes: (getEnvVar("SHOPIFY_SCOPES") || "read_products,read_content,write_content").split(","),
+  scopes: (getEnvVar("SHOPIFY_SCOPES") || "read_products,read_content,write_content,write_customers,read_customers").split(","),
   hostName: (getEnvVar("HOST_URL") || "localhost:5000").replace(/https?:\/\//, ""),
   apiVersion: ApiVersion.January25,
   isEmbeddedApp: true,

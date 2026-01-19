@@ -200,6 +200,10 @@ export const formBlockConfigSchema = z.object({
     toEmail: z.string().optional(),
     subject: z.string().optional(),
   }).optional(),
+  // Shopify customer integration
+  createShopifyCustomer: z.boolean().default(false),
+  shopifyCustomerTags: z.array(z.string()).default([]), // Tags to apply in Shopify
+  shopifyCustomerTagSource: z.boolean().default(true), // Include page name/slug as tag
 });
 
 export type WebhookConfig = z.infer<typeof webhookConfigSchema>;
@@ -209,6 +213,12 @@ export const phoneBlockConfigSchema = z.object({
   displayText: z.string().default("Call Us Now"),
   trackCalls: z.boolean().default(true),
   trackingServiceId: z.string().optional(),
+  // Use store's Twilio tracking number instead of phoneNumber
+  useTrackingNumber: z.boolean().default(false),
+  // Shopify customer integration for calls
+  createShopifyCustomer: z.boolean().default(false),
+  shopifyCustomerTags: z.array(z.string()).default([]), // Tags to apply in Shopify
+  shopifyCustomerTagSource: z.boolean().default(true), // Include page name/slug as tag
 });
 
 export const chatBlockConfigSchema = z.object({

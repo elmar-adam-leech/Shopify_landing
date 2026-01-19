@@ -578,11 +578,59 @@ export async function registerRoutes(
       
       const submission = await storage.createFormSubmission(validatedData as any);
       
-      // Find the form block to get webhook configuration
+      // Find the form block to get configuration
       if (blockId && page.blocks) {
         const formBlock = page.blocks.find((b: any) => b.id === blockId && b.type === "form-block");
+        
+        // Handle Shopify customer creation if enabled
+        if (formBlock?.config?.createShopifyCustomer && page.storeId) {
+          const { createShopifyCustomer } = await import("./lib/shopify");
+          
+          const formDataObj = submission.data as Record<string, any>;
+          const tags: string[] = [...(formBlock.config.shopifyCustomerTags || [])];
+          
+          // Add source tags if enabled
+          if (formBlock.config.shopifyCustomerTagSource !== false) {
+            tags.push(`source:${page.slug}`);
+            tags.push(`page:${page.title}`);
+          }
+          tags.push("form-lead");
+          
+          // Extract customer data from form
+          const email = formDataObj.email || formDataObj.Email;
+          const phone = formDataObj.phone || formDataObj.Phone;
+          const name = formDataObj.name || formDataObj.Name || formDataObj.full_name || "";
+          
+          // Parse name into first/last
+          const nameParts = name.trim().split(/\s+/);
+          const firstName = nameParts[0] || "";
+          const lastName = nameParts.slice(1).join(" ") || "";
+          
+          // UTM data from submission
+          const utmParams = (submission as any).utmParams || {};
+          
+          createShopifyCustomer({
+            email,
+            phone,
+            firstName: formDataObj.firstName || formDataObj.first_name || firstName,
+            lastName: formDataObj.lastName || formDataObj.last_name || lastName,
+            gclid: utmParams.gclid,
+            utmSource: utmParams.utm_source,
+            utmMedium: utmParams.utm_medium,
+            utmCampaign: utmParams.utm_campaign,
+            additionalTags: tags,
+            storeId: page.storeId,
+          }).then(customer => {
+            if (customer) {
+              console.log(`Created Shopify customer from form: ${customer.id}`);
+            }
+          }).catch(err => {
+            console.error("Failed to create Shopify customer from form:", err);
+          });
+        }
+        
+        // Handle webhooks
         if (formBlock?.config?.webhooks) {
-          // Send to each enabled webhook asynchronously
           const webhookPromises = formBlock.config.webhooks
             .filter((webhook: any) => webhook.enabled && webhook.url)
             .map(async (webhook: any) => {
@@ -610,7 +658,6 @@ export async function registerRoutes(
               }
             });
           
-          // Don't wait for webhooks to complete - fire and forget
           Promise.all(webhookPromises).catch(console.error);
         }
       }
