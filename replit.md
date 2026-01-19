@@ -101,7 +101,7 @@ The core entities are:
 - **Call Logging**: All calls logged with GCLID, duration, and status
 - **Webhooks**: `/api/incoming-call` and `/api/call-status` for Twilio callbacks
 - **Number Management**: `/api/twilio/available-numbers` and `/api/twilio/purchase-number` endpoints
-- **Environment Variables**: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`
+- **Environment Variables**: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` (must be added manually as secrets)
 
 ### Development Tools
 - **Vite**: Frontend development server with HMR
