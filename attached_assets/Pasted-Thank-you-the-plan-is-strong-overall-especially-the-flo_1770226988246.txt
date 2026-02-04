@@ -1,0 +1,40 @@
+Thank you — the plan is strong overall, especially the flow, security notes, and reuse of proxy-signature.ts.
+
+I approve moving forward with these important adjustments/fixes based on current Shopify docs (2025):
+
+1. Signature Verification:
+   - The manual HMAC in proxy-signature.ts may be incomplete (e.g., misses logged_in_customer_id, X-ARR-LOG-ID, array joining).
+   - Preferred: Use official @shopify/shopify-api authenticate.public.appProxy(request) if possible (requires shopifyApp setup from shopify.ts).
+   - If keeping custom: Update verifyProxySignature to:
+     - Include ALL query params except 'signature'
+     - Convert array values to comma-separated strings
+     - Sort keys alphabetically
+     - Handle empty logged_in_customer_id (include as '')
+     - Ignore X-ARR-LOG-ID if present (it's Azure noise, not signed)
+   - Add logging on failure via logSecurityEvent (eventType: 'proxy_signature_invalid')
+
+2. Content-Type & Rendering:
+   - Offer two modes (configurable per-page or env):
+     - 'text/html': Full SSR HTML (use ReactDOMServer.renderToString on Preview-like component) — faster load, no theme wrap
+     - 'application/liquid': Return minimal Liquid wrapper + your content (Shopify renders in theme context)
+   - Default to 'text/html' for standalone landing pages.
+   - In page-renderer.ts: Implement SSR version first (reuse Preview.tsx logic but server-side).
+   - Include <script> for client hydration (parse hash, fetch dynamic SKU via Storefront API, render variants/price/etc.)
+
+3. Additional Requirements:
+   - After verification: Load store by shop → get storeId → fetch page with .where(eq(pages.storeId, storeId)) + .where(eq(pages.slug, slug))
+   - Handle hash client-side only (no server parsing needed)
+   - Add Cache-Control: public, max-age=300 (5 min) for performance
+   - XSS: Use DOMPurify or escape user-generated config in blocks
+   - 401/403 on fail: Minimal response, log via audit
+
+Updated Implementation Steps:
+Step 1: Update lib/proxy-signature.ts (or replace with official authenticate if feasible) + add failure logging.
+Step 2: Create lib/page-renderer.ts with SSR HTML generation (text/html default) + optional Liquid mode.
+Step 3: Add /proxy/* route in routes.ts: verify → load store/page → render → respond.
+
+Start with Step 1 — show full updated proxy-signature.ts (with fixes for params) + example verification call.
+
+Do NOT apply yet — show code + diffs first.
+
+Also confirm: Do we have @shopify/shopify-api fully set up for authenticate.public? If yes, prefer that over custom HMAC.
