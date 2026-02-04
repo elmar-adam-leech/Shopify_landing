@@ -5,9 +5,11 @@ import { insertPageSchema, updatePageSchema, insertFormSubmissionSchema, insertA
 import { z } from "zod";
 import { registerTwilioRoutes } from "./twilioRoutes";
 import shopifyAuthRouter from "./shopify-auth";
-import { resolveStoreContext } from "./store-middleware";
+import { resolveStoreContext, requireStoreContext as requireStoreContextMiddleware } from "./store-middleware";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
+import { logSecurityEvent } from "./lib/audit";
+import { apiRateLimiter } from "./middleware/rate-limit";
 
 function validatePageAccess(page: Page | undefined, storeId: string | undefined): { valid: boolean; error?: string; statusCode?: number } {
   if (!page) {
@@ -31,6 +33,27 @@ function requireStoreContext(storeId: string | undefined): { valid: boolean; err
   return { valid: true };
 }
 
+function validateStoreOwnership(req: Request, targetStoreId: string): { valid: boolean; error?: string; statusCode?: number } {
+  const contextStoreId = req.storeContext?.storeId;
+  
+  if (!contextStoreId) {
+    return { valid: false, error: "Store context required", statusCode: 401 };
+  }
+  
+  if (contextStoreId !== targetStoreId) {
+    logSecurityEvent({
+      eventType: "access_denied",
+      req,
+      storeId: contextStoreId,
+      attemptedStoreId: targetStoreId,
+      details: { reason: "cross_tenant_access_attempt" },
+    });
+    return { valid: false, error: "Access denied - not authorized for this store", statusCode: 403 };
+  }
+  
+  return { valid: true };
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -42,30 +65,51 @@ export async function registerRoutes(
   // Apply store context middleware to resolve shop/storeId to store context
   app.use(resolveStoreContext);
   
+  // Apply rate limiting after store context is resolved (enables per-store rate limiting)
+  app.use("/api", apiRateLimiter);
+  
   // ============== STORE ROUTES ==============
   
-  // Get all stores
-  app.get("/api/stores", async (_req, res) => {
+  // Get stores - only returns the current store (tenant isolation)
+  app.get("/api/stores", async (req, res) => {
     try {
-      const allStores = await db.select().from(stores).orderBy(stores.name);
-      // Don't expose sensitive credentials in list view
-      const safeStores = allStores.map(s => ({
-        ...s,
-        shopifyAccessToken: s.shopifyAccessToken ? "***configured***" : null,
-        twilioAccountSid: s.twilioAccountSid ? "***configured***" : null,
-        twilioAuthToken: s.twilioAuthToken ? "***configured***" : null,
-      }));
-      res.json(safeStores);
+      const storeId = req.storeContext?.storeId;
+      
+      // Require store context - only return the authenticated store
+      if (!storeId) {
+        return res.status(401).json({ error: "Store context required - provide shop or storeId parameter" });
+      }
+      
+      const [store] = await db.select().from(stores).where(eq(stores.id, storeId)).limit(1);
+      if (!store) {
+        return res.json([]);
+      }
+      
+      // Return only the current store (tenant isolation)
+      const safeStore = {
+        ...store,
+        shopifyAccessToken: store.shopifyAccessToken ? "***configured***" : null,
+        twilioAccountSid: store.twilioAccountSid ? "***configured***" : null,
+        twilioAuthToken: store.twilioAuthToken ? "***configured***" : null,
+      };
+      res.json([safeStore]);
     } catch (error) {
       console.error("Error fetching stores:", error);
       res.status(500).json({ error: "Failed to fetch stores" });
     }
   });
 
-  // Get single store
+  // Get single store (requires ownership)
   app.get("/api/stores/:id", async (req, res) => {
     try {
       const { id } = req.params;
+      
+      // Validate store ownership
+      const ownership = validateStoreOwnership(req, id);
+      if (!ownership.valid) {
+        return res.status(ownership.statusCode || 403).json({ error: ownership.error });
+      }
+      
       const [store] = await db.select().from(stores).where(eq(stores.id, id)).limit(1);
       if (!store) {
         return res.status(404).json({ error: "Store not found" });
@@ -99,10 +143,17 @@ export async function registerRoutes(
     }
   });
 
-  // Update store
+  // Update store (requires ownership)
   app.patch("/api/stores/:id", async (req, res) => {
     try {
       const { id } = req.params;
+      
+      // Validate store ownership
+      const ownership = validateStoreOwnership(req, id);
+      if (!ownership.valid) {
+        return res.status(ownership.statusCode || 403).json({ error: ownership.error });
+      }
+      
       const validatedData = updateStoreSchema.parse(req.body);
       
       // Filter out masked values (don't update if user hasn't changed them)
@@ -131,10 +182,17 @@ export async function registerRoutes(
     }
   });
 
-  // Delete store
+  // Delete store (requires ownership)
   app.delete("/api/stores/:id", async (req, res) => {
     try {
       const { id } = req.params;
+      
+      // Validate store ownership
+      const ownership = validateStoreOwnership(req, id);
+      if (!ownership.valid) {
+        return res.status(ownership.statusCode || 403).json({ error: ownership.error });
+      }
+      
       const [deleted] = await db.delete(stores).where(eq(stores.id, id)).returning();
       if (!deleted) {
         return res.status(404).json({ error: "Store not found" });
@@ -148,10 +206,17 @@ export async function registerRoutes(
 
   // ============== USER-STORE ASSIGNMENT ROUTES ==============
 
-  // Get users assigned to a store
+  // Get users assigned to a store (requires ownership)
   app.get("/api/stores/:storeId/users", async (req, res) => {
     try {
       const { storeId } = req.params;
+      
+      // Validate store ownership
+      const ownership = validateStoreOwnership(req, storeId);
+      if (!ownership.valid) {
+        return res.status(ownership.statusCode || 403).json({ error: ownership.error });
+      }
+      
       const assignments = await storage.getStoreUserAssignments(storeId);
       res.json(assignments);
     } catch (error) {
@@ -172,10 +237,17 @@ export async function registerRoutes(
     }
   });
 
-  // Assign user to store
+  // Assign user to store (requires ownership)
   app.post("/api/stores/:storeId/users", async (req, res) => {
     try {
       const { storeId } = req.params;
+      
+      // Validate store ownership
+      const ownership = validateStoreOwnership(req, storeId);
+      if (!ownership.valid) {
+        return res.status(ownership.statusCode || 403).json({ error: ownership.error });
+      }
+      
       const { userId, role } = req.body;
       
       if (!userId) {
@@ -194,9 +266,17 @@ export async function registerRoutes(
     }
   });
 
-  // Remove user from store
+  // Remove user from store (requires ownership)
   app.delete("/api/stores/:storeId/users/:assignmentId", async (req, res) => {
     try {
+      const { storeId } = req.params;
+      
+      // Validate store ownership
+      const ownership = validateStoreOwnership(req, storeId);
+      if (!ownership.valid) {
+        return res.status(ownership.statusCode || 403).json({ error: ownership.error });
+      }
+      
       const { assignmentId } = req.params;
       const deleted = await storage.deleteUserStoreAssignment(assignmentId);
       if (!deleted) {
@@ -211,10 +291,17 @@ export async function registerRoutes(
 
   // ============== SHOPIFY PRODUCTS ROUTES ==============
 
-  // Get products for a store (with search and pagination)
+  // Get products for a store (requires ownership)
   app.get("/api/stores/:storeId/products", async (req, res) => {
     try {
       const { storeId } = req.params;
+      
+      // Validate store ownership
+      const ownership = validateStoreOwnership(req, storeId);
+      if (!ownership.valid) {
+        return res.status(ownership.statusCode || 403).json({ error: ownership.error });
+      }
+      
       const search = req.query.search as string | undefined;
       const limit = parseInt(req.query.limit as string) || 50;
       const offset = parseInt(req.query.offset as string) || 0;
@@ -251,10 +338,17 @@ export async function registerRoutes(
     }
   });
 
-  // Get product by Shopify ID or handle
+  // Get product by Shopify ID or handle (requires ownership)
   app.get("/api/stores/:storeId/products/lookup", async (req, res) => {
     try {
       const { storeId } = req.params;
+      
+      // Validate store ownership
+      const ownership = validateStoreOwnership(req, storeId);
+      if (!ownership.valid) {
+        return res.status(ownership.statusCode || 403).json({ error: ownership.error });
+      }
+      
       const shopifyId = req.query.shopifyId as string | undefined;
       const handle = req.query.handle as string | undefined;
 
@@ -329,10 +423,16 @@ export async function registerRoutes(
     }
   });
 
-  // Manual sync trigger (placeholder - will be implemented with Shopify OAuth)
+  // Manual sync trigger (requires ownership)
   app.post("/api/stores/:storeId/sync", async (req, res) => {
     try {
       const { storeId } = req.params;
+      
+      // Validate store ownership
+      const ownership = validateStoreOwnership(req, storeId);
+      if (!ownership.valid) {
+        return res.status(ownership.statusCode || 403).json({ error: ownership.error });
+      }
       
       // Create sync log
       const syncLog = await storage.createStoreSyncLog({
@@ -362,10 +462,17 @@ export async function registerRoutes(
     }
   });
 
-  // Get latest sync status
+  // Get latest sync status (requires ownership)
   app.get("/api/stores/:storeId/sync/status", async (req, res) => {
     try {
       const { storeId } = req.params;
+      
+      // Validate store ownership
+      const ownership = validateStoreOwnership(req, storeId);
+      if (!ownership.valid) {
+        return res.status(ownership.statusCode || 403).json({ error: ownership.error });
+      }
+      
       const syncLog = await storage.getLatestStoreSyncLog(storeId);
       const productCount = await storage.countShopifyProducts(storeId);
       
@@ -672,11 +779,19 @@ export async function registerRoutes(
     }
   });
 
-  // Get form submissions for a page
+  // Get form submissions for a page (requires page ownership)
   app.get("/api/pages/:pageId/submissions", async (req, res) => {
     try {
       const { pageId } = req.params;
-      const submissions = await storage.getFormSubmissions(pageId);
+      
+      // Get page and validate ownership
+      const page = await storage.getPage(pageId);
+      const access = validatePageAccess(page, req.storeContext?.storeId);
+      if (!access.valid) {
+        return res.status(access.statusCode || 403).json({ error: access.error });
+      }
+      
+      const submissions = await storage.getFormSubmissions(pageId, req.storeContext?.storeId);
       res.json(submissions);
     } catch (error) {
       console.error("Error fetching submissions:", error);
@@ -823,15 +938,17 @@ export async function registerRoutes(
     }
   });
 
-  // Get analytics for a page
+  // Get analytics for a page (requires page ownership)
   app.get("/api/pages/:pageId/analytics", async (req, res) => {
     try {
       const { pageId } = req.params;
       const { startDate, endDate } = req.query;
       
+      // Get page and validate ownership
       const page = await storage.getPage(pageId);
-      if (!page) {
-        return res.status(404).json({ error: "Page not found" });
+      const access = validatePageAccess(page, req.storeContext?.storeId);
+      if (!access.valid) {
+        return res.status(access.statusCode || 403).json({ error: access.error });
       }
 
       const start = startDate ? new Date(startDate as string) : undefined;
@@ -845,15 +962,17 @@ export async function registerRoutes(
     }
   });
 
-  // Get analytics summary for a page
+  // Get analytics summary for a page (requires page ownership)
   app.get("/api/pages/:pageId/analytics/summary", async (req, res) => {
     try {
       const { pageId } = req.params;
       const { startDate, endDate } = req.query;
       
+      // Get page and validate ownership
       const page = await storage.getPage(pageId);
-      if (!page) {
-        return res.status(404).json({ error: "Page not found" });
+      const access = validatePageAccess(page, req.storeContext?.storeId);
+      if (!access.valid) {
+        return res.status(access.statusCode || 403).json({ error: access.error });
       }
 
       const start = startDate ? new Date(startDate as string) : undefined;
@@ -871,10 +990,15 @@ export async function registerRoutes(
   // A/B TEST ENDPOINTS
   // =====================
 
-  // Get all A/B tests (optionally filtered by storeId)
+  // Get all A/B tests (requires store context)
   app.get("/api/ab-tests", async (req, res) => {
     try {
-      const storeId = req.query.storeId as string | undefined;
+      // Use store context storeId - require authentication
+      const storeId = req.storeContext?.storeId;
+      if (!storeId) {
+        return res.status(401).json({ error: "Store context required - provide shop or storeId parameter" });
+      }
+      
       const tests = await storage.getAllAbTests(storeId);
       res.json(tests);
     } catch (error) {
@@ -883,7 +1007,7 @@ export async function registerRoutes(
     }
   });
 
-  // Get active A/B test for a page (for traffic splitting)
+  // Get active A/B test for a page (public for traffic splitting)
   app.get("/api/ab-tests/for-page/:pageId", async (req, res) => {
     try {
       const { pageId } = req.params;
@@ -900,7 +1024,7 @@ export async function registerRoutes(
     }
   });
 
-  // Get single A/B test
+  // Get single A/B test (requires ownership)
   app.get("/api/ab-tests/:id", async (req, res) => {
     try {
       const { id } = req.params;
@@ -908,6 +1032,25 @@ export async function registerRoutes(
       if (!test) {
         return res.status(404).json({ error: "A/B test not found" });
       }
+      
+      // Validate store ownership if test has storeId
+      if (test.storeId) {
+        const storeId = req.storeContext?.storeId;
+        if (!storeId) {
+          return res.status(401).json({ error: "Store context required" });
+        }
+        if (test.storeId !== storeId) {
+          logSecurityEvent({
+            eventType: "access_denied",
+            req,
+            storeId,
+            attemptedStoreId: test.storeId,
+            details: { reason: "cross_tenant_ab_test_access" },
+          });
+          return res.status(403).json({ error: "Access denied - not authorized for this test" });
+        }
+      }
+      
       res.json(test);
     } catch (error) {
       console.error("Error fetching A/B test:", error);
@@ -915,7 +1058,7 @@ export async function registerRoutes(
     }
   });
 
-  // Create A/B test
+  // Create A/B test (requires page ownership)
   app.post("/api/ab-tests", async (req, res) => {
     try {
       const validatedData = insertAbTestSchema.parse(req.body);
@@ -924,6 +1067,12 @@ export async function registerRoutes(
       const page = await storage.getPage(validatedData.originalPageId);
       if (!page) {
         return res.status(400).json({ error: "Original page not found" });
+      }
+      
+      // Validate page ownership
+      const access = validatePageAccess(page, req.storeContext?.storeId);
+      if (!access.valid) {
+        return res.status(access.statusCode || 403).json({ error: access.error });
       }
 
       // Override client-provided storeId with the page's storeId for security
@@ -943,18 +1092,38 @@ export async function registerRoutes(
     }
   });
 
-  // Update A/B test
+  // Update A/B test (requires ownership)
   app.patch("/api/ab-tests/:id", async (req, res) => {
     try {
       const { id } = req.params;
+      
+      // Get test and validate ownership
+      const existingTest = await storage.getAbTest(id);
+      if (!existingTest) {
+        return res.status(404).json({ error: "A/B test not found" });
+      }
+      
+      if (existingTest.storeId) {
+        const storeId = req.storeContext?.storeId;
+        if (!storeId) {
+          return res.status(401).json({ error: "Store context required" });
+        }
+        if (existingTest.storeId !== storeId) {
+          logSecurityEvent({
+            eventType: "access_denied",
+            req,
+            storeId,
+            attemptedStoreId: existingTest.storeId,
+            details: { reason: "cross_tenant_ab_test_update" },
+          });
+          return res.status(403).json({ error: "Access denied - not authorized for this test" });
+        }
+      }
       
       // Remove storeId and originalPageId from updates to prevent cross-tenant manipulation
       const { storeId, originalPageId, ...allowedUpdates } = req.body;
       
       const test = await storage.updateAbTest(id, allowedUpdates);
-      if (!test) {
-        return res.status(404).json({ error: "A/B test not found" });
-      }
       res.json(test);
     } catch (error) {
       console.error("Error updating A/B test:", error);
@@ -962,14 +1131,35 @@ export async function registerRoutes(
     }
   });
 
-  // Delete A/B test
+  // Delete A/B test (requires ownership)
   app.delete("/api/ab-tests/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      const deleted = await storage.deleteAbTest(id);
-      if (!deleted) {
+      
+      // Get test and validate ownership
+      const existingTest = await storage.getAbTest(id);
+      if (!existingTest) {
         return res.status(404).json({ error: "A/B test not found" });
       }
+      
+      if (existingTest.storeId) {
+        const storeId = req.storeContext?.storeId;
+        if (!storeId) {
+          return res.status(401).json({ error: "Store context required" });
+        }
+        if (existingTest.storeId !== storeId) {
+          logSecurityEvent({
+            eventType: "access_denied",
+            req,
+            storeId,
+            attemptedStoreId: existingTest.storeId,
+            details: { reason: "cross_tenant_ab_test_delete" },
+          });
+          return res.status(403).json({ error: "Access denied - not authorized for this test" });
+        }
+      }
+      
+      const deleted = await storage.deleteAbTest(id);
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting A/B test:", error);

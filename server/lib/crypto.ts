@@ -4,8 +4,20 @@ const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16;
 const AUTH_TAG_LENGTH = 16;
 
-// Per-app encryption salt from environment (or generate one for development)
-const ENCRYPTION_SALT = process.env.ENCRYPTION_SALT || crypto.randomBytes(16).toString("hex");
+// Per-app encryption salt from environment
+const ENCRYPTION_SALT_ENV = process.env.ENCRYPTION_SALT;
+
+// Validate encryption salt in production
+if (!ENCRYPTION_SALT_ENV) {
+  if (process.env.NODE_ENV === "production") {
+    console.error("CRITICAL: ENCRYPTION_SALT environment variable is not set. PII encryption will fail.");
+    throw new Error("ENCRYPTION_SALT is required in production for PII encryption");
+  } else {
+    console.warn("WARNING: ENCRYPTION_SALT not set. Using random salt - encrypted data will not survive restarts.");
+  }
+}
+
+const ENCRYPTION_SALT = ENCRYPTION_SALT_ENV || crypto.randomBytes(16).toString("hex");
 
 /**
  * Derives a unique encryption key per store using scrypt with secure parameters.
