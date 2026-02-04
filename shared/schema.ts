@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, jsonb, boolean, integer, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, jsonb, boolean, integer, timestamp, uniqueIndex, serial } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -652,6 +652,19 @@ export const callLogs = pgTable("call_logs", {
   callDuration: integer("call_duration"),
   shopifyCustomerId: text("shopify_customer_id"),
   metadata: jsonb("metadata").$type<Record<string, any>>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Security audit logs - tracks unauthorized access attempts and security events
+export const auditLogs = pgTable("audit_logs", {
+  id: serial("id").primaryKey(),
+  storeId: varchar("store_id").references(() => stores.id),
+  attemptedStoreId: varchar("attempted_store_id"),
+  shop: varchar("shop", { length: 255 }).notNull(),
+  eventType: varchar("event_type", { length: 100 }).notNull(),
+  details: jsonb("details").notNull().$type<Record<string, any>>(),
+  ip: varchar("ip", { length: 45 }),
+  userAgent: text("user_agent"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
