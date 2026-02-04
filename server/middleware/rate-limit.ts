@@ -1,4 +1,4 @@
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import type { Request, Response } from "express";
 
 /**
@@ -12,9 +12,14 @@ export const apiRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute window
   max: 100, // 100 requests per minute per store/IP
   
-  // Key by storeId if available, otherwise by IP
+  // Key by storeId if available, otherwise by normalized IP (IPv6 compatible)
   keyGenerator: (req: Request): string => {
-    return req.storeContext?.storeId || req.ip || "unknown";
+    // Use storeId for per-store rate limiting if available
+    if (req.storeContext?.storeId) {
+      return `store:${req.storeContext.storeId}`;
+    }
+    // Fall back to IP-based rate limiting using ipKeyGenerator for IPv6 normalization
+    return `ip:${ipKeyGenerator(req.ip || "unknown")}`;
   },
   
   // Custom handler for rate limit exceeded
@@ -22,13 +27,17 @@ export const apiRateLimiter = rateLimit({
     // Dynamic import to avoid circular dependency
     const { logSecurityEvent } = await import("../lib/audit");
     
+    const key = req.storeContext?.storeId 
+      ? `store:${req.storeContext.storeId}` 
+      : `ip:${ipKeyGenerator(req.ip || "unknown")}`;
+    
     await logSecurityEvent({
       eventType: "rate_limited",
       req,
       details: {
         limit: 100,
         window: "1 minute",
-        key: req.storeContext?.storeId || req.ip,
+        key,
       },
     });
     
@@ -62,7 +71,11 @@ export const strictRateLimiter = rateLimit({
   max: 10,
   
   keyGenerator: (req: Request): string => {
-    return req.ip || "unknown";
+    // Use storeId if available, otherwise use IP-based limiting
+    if (req.storeContext?.storeId) {
+      return `store:${req.storeContext.storeId}:strict`;
+    }
+    return `ip:${ipKeyGenerator(req.ip || "unknown")}:strict`;
   },
   
   handler: async (req: Request, res: Response) => {
