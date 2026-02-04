@@ -1,0 +1,47 @@
+Thank you — the updated auditLogs schema looks good (varchar storeId reference + nullable is correct).
+
+I approve the overall plan with these small adjustments/clarifications:
+
+1. Encryption (lib/crypto.ts):
+   - Change static "salt" to a per-app constant from env: const SALT = process.env.ENCRYPTION_SALT || crypto.randomBytes(16).toString('hex');
+   - Increase scrypt params for better security: crypto.scryptSync(..., "salt", 32, { N: 16384, r: 8, p: 1 })
+   - Only encrypt specific PII fields: phone, email, first_name, last_name (in formSubmissions, callLogs, etc.). Do NOT encrypt non-sensitive fields like utm_source.
+   - Add note: keys are derived per-store, so decryption requires correct storeId (prevents cross-tenant decryption even if DB is dumped).
+
+2. AuditLogs table:
+   - Add attemptedStoreId: varchar('attempted_store_id') (nullable)
+   - Keep storeId nullable (for failed auth attempts)
+
+3. Rate limiting:
+   - Apply ONLY to /api/* routes (not static files or proxy)
+   - In handler: log via logSecurityEvent as shown
+
+4. Proxy verification:
+   - Looks correct — we'll use this in the /proxy/* route later
+
+5. Test endpoints:
+   - In server/routes.ts: wrap /api/test/* routes with: if (process.env.NODE_ENV === 'production') return res.status(404).send('Not found');
+
+6. Dependencies:
+   - Add "express-rate-limit" to package.json dependencies if not present
+
+7. After schema change:
+   - Generate and apply Drizzle migration for audit_logs table (assume drizzle-kit is set up)
+
+Implementation steps I want (one at a time, show diffs each time):
+
+Step 1: Create lib/crypto.ts + lib/audit.ts with the adjusted encryption and logging helpers (include the improved scrypt params and env salt).
+
+Step 2: Update shared/schema.ts with the final auditLogs table (including attemptedStoreId).
+
+Step 3: Create middleware/rate-limit.ts with the apiRateLimiter as shown.
+
+Step 4: Update server/storage.ts to encrypt/decrypt PII on insert/select for formSubmissions and callLogs (phone, email, name fields).
+
+Step 5: Secure /api/stores/* endpoints first: add requireStoreContext + ownership check (use userStoreAssignments if exists, or derive from session/shop). Return 403 if mismatch.
+
+Do NOT implement everything at once. Start with Step 1 — show me the full file contents for lib/crypto.ts and lib/audit.ts + any imports needed.
+
+After I approve Step 1, we'll move to Step 2, etc.
+
+Also: after schema change in Step 2, remind me to run the migration command in shell.
