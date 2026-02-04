@@ -36,6 +36,10 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, max, and, gte, lte, sql, count, ilike, or } from "drizzle-orm";
+import { encryptPIIFields, decryptPIIFields } from "./lib/crypto";
+
+// PII fields to encrypt/decrypt in form submission data
+const FORM_PII_FIELDS = ["phone", "email", "first_name", "last_name", "firstName", "lastName", "name", "Phone", "Email", "Name"];
 
 export interface IStorage {
   // Users
@@ -52,7 +56,7 @@ export interface IStorage {
   deletePage(id: string): Promise<boolean>;
 
   // Form Submissions
-  getFormSubmissions(pageId: string): Promise<FormSubmission[]>;
+  getFormSubmissions(pageId: string, storeId?: string): Promise<FormSubmission[]>;
   createFormSubmission(submission: InsertFormSubmission): Promise<FormSubmission>;
 
   // Page Versions
@@ -184,19 +188,49 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Form Submissions
-  async getFormSubmissions(pageId: string): Promise<FormSubmission[]> {
-    return db
+  async getFormSubmissions(pageId: string, storeId?: string): Promise<FormSubmission[]> {
+    const results = await db
       .select()
       .from(formSubmissions)
       .where(eq(formSubmissions.pageId, pageId))
       .orderBy(desc(formSubmissions.submittedAt));
+    
+    // Decrypt PII fields in submission data
+    // Use storeId from each submission for decryption
+    return results.map(submission => {
+      if (submission.data && submission.storeId) {
+        return {
+          ...submission,
+          data: decryptPIIFields(submission.data as Record<string, any>, submission.storeId, FORM_PII_FIELDS),
+        };
+      }
+      return submission;
+    });
   }
 
   async createFormSubmission(submission: InsertFormSubmission): Promise<FormSubmission> {
+    // Encrypt PII fields in submission data before insert
+    let encryptedData = submission.data;
+    if (submission.data && submission.storeId) {
+      encryptedData = encryptPIIFields(
+        submission.data as Record<string, any>,
+        submission.storeId,
+        FORM_PII_FIELDS
+      );
+    }
+    
     const [result] = await db
       .insert(formSubmissions)
-      .values(submission as any)
+      .values({ ...submission, data: encryptedData } as any)
       .returning();
+    
+    // Return with decrypted data for immediate use
+    if (result.data && result.storeId) {
+      return {
+        ...result,
+        data: decryptPIIFields(result.data as Record<string, any>, result.storeId, FORM_PII_FIELDS),
+      };
+    }
     return result;
   }
 

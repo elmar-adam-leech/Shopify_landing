@@ -2,6 +2,7 @@ import Twilio from "twilio";
 import { db } from "../db";
 import { trackingNumbers, callLogs, stores } from "@shared/schema";
 import { eq, and, lt, gt, isNull, or } from "drizzle-orm";
+import { encryptPII, decryptPII } from "./crypto";
 
 const ASSIGNMENT_DURATION_MINUTES = 60;
 
@@ -155,7 +156,21 @@ export async function logCall(data: {
   metadata?: Record<string, any>;
   storeId?: string;
 }) {
-  const [callLog] = await db.insert(callLogs).values(data).returning();
+  // Encrypt phone numbers if storeId is available
+  const encryptedData = {
+    ...data,
+    fromNumber: data.storeId ? (encryptPII(data.fromNumber, data.storeId) || data.fromNumber) : data.fromNumber,
+  };
+  
+  const [callLog] = await db.insert(callLogs).values(encryptedData).returning();
+  
+  // Return with decrypted phone for immediate use
+  if (callLog.storeId) {
+    return {
+      ...callLog,
+      fromNumber: decryptPII(callLog.fromNumber, callLog.storeId) || callLog.fromNumber,
+    };
+  }
   return callLog;
 }
 
@@ -221,8 +236,25 @@ export async function getAllTrackingNumbers(storeId?: string) {
   return db.select().from(trackingNumbers);
 }
 
-export async function getCallLogs(limit = 100) {
-  return db.select().from(callLogs).limit(limit);
+export async function getCallLogs(limit = 100, storeId?: string) {
+  let results;
+  
+  if (storeId) {
+    results = await db.select().from(callLogs).where(eq(callLogs.storeId, storeId)).limit(limit);
+  } else {
+    results = await db.select().from(callLogs).limit(limit);
+  }
+  
+  // Decrypt phone numbers for each call log
+  return results.map(log => {
+    if (log.storeId) {
+      return {
+        ...log,
+        fromNumber: decryptPII(log.fromNumber, log.storeId) || log.fromNumber,
+      };
+    }
+    return log;
+  });
 }
 
 export function generateTwimlForward(forwardTo: string): string {
