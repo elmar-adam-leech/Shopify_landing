@@ -32,6 +32,20 @@ Preferred communication style: Simple, everyday language.
 - **Webhook**: `/api/webhooks/app-uninstalled` handles app uninstallation
 - **Environment Variables**: `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_SCOPES`, `HOST_URL`
 
+### Shopify App Proxy
+- **URL Format**: Landing pages accessible at `mystore.myshopify.com/tools/lp/{slug}` via Shopify App Proxy
+- **Signature Verification**: HMAC-SHA256 verification of Shopify proxy requests (`server/lib/proxy-signature.ts`)
+  - Production: Hard-fails if SHOPIFY_API_SECRET not configured (returns 500)
+  - Development: Allows bypass with warning for testing
+- **Server-Side Rendering**: Full SSR of landing pages for fast load times and SEO (`server/lib/page-renderer.ts`)
+- **Block Rendering**: All 9 block types rendered to HTML (hero, product, text, image, button, form, phone, chat, product-grid)
+- **Dynamic Products**: Client-side hydration for dynamic SKU loading via Storefront API (hash-based: `#SKU-HERE`)
+- **Pixel Integration**: Automatic injection of Meta/Google/TikTok/Pinterest pixel scripts
+- **Security Headers**: X-Content-Type-Options, X-Frame-Options, Referrer-Policy
+- **Caching**: 5-minute public cache for rendered pages
+- **Storefront Token**: `storefrontAccessToken` field on stores for public product API access
+- **Liquid Wrapper**: Add `?liquid=true` query param to render within Shopify theme (uses `{{ content_for_header }}` and `{{ content_for_layout }}`)
+
 ### Data Model
 The core entities are:
 - **Stores**: Shopify stores with OAuth credentials, install status, and settings

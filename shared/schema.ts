@@ -406,7 +406,8 @@ export const stores = pgTable("stores", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   shopifyDomain: text("shopify_domain").notNull().unique(), // e.g., "mystore.myshopify.com"
-  shopifyAccessToken: text("shopify_access_token"), // OAuth access token
+  shopifyAccessToken: text("shopify_access_token"), // OAuth access token (Admin API)
+  storefrontAccessToken: text("storefront_access_token"), // Public Storefront API token for client-side product fetching
   shopifyScopes: text("shopify_scopes"), // Comma-separated list of granted scopes
   // Installation status
   installState: text("install_state", { enum: ["pending", "installed", "uninstalled"] }).notNull().default("pending"),

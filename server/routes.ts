@@ -10,6 +10,8 @@ import { db } from "./db";
 import { eq } from "drizzle-orm";
 import { logSecurityEvent } from "./lib/audit";
 import { apiRateLimiter } from "./middleware/rate-limit";
+import { appProxyMiddleware } from "./lib/proxy-signature";
+import { renderPage, render404Page, renderErrorPage } from "./lib/page-renderer";
 
 function validatePageAccess(page: Page | undefined, storeId: string | undefined): { valid: boolean; error?: string; statusCode?: number } {
   if (!page) {
@@ -67,6 +69,123 @@ export async function registerRoutes(
   
   // Apply rate limiting after store context is resolved (enables per-store rate limiting)
   app.use("/api", apiRateLimiter);
+  
+  // ============== APP PROXY ROUTES (Shopify App Proxy) ==============
+  // Handles requests from mystore.myshopify.com/tools/lp/* via Shopify's App Proxy
+  const proxySecret = process.env.SHOPIFY_API_SECRET || "";
+  const proxyMiddleware = appProxyMiddleware(proxySecret);
+  
+  // Proxy page route: /proxy/lp/:slug
+  // Shopify proxies to: https://this-app.replit.app/proxy/lp/:slug
+  app.get("/proxy/lp/:slug", proxyMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { slug } = req.params;
+      const shopDomain = (req as any).shopDomain || (req.query.shop as string);
+      
+      if (!shopDomain) {
+        return res.status(400).send(renderErrorPage("Missing shop parameter"));
+      }
+      
+      // Look up the store by Shopify domain
+      const [store] = await db.select().from(stores).where(eq(stores.shopifyDomain, shopDomain)).limit(1);
+      
+      if (!store) {
+        logSecurityEvent({
+          eventType: "access_denied",
+          req,
+          storeId: null,
+          details: { reason: "unknown_shop_domain", shop: shopDomain },
+        });
+        return res.status(404).send(render404Page());
+      }
+      
+      // Find page by slug within this store
+      const page = await storage.getPageBySlug(slug, store.id);
+      
+      if (!page) {
+        return res.status(404).send(render404Page());
+      }
+      
+      // Check if page is published (or render draft for preview if enabled)
+      if (page.status !== "published") {
+        // Allow preview if ?preview=true is in query (for testing)
+        if (req.query.preview !== "true") {
+          return res.status(404).send(render404Page());
+        }
+      }
+      
+      // Render the page as standalone HTML (default)
+      // Note: useLiquidWrapper can be enabled via query param ?liquid=true for Shopify theme integration
+      const useLiquidWrapper = req.query.liquid === "true";
+      
+      // Render the page
+      const { html, contentType } = await renderPage(req, page, {
+        id: store.id,
+        name: store.name,
+        shopifyDomain: store.shopifyDomain,
+        storefrontAccessToken: store.storefrontAccessToken,
+      }, { useLiquidWrapper });
+      
+      // Set security and caching headers
+      res.set({
+        "Content-Type": contentType,
+        "Cache-Control": "public, max-age=300",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "SAMEORIGIN", // Allow Shopify to iframe
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+      });
+      
+      res.send(html);
+    } catch (error) {
+      console.error("App Proxy render error:", error);
+      res.status(500).send(renderErrorPage("Failed to load page"));
+    }
+  });
+  
+  // Proxy API endpoint for form submissions
+  app.post("/proxy/api/submit-form", proxyMiddleware, async (req: Request, res: Response) => {
+    try {
+      const shopDomain = (req as any).shopDomain || (req.query.shop as string);
+      
+      if (!shopDomain) {
+        return res.status(400).json({ error: "Missing shop parameter" });
+      }
+      
+      // Look up the store
+      const [store] = await db.select().from(stores).where(eq(stores.shopifyDomain, shopDomain)).limit(1);
+      
+      if (!store) {
+        return res.status(404).json({ error: "Store not found" });
+      }
+      
+      // Extract form data
+      const { pageId, blockId, ...formData } = req.body;
+      
+      if (!pageId) {
+        return res.status(400).json({ error: "Missing pageId" });
+      }
+      
+      // Validate page belongs to this store
+      const page = await storage.getPage(pageId);
+      if (!page || page.storeId !== store.id) {
+        return res.status(403).json({ error: "Invalid page" });
+      }
+      
+      // Create form submission (blockId from body or empty string)
+      const submission = await storage.createFormSubmission({
+        pageId,
+        blockId: blockId || "",
+        storeId: store.id,
+        data: formData,
+        referrer: req.get("referer") || null,
+      });
+      
+      res.json({ success: true, submissionId: submission.id });
+    } catch (error) {
+      console.error("Form submission error:", error);
+      res.status(500).json({ error: "Failed to submit form" });
+    }
+  });
   
   // ============== STORE ROUTES ==============
   
