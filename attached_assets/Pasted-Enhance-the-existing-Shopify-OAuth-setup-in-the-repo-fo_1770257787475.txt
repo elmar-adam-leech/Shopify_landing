@@ -1,0 +1,42 @@
+Enhance the existing Shopify OAuth setup in the repo for a fully embedded custom app, supporting both online and offline access tokens. The current codebase already has partial auth routes at /api/auth/shopify and /api/auth/callback, and uses PostgreSQL for session storage (shopify_sessions table) — keep that, do NOT switch to SQLite.
+
+Specific tasks:
+
+1. Install (if missing) or confirm these packages:
+   - @shopify/shopify-api
+   - @shopify/shopify-app-express (or equivalent if using custom Express setup)
+   - @shopify/shopify-app-session-storage-postgresql (if not already used)
+   - @shopify/app-bridge @shopify/app-bridge-react
+   - @shopify/polaris (for UI consistency)
+
+2. Update/enhance auth routes to support dual tokens:
+   - Keep or extend /api/auth/shopify → starts offline auth (long-lived token for background)
+   - Add /api/auth/online → starts online auth (short-lived, for embedded sessions)
+   - Handle callbacks separately if needed (/api/auth/callback-offline, /api/auth/callback-online)
+   - After offline callback, auto-redirect to online auth
+   - After online callback, redirect to the embedded app root with ?shop=...&host=... params
+
+3. Add middleware for shop origin + HMAC validation:
+   - Create a validateShop middleware that checks:
+     - req.query.shop is valid Shopify domain (use shopify.utils.isValidShopifyDomain)
+     - HMAC validation if hmac param present (standard Shopify method using api secret)
+     - For single-tenant custom app, optionally enforce it matches process.env.SHOP
+   - Apply after shopify.ensureInstalledOnShop() or equivalent
+   - Use on all protected /api/* routes
+
+4. Update frontend (client/src/main.tsx or App.tsx):
+   - Wrap the root component in <AppBridgeProvider config={{ apiKey, host: from URL params, shopOrigin: from URL params, forceRedirect: true }}>
+   - Also wrap in <AppProvider i18n={enTranslations}> from @shopify/polaris for Polaris components
+   - Handle loading state if shop/host missing from query params
+
+5. Add Vite proxy in vite.config.ts:
+   server: { proxy: { '/api': 'http://localhost:3000' } }  // adjust port if different
+
+6. Add one example protected GraphQL route, e.g. /api/products:
+   - Use session from shopify.session.getCurrent({ isOnline: true }) or fallback to offline
+   - Create Graphql client and query products(first: 5) { ... }
+   - Return JSON with error handling
+
+7. Add console logging for auth events/errors; include basic error responses (401/403/500)
+
+Keep all changes compatible with existing Drizzle ORM/PostgreSQL usage, Vite/Tailwind/React frontend, and server structure. Prefer GraphQL over REST. Do not break existing customer creation/tagging logic.
