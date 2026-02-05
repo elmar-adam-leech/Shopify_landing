@@ -72,7 +72,7 @@ To enable landing page preview via `mystore.myshopify.com/tools/lp/{slug}`:
 3. Add a new proxy with:
    - **Subpath prefix**: `tools`
    - **Subpath**: `lp`
-   - **Proxy URL**: `https://YOUR-REPLIT-APP-URL.replit.app/pages/proxy`
+   - **Proxy URL**: `https://YOUR-REPLIT-APP-URL.replit.app/proxy/lp`
 4. Save changes
 
 The app proxy routes requests through Shopify to your app, enabling:
