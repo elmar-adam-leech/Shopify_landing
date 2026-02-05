@@ -2,7 +2,7 @@ import { db } from "../db";
 import { stores } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
-const SHOPIFY_API_VERSION = "2024-10";
+const SHOPIFY_API_VERSION = "2025-01";
 
 interface ShopifyCustomer {
   id: number;
@@ -244,6 +244,376 @@ export async function updateCustomerTags(
 
 export function isShopifyConfigured(): boolean {
   return getShopifyConfig() !== null;
+}
+
+// ============================================================================
+// Product Sync via GraphQL Admin API
+// ============================================================================
+
+export interface ShopifyProductNode {
+  id: string;
+  handle: string;
+  title: string;
+  vendor: string | null;
+  productType: string | null;
+  status: string;
+  tags: string[];
+  description: string | null;
+  descriptionHtml: string | null;
+  updatedAt: string;
+  featuredImage: {
+    url: string;
+  } | null;
+  priceRangeV2: {
+    minVariantPrice: {
+      amount: string;
+      currencyCode: string;
+    };
+  };
+  compareAtPriceRange: {
+    minVariantCompareAtPrice: {
+      amount: string;
+      currencyCode: string;
+    } | null;
+  };
+  variants: {
+    edges: Array<{
+      node: {
+        id: string;
+        title: string;
+        sku: string | null;
+        price: string;
+        compareAtPrice: string | null;
+        availableForSale: boolean;
+        selectedOptions: Array<{
+          name: string;
+          value: string;
+        }>;
+        image: {
+          url: string;
+        } | null;
+      };
+    }>;
+  };
+  images: {
+    edges: Array<{
+      node: {
+        url: string;
+        altText: string | null;
+      };
+    }>;
+  };
+}
+
+interface ProductsQueryResponse {
+  data?: {
+    products: {
+      pageInfo: {
+        hasNextPage: boolean;
+        endCursor: string | null;
+      };
+      edges: Array<{
+        node: ShopifyProductNode;
+        cursor: string;
+      }>;
+    };
+  };
+  errors?: Array<{ message: string }>;
+  extensions?: {
+    cost?: {
+      requestedQueryCost: number;
+      actualQueryCost: number;
+      throttleStatus: {
+        maximumAvailable: number;
+        currentlyAvailable: number;
+        restoreRate: number;
+      };
+    };
+  };
+}
+
+export interface ProductSyncResult {
+  success: boolean;
+  products: ShopifyProductNode[];
+  error?: string;
+}
+
+const PRODUCTS_QUERY = `
+  query getProducts($first: Int!, $after: String) {
+    products(first: $first, after: $after) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        cursor
+        node {
+          id
+          handle
+          title
+          vendor
+          productType
+          status
+          tags
+          description
+          descriptionHtml
+          updatedAt
+          featuredImage {
+            url
+          }
+          priceRangeV2 {
+            minVariantPrice {
+              amount
+              currencyCode
+            }
+          }
+          compareAtPriceRange {
+            minVariantCompareAtPrice {
+              amount
+              currencyCode
+            }
+          }
+          variants(first: 50) {
+            edges {
+              node {
+                id
+                title
+                sku
+                price
+                compareAtPrice
+                availableForSale
+                selectedOptions {
+                  name
+                  value
+                }
+                image {
+                  url
+                }
+              }
+            }
+          }
+          images(first: 10) {
+            edges {
+              node {
+                url
+                altText
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+/**
+ * Calculate delay based on Shopify API cost/throttle status
+ */
+function calculateRateLimitDelay(extensions?: ProductsQueryResponse['extensions']): number {
+  if (!extensions?.cost?.throttleStatus) {
+    return 200; // Default delay
+  }
+  
+  const { currentlyAvailable, restoreRate, maximumAvailable } = extensions.cost.throttleStatus;
+  const usedPercent = 1 - (currentlyAvailable / maximumAvailable);
+  
+  // If we've used more than 80% of available points, wait longer
+  if (usedPercent > 0.8) {
+    // Calculate time to restore 20% of budget
+    const pointsToRestore = maximumAvailable * 0.2;
+    const msToWait = Math.ceil((pointsToRestore / restoreRate) * 1000);
+    return Math.min(msToWait, 5000); // Cap at 5 seconds
+  }
+  
+  // If we've used more than 50%, use moderate delay
+  if (usedPercent > 0.5) {
+    return 500;
+  }
+  
+  return 200;
+}
+
+/**
+ * Fetch all products from Shopify using GraphQL Admin API with pagination
+ * Returns a result object with success status and products or error message
+ */
+export async function fetchAllShopifyProducts(
+  config: ShopifyConfig,
+  onProgress?: (count: number) => void
+): Promise<ProductSyncResult> {
+  if (!config.accessToken) {
+    console.error("No access token configured for product sync");
+    return { success: false, products: [], error: "No access token configured" };
+  }
+
+  const allProducts: ShopifyProductNode[] = [];
+  let hasNextPage = true;
+  let cursor: string | null = null;
+  const batchSize = 50; // Shopify allows max 250, but 50 is more reliable
+  let retryCount = 0;
+  const maxRetries = 3;
+  let lastExtensions: ProductsQueryResponse['extensions'] | undefined;
+
+  while (hasNextPage) {
+    try {
+      const response = await fetch(getGraphQLEndpoint(config.storeUrl), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Shopify-Access-Token": config.accessToken,
+        },
+        body: JSON.stringify({
+          query: PRODUCTS_QUERY,
+          variables: {
+            first: batchSize,
+            after: cursor,
+          },
+        }),
+      });
+
+      // Handle rate limiting with exponential backoff
+      if (response.status === 429) {
+        retryCount++;
+        if (retryCount > maxRetries) {
+          console.error("Max retries exceeded for rate limiting");
+          return { 
+            success: false, 
+            products: allProducts, 
+            error: "Rate limited by Shopify API after max retries" 
+          };
+        }
+        const waitMs = Math.pow(2, retryCount) * 1000; // Exponential backoff: 2s, 4s, 8s
+        console.warn(`Rate limited (429), waiting ${waitMs}ms before retry ${retryCount}/${maxRetries}`);
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+        continue; // Retry the same request
+      }
+
+      if (!response.ok) {
+        console.error("GraphQL products fetch error:", response.status);
+        return { 
+          success: false, 
+          products: allProducts, 
+          error: `Shopify API error: HTTP ${response.status}` 
+        };
+      }
+
+      const data: ProductsQueryResponse = await response.json();
+      lastExtensions = data.extensions;
+
+      if (data.errors && data.errors.length > 0) {
+        console.error("GraphQL errors:", data.errors);
+        return { 
+          success: false, 
+          products: allProducts, 
+          error: `GraphQL error: ${data.errors[0].message}` 
+        };
+      }
+
+      const products = data.data?.products;
+      if (!products) {
+        console.error("No products data in response");
+        return { 
+          success: false, 
+          products: allProducts, 
+          error: "Invalid response from Shopify API - no products data" 
+        };
+      }
+
+      // Reset retry count on successful request
+      retryCount = 0;
+
+      for (const edge of products.edges) {
+        allProducts.push(edge.node);
+      }
+
+      hasNextPage = products.pageInfo.hasNextPage;
+      cursor = products.pageInfo.endCursor;
+
+      if (onProgress) {
+        onProgress(allProducts.length);
+      }
+
+      // Adaptive rate limiting based on Shopify cost extensions
+      if (hasNextPage) {
+        const delay = calculateRateLimitDelay(lastExtensions);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    } catch (error) {
+      console.error("Error fetching products batch:", error);
+      return { 
+        success: false, 
+        products: allProducts, 
+        error: error instanceof Error ? error.message : "Network error fetching products" 
+      };
+    }
+  }
+
+  console.log(`Successfully fetched ${allProducts.length} products from Shopify`);
+  return { success: true, products: allProducts };
+}
+
+/**
+ * Convert Shopify GraphQL product to our database format
+ */
+export function convertShopifyProduct(
+  product: ShopifyProductNode,
+  storeId: string
+): {
+  storeId: string;
+  shopifyProductId: string;
+  handle: string;
+  title: string;
+  vendor: string | null;
+  productType: string | null;
+  status: "active" | "draft" | "archived";
+  tags: string[];
+  featuredImageUrl: string | null;
+  price: string | null;
+  compareAtPrice: string | null;
+  description: string | null;
+  productData: Record<string, any>;
+  shopifyUpdatedAt: Date | null;
+} {
+  // Extract global ID number (gid://shopify/Product/123456)
+  const shopifyProductId = product.id;
+
+  // Map status
+  let status: "active" | "draft" | "archived" = "active";
+  if (product.status === "DRAFT") status = "draft";
+  else if (product.status === "ARCHIVED") status = "archived";
+
+  return {
+    storeId,
+    shopifyProductId,
+    handle: product.handle,
+    title: product.title,
+    vendor: product.vendor,
+    productType: product.productType,
+    status,
+    tags: product.tags,
+    featuredImageUrl: product.featuredImage?.url || null,
+    price: product.priceRangeV2.minVariantPrice.amount,
+    compareAtPrice: product.compareAtPriceRange.minVariantCompareAtPrice?.amount || null,
+    description: product.description,
+    productData: {
+      id: product.id,
+      handle: product.handle,
+      title: product.title,
+      vendor: product.vendor,
+      productType: product.productType,
+      status: product.status,
+      tags: product.tags,
+      description: product.description,
+      descriptionHtml: product.descriptionHtml,
+      featuredImage: product.featuredImage,
+      priceRange: product.priceRangeV2,
+      compareAtPriceRange: product.compareAtPriceRange,
+      variants: product.variants.edges.map((e) => e.node),
+      images: product.images.edges.map((e) => e.node),
+      updatedAt: product.updatedAt,
+    },
+    shopifyUpdatedAt: new Date(product.updatedAt),
+  };
 }
 
 // ============================================================================

@@ -106,7 +106,7 @@ export interface IStorage {
   getShopifyProductByHandle(storeId: string, handle: string): Promise<ShopifyProduct | undefined>;
   createShopifyProduct(product: InsertShopifyProduct): Promise<ShopifyProduct>;
   updateShopifyProduct(id: string, product: Partial<InsertShopifyProduct>): Promise<ShopifyProduct | undefined>;
-  upsertShopifyProduct(storeId: string, shopifyProductId: string, product: Omit<InsertShopifyProduct, 'storeId' | 'shopifyProductId'>): Promise<ShopifyProduct>;
+  upsertShopifyProduct(storeId: string, shopifyProductId: string, product: Omit<InsertShopifyProduct, 'storeId' | 'shopifyProductId'>): Promise<{ product: ShopifyProduct; created: boolean }>;
   deleteShopifyProduct(id: string): Promise<boolean>;
   deleteShopifyProductByShopifyId(storeId: string, shopifyProductId: string): Promise<boolean>;
   countShopifyProducts(storeId: string): Promise<number>;
@@ -543,18 +543,19 @@ export class DatabaseStorage implements IStorage {
     return result || undefined;
   }
 
-  async upsertShopifyProduct(storeId: string, shopifyProductId: string, product: Omit<InsertShopifyProduct, 'storeId' | 'shopifyProductId'>): Promise<ShopifyProduct> {
+  async upsertShopifyProduct(storeId: string, shopifyProductId: string, product: Omit<InsertShopifyProduct, 'storeId' | 'shopifyProductId'>): Promise<{ product: ShopifyProduct; created: boolean }> {
     const existing = await this.getShopifyProductByShopifyId(storeId, shopifyProductId);
     
     if (existing) {
       const updated = await this.updateShopifyProduct(existing.id, product);
-      return updated!;
+      return { product: updated!, created: false };
     } else {
-      return this.createShopifyProduct({
+      const newProduct = await this.createShopifyProduct({
         storeId,
         shopifyProductId,
         ...product,
       } as InsertShopifyProduct);
+      return { product: newProduct, created: true };
     }
   }
 

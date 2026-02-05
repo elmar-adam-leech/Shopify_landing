@@ -12,7 +12,7 @@ import { logSecurityEvent } from "./lib/audit";
 import { apiRateLimiter } from "./middleware/rate-limit";
 import { appProxyMiddleware } from "./lib/proxy-signature";
 import { renderPage, render404Page, renderErrorPage } from "./lib/page-renderer";
-import { getShopifyConfigForStore, searchCustomerByEmailOrPhone, updateCustomerTagsGraphQL, createShopifyCustomerGraphQL } from "./lib/shopify";
+import { getShopifyConfigForStore, searchCustomerByEmailOrPhone, updateCustomerTagsGraphQL, createShopifyCustomerGraphQL, fetchAllShopifyProducts, convertShopifyProduct } from "./lib/shopify";
 
 function validatePageAccess(page: Page | undefined, storeId: string | undefined): { valid: boolean; error?: string; statusCode?: number } {
   if (!page) {
@@ -755,6 +755,15 @@ export async function registerRoutes(
         return res.status(ownership.statusCode || 403).json({ error: ownership.error });
       }
       
+      // Get Shopify config for this store
+      const shopifyConfig = await getShopifyConfigForStore(storeId);
+      if (!shopifyConfig || !shopifyConfig.accessToken) {
+        return res.status(400).json({ 
+          error: "Shopify OAuth not connected",
+          message: "Please re-install the app to connect your Shopify store"
+        });
+      }
+      
       // Create sync log
       const syncLog = await storage.createStoreSyncLog({
         storeId,
@@ -762,24 +771,101 @@ export async function registerRoutes(
         status: "started",
       });
       
-      // TODO: Implement actual Shopify sync when OAuth is connected
-      // For now, just mark as completed
+      // Fetch products from Shopify GraphQL Admin API
+      console.log(`Starting product sync for store ${storeId}...`);
+      
+      const syncResult = await fetchAllShopifyProducts(shopifyConfig, (count) => {
+        console.log(`Fetched ${count} products so far...`);
+      });
+      
+      // Handle sync failure
+      if (!syncResult.success) {
+        await storage.updateStoreSyncLog(syncLog.id, {
+          status: "failed",
+          completedAt: new Date(),
+          errorMessage: syncResult.error || "Unknown error during sync",
+          productsAdded: 0,
+          productsUpdated: 0,
+          productsRemoved: 0,
+        });
+        
+        console.error(`Product sync failed: ${syncResult.error}`);
+        return res.status(500).json({ 
+          error: "Sync failed",
+          message: syncResult.error,
+          syncId: syncLog.id,
+        });
+      }
+      
+      const shopifyProducts = syncResult.products;
+      
+      if (shopifyProducts.length === 0) {
+        await storage.updateStoreSyncLog(syncLog.id, {
+          status: "completed",
+          completedAt: new Date(),
+          productsAdded: 0,
+          productsUpdated: 0,
+          productsRemoved: 0,
+        });
+        
+        return res.json({ 
+          message: "Sync completed - no products found in store",
+          syncId: syncLog.id,
+          productsAdded: 0,
+          productsUpdated: 0,
+          productsRemoved: 0,
+        });
+      }
+      
+      // Convert and upsert products
+      let productsAdded = 0;
+      let productsUpdated = 0;
+      
+      for (const product of shopifyProducts) {
+        const productData = convertShopifyProduct(product, storeId);
+        const { storeId: pStoreId, shopifyProductId, ...restProductData } = productData;
+        const result = await storage.upsertShopifyProduct(pStoreId, shopifyProductId, restProductData);
+        if (result.created) {
+          productsAdded++;
+        } else {
+          productsUpdated++;
+        }
+      }
+      
+      // Get existing product IDs in our database
+      const existingProducts = await storage.getShopifyProducts(storeId, { limit: 10000, offset: 0 });
+      const syncedIds = new Set(shopifyProducts.map(p => p.id));
+      
+      // Remove products that are no longer in Shopify
+      let productsRemoved = 0;
+      for (const existing of existingProducts) {
+        if (!syncedIds.has(existing.shopifyProductId)) {
+          await storage.deleteShopifyProduct(existing.id);
+          productsRemoved++;
+        }
+      }
+      
+      // Update sync log
       await storage.updateStoreSyncLog(syncLog.id, {
         status: "completed",
         completedAt: new Date(),
-        productsAdded: 0,
-        productsUpdated: 0,
-        productsRemoved: 0,
+        productsAdded,
+        productsUpdated,
+        productsRemoved,
       });
       
+      console.log(`Product sync completed: ${productsAdded} added, ${productsUpdated} updated, ${productsRemoved} removed`);
+      
       res.json({ 
-        message: "Sync initiated",
+        message: "Sync completed",
         syncId: syncLog.id,
-        note: "Shopify OAuth connection required for actual sync"
+        productsAdded,
+        productsUpdated,
+        productsRemoved,
       });
     } catch (error) {
-      console.error("Error starting sync:", error);
-      res.status(500).json({ error: "Failed to start sync" });
+      console.error("Error during sync:", error);
+      res.status(500).json({ error: "Failed to sync products" });
     }
   });
 
