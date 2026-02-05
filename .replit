@@ -46,6 +46,6 @@ integrations = ["javascript_database:1.0.0"]
 [userenv.shared]
 HOST_URL = "https://shopify-builder--therealaleech.replit.app"
 SHOPIFY_APP_HANDLE = "landing-page-builder-6"
+ENCRYPTION_SALT = "b284ccfeb290bb92968fe5040518876cbcb768dfdec8169fe3929c356de9f015"
 
 [userenv.production]
-ENCRYPTION_SALT = "b284ccfeb290bb92968fe5040518876cbcb768dfdec8169fe3929c356de9f015"
