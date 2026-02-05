@@ -44,7 +44,7 @@ integrations = ["javascript_database:1.0.0"]
 [userenv]
 
 [userenv.shared]
-HOST_URL = "https://ff7cfa31-4b10-47f0-a296-e60e6643c013-00-29ypia34iwhbt.worf.replit.dev"
+HOST_URL = "https://shopify-builder--therealaleech.replit.app"
 
 [userenv.production]
 ENCRYPTION_SALT = "b284ccfeb290bb92968fe5040518876cbcb768dfdec8169fe3929c356de9f015"
