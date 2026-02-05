@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Store } from "@shared/schema";
+import { useAppBridge } from "@/components/providers/AppBridgeProvider";
 
 interface ShopifyAuthStatus {
   authenticated: boolean;
@@ -48,6 +49,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const hostFromUrl = getHostFromUrl();
   const isEmbedded = !!(shopFromUrl && hostFromUrl);
   
+  // Get App Bridge context for authentication
+  const { app, isAppReady } = useAppBridge();
+  
   const [selectedStoreId, setSelectedStoreIdState] = useState<string | null>(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem(SELECTED_STORE_KEY);
@@ -66,7 +70,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // Helper to get session token from App Bridge
   async function getSessionToken(): Promise<string | null> {
-    const app = (window as any).__SHOPIFY_APP_BRIDGE__;
     if (!app) return null;
     
     try {
@@ -79,8 +82,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }
 
   // In embedded mode, fetch stores with shop context and session token
+  // Wait for App Bridge to be ready before making authenticated requests
   const { data: stores = [], isLoading, error: storesError } = useQuery<Store[]>({
-    queryKey: ["/api/stores", shopFromUrl, isEmbedded],
+    queryKey: ["/api/stores", shopFromUrl, isEmbedded, isAppReady],
     queryFn: async () => {
       const url = new URL("/api/stores", window.location.origin);
       if (shopFromUrl) {
@@ -90,10 +94,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const headers: Record<string, string> = {};
       
       // In embedded mode, get session token for authentication
-      if (isEmbedded) {
+      if (isEmbedded && app) {
         const token = await getSessionToken();
         if (token) {
           headers["Authorization"] = `Bearer ${token}`;
+        } else {
+          console.log("[StoreContext] No session token available, will trigger OAuth");
         }
       }
       
@@ -116,8 +122,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       return res.json();
     },
-    // Only enable when we have enough context
-    enabled: true,
+    // Only enable when App Bridge is ready (in embedded mode) or always in non-embedded mode
+    enabled: isAppReady,
   });
 
   const { data: shopifyAuth } = useQuery<ShopifyAuthStatus>({

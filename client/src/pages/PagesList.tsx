@@ -27,9 +27,10 @@ import { TemplateLibrary } from "@/components/editor/TemplateLibrary";
 import { StoreSelector } from "@/components/StoreSelector";
 import { useStore } from "@/lib/store-context";
 import { useToast } from "@/hooks/use-toast";
+import { useShopifyRedirect, useAppBridge } from "@/components/providers/AppBridgeProvider";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Page, Block } from "@shared/schema";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { formatDistanceToNow } from "date-fns";
 
 export default function PagesList() {
@@ -38,21 +39,22 @@ export default function PagesList() {
   const [deletePageId, setDeletePageId] = useState<string | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
   const { selectedStoreId, isEmbedded, needsAuth, currentShop, isLoading: storeLoading } = useStore();
+  const { redirectToAuth } = useShopifyRedirect();
+  const { isAppReady } = useAppBridge();
+  
+  // Guard to prevent multiple redirects
+  const isRedirecting = useRef(false);
 
   // Redirect to OAuth if store needs authentication
+  // Wait for App Bridge to be ready in embedded mode before redirecting
   useEffect(() => {
-    if (needsAuth && currentShop && !storeLoading) {
-      const params = new URLSearchParams(window.location.search);
-      const host = params.get("host");
-      const authUrl = new URL("/api/auth/shopify", window.location.origin);
-      authUrl.searchParams.set("shop", currentShop);
-      if (host) {
-        authUrl.searchParams.set("host", host);
-      }
-      console.log("[PagesList] Redirecting to OAuth:", authUrl.toString());
-      window.location.href = authUrl.toString();
+    if (needsAuth && currentShop && !storeLoading && isAppReady && !isRedirecting.current) {
+      isRedirecting.current = true;
+      console.log("[PagesList] Store needs auth, redirecting to OAuth");
+      // Use App Bridge redirect which handles embedded context properly
+      redirectToAuth("offline");
     }
-  }, [needsAuth, currentShop, storeLoading]);
+  }, [needsAuth, currentShop, storeLoading, redirectToAuth, isAppReady]);
 
   const { data: pages, isLoading } = useQuery<Page[]>({
     queryKey: ["/api/pages/list", selectedStoreId],

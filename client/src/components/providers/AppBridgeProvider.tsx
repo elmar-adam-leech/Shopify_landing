@@ -7,6 +7,7 @@ import type { ClientApplication } from "@shopify/app-bridge";
 interface AppBridgeContextValue {
   app: ClientApplication | null;
   isEmbedded: boolean;
+  isAppReady: boolean;
   shop: string | null;
   host: string | null;
 }
@@ -14,6 +15,7 @@ interface AppBridgeContextValue {
 const AppBridgeContext = createContext<AppBridgeContextValue>({
   app: null,
   isEmbedded: false,
+  isAppReady: false,
   shop: null,
   host: null,
 });
@@ -29,6 +31,7 @@ interface ShopifyProvidersProps {
 export function ShopifyProviders({ children }: ShopifyProvidersProps) {
   const [app, setApp] = useState<ClientApplication | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [initFailed, setInitFailed] = useState(false);
   const [shop, setShop] = useState<string | null>(null);
   const [host, setHost] = useState<string | null>(null);
   const [isEmbedded, setIsEmbedded] = useState(false);
@@ -59,6 +62,7 @@ export function ShopifyProviders({ children }: ShopifyProvidersProps) {
         })
         .catch((error) => {
           console.error("[AppBridge] Failed to initialize:", error);
+          setInitFailed(true);
         })
         .finally(() => {
           setIsLoading(false);
@@ -76,8 +80,14 @@ export function ShopifyProviders({ children }: ShopifyProvidersProps) {
     );
   }
   
+  // App is ready when: 
+  // - Not embedded (no App Bridge needed)
+  // - Embedded and app is initialized
+  // - Embedded but init failed (allow fallback to window navigation)
+  const isAppReady = !isEmbedded || (isEmbedded && (app !== null || initFailed));
+  
   return (
-    <AppBridgeContext.Provider value={{ app, isEmbedded, shop, host }}>
+    <AppBridgeContext.Provider value={{ app, isEmbedded, isAppReady, shop, host }}>
       <PolarisProvider i18n={enTranslations}>
         {children}
       </PolarisProvider>
@@ -91,11 +101,11 @@ export function useShopOrigin() {
 }
 
 export function useShopifyRedirect() {
-  const { shop, host } = useAppBridge();
+  const { app, shop, host, isEmbedded } = useAppBridge();
   
-  const redirectToAuth = (type: "offline" | "online" = "offline") => {
+  const redirectToAuth = async (type: "offline" | "online" = "offline") => {
     if (!shop) {
-      console.error("No shop context for redirect");
+      console.error("[Redirect] No shop context for redirect");
       return;
     }
     
@@ -105,6 +115,36 @@ export function useShopifyRedirect() {
     if (host) {
       url.searchParams.set("host", host);
     }
+    
+    // In embedded mode, use App Bridge to redirect the parent window
+    if (isEmbedded && app) {
+      try {
+        const { Redirect } = await import("@shopify/app-bridge/actions");
+        const redirect = Redirect.create(app);
+        redirect.dispatch(Redirect.Action.REMOTE, url.toString());
+        console.log("[AppBridge] Redirecting parent window to:", url.toString());
+        return;
+      } catch (error) {
+        console.error("[AppBridge] Failed to redirect via App Bridge:", error);
+        // Fall through to window.top fallback
+      }
+    }
+    
+    // Fallback: try to redirect the top-level window (for embedded context without App Bridge)
+    if (isEmbedded) {
+      console.log("[Redirect] Using window.top fallback for embedded redirect");
+      try {
+        if (window.top) {
+          window.top.location.href = url.toString();
+          return;
+        }
+      } catch (e) {
+        console.error("[Redirect] Cannot access window.top, using window.location");
+      }
+    }
+    
+    // Final fallback for non-embedded or if all else fails
+    console.log("[Redirect] Using window.location fallback");
     window.location.href = url.toString();
   };
   
