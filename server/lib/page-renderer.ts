@@ -479,7 +479,7 @@ function renderFormBlock(config: Record<string, any>, blockId: string, pageId: s
 
   return `
     <section class="lp-form-block" data-block-id="${escapeHtml(blockId)}">
-      <form class="lp-form" action="/proxy/api/submit-form" method="POST" data-page-id="${escapeHtml(pageId)}">
+      <form class="lp-form" action="/api/public/submit-form" method="POST" data-page-id="${escapeHtml(pageId)}">
         <h3 class="lp-form-title">${title}</h3>
         ${fieldHtml}
         ${hiddenFields}

@@ -900,6 +900,70 @@ export async function registerRoutes(
     }
   });
 
+  // Public form submission endpoint for landing pages (no proxy signature required)
+  // Security: validates page exists, is published, and belongs to a valid store
+  app.post("/api/public/submit-form", async (req: Request, res: Response) => {
+    try {
+      const { pageId, blockId, visitorId, sessionId, ...formData } = req.body;
+      
+      // Validate required fields
+      if (!pageId) {
+        return res.status(400).json({ error: "Missing pageId" });
+      }
+      
+      // Validate page exists
+      const page = await storage.getPage(pageId);
+      if (!page) {
+        return res.status(404).json({ error: "Page not found" });
+      }
+      
+      // Validate page is published (security: only accept submissions for published pages)
+      if (page.status !== "published") {
+        return res.status(403).json({ error: "Page is not published" });
+      }
+      
+      // Validate page has a store
+      if (!page.storeId) {
+        return res.status(400).json({ error: "Page has no associated store" });
+      }
+      
+      // Validate store exists
+      const [store] = await db.select().from(stores).where(eq(stores.id, page.storeId)).limit(1);
+      if (!store) {
+        return res.status(404).json({ error: "Store not found" });
+      }
+      
+      // Create form submission
+      const submission = await storage.createFormSubmission({
+        pageId,
+        blockId: blockId || "",
+        storeId: store.id,
+        data: formData,
+        referrer: req.get("referer") || null,
+      });
+      
+      // Process customer creation and analytics (shared helper)
+      const { shopifyCustomerId, alreadyExisted } = await processFormSubmissionCustomer(
+        page,
+        submission,
+        blockId,
+        visitorId,
+        sessionId,
+        req.get("referer")
+      );
+      
+      res.json({ 
+        success: true, 
+        submissionId: submission.id,
+        shopifyCustomerId,
+        alreadyExisted,
+      });
+    } catch (error) {
+      console.error("Public form submission error:", error);
+      res.status(500).json({ error: "Failed to submit form" });
+    }
+  });
+
   // Create new page
   app.post("/api/pages", async (req, res) => {
     try {
