@@ -483,6 +483,7 @@ export const formSubmissions = pgTable("form_submissions", {
   utmParams: jsonb("utm_params").$type<UTMParams>().default({}),
   landingPage: text("landing_page"),
   referrer: text("referrer"),
+  shopifyCustomerId: varchar("shopify_customer_id"),
   submittedAt: timestamp("submitted_at").defaultNow().notNull(),
 });
 
