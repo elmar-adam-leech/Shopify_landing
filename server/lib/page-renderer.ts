@@ -103,7 +103,7 @@ function generateHydrationScript(store: Store, page: Page): string {
     storeId: "${escapeJs(store.id)}",
     storeDomain: "${escapeJs(store.shopifyDomain)}",
     storefrontToken: "${escapeJs(storefrontToken)}",
-    storefrontUrl: "https://${escapeJs(storefrontDomain)}/api/2024-01/graphql.json"
+    storefrontUrl: "https://${escapeJs(storefrontDomain)}/api/2025-01/graphql.json"
   };
 
   function parseHashSku() {
@@ -128,21 +128,17 @@ function generateHydrationScript(store: Store, page: Page): string {
             node {
               id
               title
-              description
+              descriptionHtml
               handle
               vendor
               productType
-              tags
               priceRange {
                 minVariantPrice { amount currencyCode }
                 maxVariantPrice { amount currencyCode }
               }
-              compareAtPriceRange {
-                minVariantPrice { amount currencyCode }
-              }
-              images(first: 5) {
+              images(first: 10) {
                 edges {
-                  node { url altText }
+                  node { url altText width height }
                 }
               }
               variants(first: 50) {
@@ -153,9 +149,7 @@ function generateHydrationScript(store: Store, page: Page): string {
                     sku
                     availableForSale
                     price { amount currencyCode }
-                    compareAtPrice { amount currencyCode }
                     selectedOptions { name value }
-                    image { url altText }
                   }
                 }
               }
@@ -201,8 +195,7 @@ function generateHydrationScript(store: Store, page: Page): string {
       })?.node || product.variants?.edges?.[0]?.node;
 
       const price = variant?.price?.amount || product.priceRange?.minVariantPrice?.amount || '0';
-      const comparePrice = variant?.compareAtPrice?.amount || product.compareAtPriceRange?.minVariantPrice?.amount;
-      const image = variant?.image?.url || product.images?.edges?.[0]?.node?.url || '';
+      const image = product.images?.edges?.[0]?.node?.url || '';
       const currency = variant?.price?.currencyCode || 'USD';
 
       const formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: currency });
@@ -214,9 +207,8 @@ function generateHydrationScript(store: Store, page: Page): string {
           \${product.vendor ? '<p class="lp-product-vendor">' + product.vendor + '</p>' : ''}
           <div class="lp-product-price">
             <span class="lp-price-current">\${formatter.format(price)}</span>
-            \${comparePrice && parseFloat(comparePrice) > parseFloat(price) ? '<span class="lp-price-compare">' + formatter.format(comparePrice) + '</span>' : ''}
           </div>
-          <p class="lp-product-description">\${product.description || ''}</p>
+          <div class="lp-product-description">\${product.descriptionHtml || ''}</div>
           <button class="lp-add-to-cart" data-variant-id="\${variant?.id || ''}" data-product-id="\${product.id}">
             Add to Cart
           </button>
