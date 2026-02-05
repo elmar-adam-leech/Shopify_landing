@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
-import { useLocation, useRoute } from "wouter";
+import { useRoute } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useEmbeddedNavigation } from "@/hooks/use-embedded-navigation";
 import {
   DndContext,
   DragOverlay,
@@ -115,13 +116,14 @@ const defaultPixelSettings: PixelSettings = {
     purchase: true,
     lead: true,
   },
+  customEvents: [],
 };
 
 export default function Editor() {
   const [, params] = useRoute("/editor/:id");
-  const [, navigate] = useLocation();
+  const { navigate, buildHref } = useEmbeddedNavigation();
   const { toast } = useToast();
-  const { selectedStoreId } = useStore();
+  const { selectedStoreId, selectedStore } = useStore();
   const pageId = params?.id;
   const isNewPage = pageId === "new";
 
@@ -194,6 +196,11 @@ export default function Editor() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      // Require storeId for new pages to prevent orphaned pages
+      if (isNewPage && !selectedStoreId) {
+        throw new Error("Store context required to create a page. Please select a store first.");
+      }
+      
       const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
       const pageData = {
         title,
@@ -203,7 +210,7 @@ export default function Editor() {
         pixelSettings,
         allowIndexing,
         status: "draft" as const,
-        ...(isNewPage && selectedStoreId ? { storeId: selectedStoreId } : {}),
+        storeId: selectedStoreId,
       };
 
       if (isNewPage) {
@@ -231,10 +238,10 @@ export default function Editor() {
         navigate(`/editor/${data.id}`, { replace: true });
       }
     },
-    onError: () => {
+    onError: (error: Error) => {
       toast({
         title: "Error",
-        description: "Failed to save page. Please try again.",
+        description: error.message || "Failed to save page. Please try again.",
         variant: "destructive",
       });
     },
@@ -350,7 +357,7 @@ export default function Editor() {
       <div className="h-screen flex flex-col bg-background">
         <header className="h-14 border-b flex items-center justify-between gap-4 px-4 flex-shrink-0">
           <div className="flex items-center gap-4">
-            <Link href="/">
+            <Link href={buildHref("/")}>
               <Button variant="ghost" size="sm" className="gap-2" data-testid="button-back">
                 <ArrowLeft className="h-4 w-4" />
                 Pages
@@ -400,7 +407,13 @@ export default function Editor() {
               <Settings className="h-4 w-4" />
               Pixels
             </Button>
-            <a href={isNewPage ? "#" : `/preview/${pageId}`} target="_blank" rel="noopener noreferrer">
+            <a 
+              href={isNewPage ? "#" : (selectedStore?.shopifyDomain && pageData?.slug
+                ? `https://${selectedStore.shopifyDomain}/tools/lp/${pageData.slug}` 
+                : `/preview/${pageId}`)} 
+              target="_blank" 
+              rel="noopener noreferrer"
+            >
               <Button 
                 variant="outline" 
                 size="sm" 
@@ -416,7 +429,8 @@ export default function Editor() {
               size="sm"
               className="gap-2"
               onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending || !hasChanges}
+              disabled={saveMutation.isPending || !hasChanges || (isNewPage && !selectedStoreId)}
+              title={isNewPage && !selectedStoreId ? "Store context required to save" : undefined}
               data-testid="button-save"
             >
               {saveMutation.isPending ? (

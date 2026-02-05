@@ -1,6 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Link, useLocation } from "wouter";
+import { Link } from "wouter";
 import { Plus, FileText, MoreHorizontal, Trash2, Copy, ExternalLink, Loader2, BarChart3, FlaskConical, Store, ShieldCheck } from "lucide-react";
+import { useEmbeddedNavigation } from "@/hooks/use-embedded-navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -35,10 +36,10 @@ import { formatDistanceToNow } from "date-fns";
 
 export default function PagesList() {
   const { toast } = useToast();
-  const [, navigate] = useLocation();
+  const { navigate, buildHref } = useEmbeddedNavigation();
   const [deletePageId, setDeletePageId] = useState<string | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
-  const { selectedStoreId, isEmbedded, needsAuth, currentShop, isLoading: storeLoading } = useStore();
+  const { selectedStoreId, selectedStore, isEmbedded, needsAuth, currentShop, isLoading: storeLoading } = useStore();
   const { redirectToAuth } = useShopifyRedirect();
   const { isAppReady } = useAppBridge();
   
@@ -133,13 +134,13 @@ export default function PagesList() {
           <div className="flex items-center gap-2 flex-wrap">
             <StoreSelector />
             {!isEmbedded && (
-              <Link href="/stores">
+              <Link href={buildHref("/stores")}>
                 <Button variant="ghost" size="icon" data-testid="button-stores">
                   <Store className="h-4 w-4" />
                 </Button>
               </Link>
             )}
-            <Link href="/ab-tests">
+            <Link href={buildHref("/ab-tests")}>
               <Button variant="outline" className="gap-2" data-testid="button-ab-tests">
                 <FlaskConical className="h-4 w-4" />
                 A/B Tests
@@ -206,13 +207,20 @@ export default function PagesList() {
                           Duplicate
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild>
-                          <a href={`/preview/${page.id}`} target="_blank" rel="noopener noreferrer">
+                          <a 
+                            href={selectedStore?.shopifyDomain && page.slug
+                              ? `https://${selectedStore.shopifyDomain}/tools/lp/${page.slug}`
+                              : `/preview/${page.id}`
+                            } 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                          >
                             <ExternalLink className="h-4 w-4 mr-2" />
                             Preview
                           </a>
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild>
-                          <Link href={`/analytics/${page.id}`}>
+                          <Link href={buildHref(`/analytics/${page.id}`)}>
                             <BarChart3 className="h-4 w-4 mr-2" />
                             Analytics
                           </Link>
@@ -230,7 +238,7 @@ export default function PagesList() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <Link href={`/editor/${page.id}`}>
+                  <Link href={buildHref(`/editor/${page.id}`)}>
                     <div className="aspect-video bg-muted rounded-lg flex items-center justify-center mb-3 cursor-pointer hover:bg-muted/80 transition-colors">
                       {page.blocks && page.blocks.length > 0 ? (
                         <div className="text-center p-4">

@@ -849,6 +849,12 @@ export async function registerRoutes(
     try {
       // Always use store context storeId if available (ignore client-provided storeId for security)
       const storeId = req.storeContext?.storeId || null;
+      
+      // Require storeId for multi-tenant mode - prevents orphaned pages
+      if (!storeId) {
+        return res.status(400).json({ error: "Store context required to create a page" });
+      }
+      
       const bodyWithStore = {
         ...req.body,
         storeId: storeId,

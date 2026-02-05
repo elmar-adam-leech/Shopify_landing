@@ -220,15 +220,15 @@ export function ProductPicker({ storeId, userId, selectedProductId, selectedProd
                     data-testid="input-product-search"
                   />
                 </div>
-                <Select value={status} onValueChange={setStatus}>
+                <Select value={status || "all"} onValueChange={(val) => setStatus(val === "all" ? "" : val)}>
                   <SelectTrigger className="w-[130px]" data-testid="select-product-status-filter">
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
                     <SelectItem value="active">Active</SelectItem>
                     <SelectItem value="draft">Draft</SelectItem>
                     <SelectItem value="archived">Archived</SelectItem>
-                    <SelectItem value="">All Status</SelectItem>
                   </SelectContent>
                 </Select>
               </>
