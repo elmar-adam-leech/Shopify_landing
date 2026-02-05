@@ -25,12 +25,42 @@ Preferred communication style: Simple, everyday language.
 - **Database ORM**: Drizzle ORM with PostgreSQL
 - **Schema Validation**: Zod for runtime type checking
 
-### Shopify OAuth Integration
-- **OAuth Flow**: `/api/auth/shopify` initiates OAuth, `/api/auth/callback` handles token exchange
+### Shopify OAuth Integration (Dual Token Flow)
+- **Offline Token Flow** (`/api/auth/shopify` → `/api/auth/callback`):
+  - Long-lived access tokens for background operations (webhooks, scheduled tasks)
+  - Persists in `shopify_sessions` table with `isOnline: false`
+  - Never expires until app is uninstalled
+- **Online Token Flow** (`/api/auth/online` → `/api/auth/online/callback`):
+  - Short-lived tokens for embedded app sessions (per-user access)
+  - Includes user info in `onlineAccessInfo` field
+  - Expires and requires re-auth
+- **Auto-redirect Chain**: Offline auth → Online auth → Embedded app with shop/host params
+- **Host Preservation**: Host parameter preserved across OAuth redirects for embedded context
 - **Multi-tenancy**: All pages are scoped to stores via `storeId` foreign key
-- **Session Storage**: OAuth sessions stored in `shopify_sessions` table
+- **Session Storage**: OAuth sessions stored in `shopify_sessions` table with expiry tracking
 - **Webhook**: `/api/webhooks/app-uninstalled` handles app uninstallation
-- **Environment Variables**: `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_SCOPES`, `HOST_URL`
+- **Environment Variables**: `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_SCOPES`, `HOST_URL`, `VITE_SHOPIFY_API_KEY` (for frontend)
+
+### Shopify Auth Security (`server/shopify-auth.ts`)
+- **validateShopMiddleware**: Protects API routes with:
+  - Shop domain format validation
+  - HMAC verification (for Shopify redirects)
+  - Session token JWT verification (for embedded app requests)
+  - Full JWT validation: signature, exp, iat, nbf, aud, iss, dest
+  - Dev mode bypass with warning (non-production only)
+- **Session Helpers**: `getSessionForShop()`, `getOnlineSession()`, `getOfflineSession()`
+  - Prefers valid online session, falls back to offline
+  - Automatically cleans up expired online sessions
+
+### Shopify App Bridge Integration (`client/src/components/providers/AppBridgeProvider.tsx`)
+- **ShopifyProviders**: Wraps app with AppBridgeContext and Polaris
+- **Hooks**:
+  - `useAppBridge()`: Access app instance, shop, host, isEmbedded
+  - `useShopOrigin()`: Get shop/host context
+  - `useSessionToken()`: Get session token with auto-refresh
+  - `useShopifyRedirect()`: Redirect to auth with preserved host
+  - `useAuthenticatedFetch()`: Make authenticated API calls
+- **Query Client Integration**: `authenticatedFetch` adds session token to all API requests in embedded context
 
 ### Shopify App Proxy
 - **URL Format**: Landing pages accessible at `mystore.myshopify.com/tools/lp/{slug}` via Shopify App Proxy

@@ -49,17 +49,106 @@ export function verifyHmac(queryParams: Record<string, any>, hmac: string, secre
   return safeCompare(generatedHmac, hmac);
 }
 
+// ============== SESSION TOKEN VERIFICATION ==============
+
+/**
+ * Verify Shopify session token (JWT)
+ * Full validation: signature, expiry, iat, nbf, aud, iss, dest
+ */
+function verifySessionToken(
+  token: string, 
+  apiSecret: string,
+  expectedShop?: string
+): { valid: boolean; payload?: any; error?: string } {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) {
+      return { valid: false, error: "Invalid token format" };
+    }
+    
+    const [headerB64, payloadB64, signatureB64] = parts;
+    
+    // Verify signature using HMAC-SHA256
+    const signatureInput = `${headerB64}.${payloadB64}`;
+    const expectedSignature = crypto
+      .createHmac("sha256", apiSecret)
+      .update(signatureInput)
+      .digest("base64url");
+    
+    if (signatureB64 !== expectedSignature) {
+      return { valid: false, error: "Invalid signature" };
+    }
+    
+    // Decode payload
+    const payloadJson = Buffer.from(payloadB64, "base64url").toString("utf8");
+    const payload = JSON.parse(payloadJson);
+    
+    const now = Math.floor(Date.now() / 1000);
+    const clockSkew = 60; // Allow 60 seconds of clock skew
+    
+    // Check expiration (exp)
+    if (payload.exp && payload.exp < now - clockSkew) {
+      return { valid: false, error: "Token expired" };
+    }
+    
+    // Check issued at (iat) - not in the future
+    if (payload.iat && payload.iat > now + clockSkew) {
+      return { valid: false, error: "Token issued in the future" };
+    }
+    
+    // Check not before (nbf)
+    if (payload.nbf && payload.nbf > now + clockSkew) {
+      return { valid: false, error: "Token not yet valid" };
+    }
+    
+    // Validate audience (aud) - should match our API key
+    const expectedAud = process.env.SHOPIFY_API_KEY;
+    if (expectedAud && payload.aud !== expectedAud) {
+      return { valid: false, error: "Invalid audience" };
+    }
+    
+    // Validate issuer (iss) - should be https://{shop}/admin
+    if (payload.iss) {
+      const issuerMatch = payload.iss.match(/^https:\/\/([^\/]+)\/admin$/);
+      if (!issuerMatch) {
+        return { valid: false, error: "Invalid issuer format" };
+      }
+      const issuerShop = issuerMatch[1];
+      
+      // If expectedShop provided, verify it matches issuer
+      if (expectedShop && issuerShop !== expectedShop) {
+        return { valid: false, error: "Issuer shop mismatch" };
+      }
+    }
+    
+    // Validate dest - should match shop domain
+    if (payload.dest) {
+      const destShop = payload.dest.replace("https://", "");
+      if (expectedShop && destShop !== expectedShop) {
+        return { valid: false, error: "Destination shop mismatch" };
+      }
+    }
+    
+    return { valid: true, payload };
+  } catch (error) {
+    console.error("[Auth] Token verification error:", error);
+    return { valid: false, error: "Token verification failed" };
+  }
+}
+
 // ============== SHOP VALIDATION MIDDLEWARE ==============
 
 /**
  * Middleware to validate shop origin + HMAC for protected API routes
  * - Validates shop domain format
- * - Verifies HMAC if present
+ * - Requires HMAC verification OR valid session token (JWT)
  * - Optionally enforces single-tenant SHOP env var
  */
 export function validateShopMiddleware(req: Request, res: Response, next: NextFunction) {
   const shop = (req.query.shop || req.body?.shop || req.headers["x-shopify-shop-domain"]) as string | undefined;
   const hmac = req.query.hmac as string | undefined;
+  const authHeader = req.headers["authorization"];
+  const sessionToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
   
   // Validate shop domain
   if (!validateShop(shop)) {
@@ -74,9 +163,11 @@ export function validateShopMiddleware(req: Request, res: Response, next: NextFu
     return res.status(403).json({ error: "Unauthorized shop" });
   }
   
-  // Verify HMAC if present
+  const apiSecret = process.env.SHOPIFY_API_SECRET;
+  
+  // Require either HMAC or verified session token for authentication
   if (hmac) {
-    const apiSecret = process.env.SHOPIFY_API_SECRET;
+    // Verify HMAC from Shopify redirect
     if (!apiSecret) {
       console.error("[Auth] SHOPIFY_API_SECRET not configured for HMAC validation");
       return res.status(500).json({ error: "Server configuration error" });
@@ -85,6 +176,43 @@ export function validateShopMiddleware(req: Request, res: Response, next: NextFu
     if (!verifyHmac(req.query as Record<string, string>, hmac, apiSecret)) {
       console.warn(`[Auth] HMAC validation failed for ${shop}`);
       return res.status(403).json({ error: "HMAC validation failed" });
+    }
+    
+    (req as any).authMethod = "hmac";
+    console.log(`[Auth] HMAC verified for ${shop}`);
+  } else if (sessionToken) {
+    // Verify session token (JWT) from App Bridge
+    if (!apiSecret) {
+      console.error("[Auth] SHOPIFY_API_SECRET not configured for token validation");
+      return res.status(500).json({ error: "Server configuration error" });
+    }
+    
+    // Full JWT validation including aud, iss, dest, and shop match
+    const tokenResult = verifySessionToken(sessionToken, apiSecret, shop);
+    if (!tokenResult.valid) {
+      console.warn(`[Auth] Session token validation failed for ${shop}: ${tokenResult.error}`);
+      return res.status(401).json({ 
+        error: "Invalid session token",
+        details: tokenResult.error,
+        redirect: `/api/auth/online?shop=${shop}`
+      });
+    }
+    
+    (req as any).authMethod = "session_token";
+    (req as any).sessionPayload = tokenResult.payload;
+    console.log(`[Auth] Session token verified for ${shop}`);
+  } else {
+    // In development, allow shop-only auth for testing
+    const isDev = process.env.NODE_ENV !== "production";
+    if (isDev) {
+      console.warn(`[Auth] Dev mode: allowing request without HMAC/session for ${shop}`);
+      (req as any).authMethod = "dev_bypass";
+    } else {
+      console.warn(`[Auth] Missing HMAC or session token for ${shop}`);
+      return res.status(401).json({ 
+        error: "Authentication required",
+        redirect: `/api/auth/shopify?shop=${shop}`
+      });
     }
   }
   
@@ -122,6 +250,17 @@ export async function ensureInstalledOnShop(req: Request, res: Response, next: N
 
 // ============== SESSION HELPERS ==============
 
+/**
+ * Check if an online session has expired
+ */
+function isSessionExpired(session: { expires?: Date | null }): boolean {
+  if (!session.expires) return false; // No expiry = never expires (offline tokens)
+  return new Date(session.expires) <= new Date();
+}
+
+/**
+ * Get valid online session for a shop (checks expiry)
+ */
 async function getOnlineSession(shop: string) {
   const [session] = await db
     .select()
@@ -131,9 +270,25 @@ async function getOnlineSession(shop: string) {
       eq(shopifySessions.isOnline, true)
     ))
     .limit(1);
-  return session;
+  
+  // Check if session exists and is not expired
+  if (session && !isSessionExpired(session)) {
+    return session;
+  }
+  
+  // Clean up expired session
+  if (session && isSessionExpired(session)) {
+    console.log(`[Session] Cleaning up expired online session for ${shop}`);
+    await db.delete(shopifySessions)
+      .where(eq(shopifySessions.id, session.id));
+  }
+  
+  return null;
 }
 
+/**
+ * Get offline session for a shop (never expires)
+ */
 async function getOfflineSession(shop: string) {
   const [session] = await db
     .select()
@@ -146,12 +301,24 @@ async function getOfflineSession(shop: string) {
   return session;
 }
 
+/**
+ * Get best available session for shop
+ * Prefers valid online session, falls back to offline
+ */
 export async function getSessionForShop(shop: string, preferOnline = true) {
   if (preferOnline) {
     const online = await getOnlineSession(shop);
-    if (online?.accessToken) return online;
+    if (online?.accessToken) {
+      console.log(`[Session] Using valid online session for ${shop}`);
+      return online;
+    }
   }
-  return getOfflineSession(shop);
+  
+  const offline = await getOfflineSession(shop);
+  if (offline?.accessToken) {
+    console.log(`[Session] Using offline session for ${shop}`);
+  }
+  return offline;
 }
 
 router.get("/api/auth/shopify", async (req: Request, res: Response) => {
@@ -163,6 +330,7 @@ router.get("/api/auth/shopify", async (req: Request, res: Response) => {
   }
 
   const shop = req.query.shop as string | undefined;
+  const host = req.query.host as string | undefined;
   
   if (!validateShop(shop)) {
     return res.status(400).json({ 
@@ -175,11 +343,13 @@ router.get("/api/auth/shopify", async (req: Request, res: Response) => {
   const redirectUri = `${process.env.HOST_URL || "http://localhost:5000"}/api/auth/callback`;
   const scopes = shopifyConfig.scopes.join(",");
   
+  // Store state with host parameter for embedded redirect preservation
   await db.insert(shopifySessions).values({
     id: `oauth_state_${state}`,
     shop: shop,
     state: state,
     isOnline: false,
+    onlineAccessInfo: host ? { host } : undefined,
     createdAt: new Date(),
     updatedAt: new Date(),
   }).onConflictDoUpdate({
@@ -187,6 +357,7 @@ router.get("/api/auth/shopify", async (req: Request, res: Response) => {
     set: {
       shop: shop,
       state: state,
+      onlineAccessInfo: host ? { host } : undefined,
       updatedAt: new Date(),
     }
   });
@@ -198,7 +369,7 @@ router.get("/api/auth/shopify", async (req: Request, res: Response) => {
     state: state,
   }).toString();
 
-  console.log(`Redirecting to Shopify OAuth: ${shop}`);
+  console.log(`[Auth] Starting offline OAuth for ${shop}${host ? ' (embedded context)' : ''}`);
   res.redirect(authUrl);
 });
 
@@ -237,6 +408,9 @@ router.get("/api/auth/callback", async (req: Request, res: Response) => {
     console.warn(`OAuth state mismatch for ${shop} - possible CSRF attack`);
     return res.status(403).json({ error: "State validation failed - possible CSRF attack" });
   }
+  
+  // Retrieve host from stored session for embedded redirect preservation
+  const storedHost = (storedSession.onlineAccessInfo as { host?: string })?.host;
 
   await db.delete(shopifySessions).where(eq(shopifySessions.id, `oauth_state_${state}`));
 
@@ -290,8 +464,14 @@ router.get("/api/auth/callback", async (req: Request, res: Response) => {
     console.log(`[Auth] Offline token stored for ${shop}, redirecting to online auth`);
     
     // Auto-redirect to online auth after offline auth completes
+    // Preserve host parameter for embedded context
     const hostUrl = process.env.HOST_URL || "http://localhost:5000";
-    res.redirect(`${hostUrl}/api/auth/online?shop=${shop}`);
+    const onlineAuthUrl = new URL(`${hostUrl}/api/auth/online`);
+    onlineAuthUrl.searchParams.set("shop", shop);
+    if (storedHost) {
+      onlineAuthUrl.searchParams.set("host", storedHost);
+    }
+    res.redirect(onlineAuthUrl.toString());
   } catch (error) {
     console.error("[Auth] OAuth callback error:", error);
     res.status(500).json({ error: "Authentication failed" });
