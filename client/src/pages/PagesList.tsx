@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Plus, FileText, MoreHorizontal, Trash2, Copy, ExternalLink, Loader2, BarChart3, FlaskConical, Store, ShieldCheck } from "lucide-react";
+import { Plus, FileText, MoreHorizontal, Trash2, Copy, ExternalLink, Loader2, BarChart3, FlaskConical, Store, ShieldCheck, Globe, EyeOff } from "lucide-react";
 import { useEmbeddedNavigation } from "@/hooks/use-embedded-navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -118,6 +118,29 @@ export default function PagesList() {
     },
   });
 
+  const publishMutation = useMutation({
+    mutationFn: async ({ pageId, newStatus }: { pageId: string; newStatus: "draft" | "published" }) => {
+      return apiRequest("PATCH", `/api/pages/${pageId}`, { status: newStatus });
+    },
+    onSuccess: async (response) => {
+      const data = await response.json();
+      queryClient.invalidateQueries({ queryKey: ["/api/pages/list"] });
+      toast({
+        title: data.status === "published" ? "Page published" : "Page unpublished",
+        description: data.status === "published" 
+          ? "Your page is now live and accessible." 
+          : "Your page is now in draft mode.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update page status.",
+        variant: "destructive",
+      });
+    },
+  });
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b">
@@ -208,10 +231,7 @@ export default function PagesList() {
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild>
                           <a 
-                            href={selectedStore?.shopifyDomain && page.slug
-                              ? `https://${selectedStore.shopifyDomain}/tools/lp/${page.slug}`
-                              : `/preview/${page.id}`
-                            } 
+                            href={`/preview/${page.id}`} 
                             target="_blank" 
                             rel="noopener noreferrer"
                           >
@@ -224,6 +244,26 @@ export default function PagesList() {
                             <BarChart3 className="h-4 w-4 mr-2" />
                             Analytics
                           </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => publishMutation.mutate({ 
+                            pageId: page.id, 
+                            newStatus: page.status === "published" ? "draft" : "published" 
+                          })}
+                          disabled={publishMutation.isPending}
+                        >
+                          {page.status === "published" ? (
+                            <>
+                              <EyeOff className="h-4 w-4 mr-2" />
+                              Unpublish
+                            </>
+                          ) : (
+                            <>
+                              <Globe className="h-4 w-4 mr-2" />
+                              Publish
+                            </>
+                          )}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem

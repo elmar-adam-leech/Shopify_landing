@@ -265,6 +265,62 @@ export async function registerRoutes(
     }
   });
   
+  // Direct preview route - works without Shopify App Proxy
+  // Use this for previewing pages during development
+  app.get("/preview/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      
+      // Try to find page by ID first
+      let page = await storage.getPage(id);
+      
+      // If not found by ID, try by slug (for user-friendly URLs)
+      if (!page) {
+        // Find page by slug across all stores
+        const allPages = await db.select().from(pages).where(eq(pages.slug, id)).limit(1);
+        if (allPages.length > 0) {
+          page = allPages[0];
+        }
+      }
+      
+      if (!page) {
+        return res.status(404).send(render404Page());
+      }
+      
+      // Get the store for this page
+      let store = null;
+      if (page.storeId) {
+        const [foundStore] = await db.select().from(stores).where(eq(stores.id, page.storeId)).limit(1);
+        store = foundStore;
+      }
+      
+      // Render the page with store info if available
+      const storeInfo = store ? {
+        id: store.id,
+        name: store.name,
+        shopifyDomain: store.shopifyDomain,
+        storefrontAccessToken: store.storefrontAccessToken,
+      } : {
+        id: page.storeId || "",
+        name: "Preview",
+        shopifyDomain: "",
+        storefrontAccessToken: null,
+      };
+      const { html, contentType } = await renderPage(req, page, storeInfo);
+      
+      res.set({
+        "Content-Type": contentType,
+        "Cache-Control": "no-cache", // No cache for preview
+        "X-Content-Type-Options": "nosniff",
+      });
+      
+      res.send(html);
+    } catch (error) {
+      console.error("Preview render error:", error);
+      res.status(500).send(renderErrorPage("Failed to load preview"));
+    }
+  });
+  
   // Proxy API endpoint for form submissions (from Shopify App Proxy)
   app.post("/proxy/api/submit-form", proxyMiddleware, async (req: Request, res: Response) => {
     try {

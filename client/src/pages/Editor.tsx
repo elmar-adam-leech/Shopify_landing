@@ -242,6 +242,30 @@ export default function Editor() {
     },
   });
 
+  const publishMutation = useMutation({
+    mutationFn: async (newStatus: "draft" | "published") => {
+      return apiRequest("PATCH", `/api/pages/${pageId}`, { status: newStatus });
+    },
+    onSuccess: async (response) => {
+      const data = await response.json();
+      queryClient.invalidateQueries({ queryKey: ["/api/pages/list"] });
+      queryClient.setQueryData(["/api/pages", pageId], data);
+      toast({
+        title: data.status === "published" ? "Page published" : "Page unpublished",
+        description: data.status === "published" 
+          ? "Your page is now live and accessible." 
+          : "Your page is now in draft mode.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update page status.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveId(String(event.active.id));
   }, []);
@@ -403,9 +427,7 @@ export default function Editor() {
               Pixels
             </Button>
             <a 
-              href={isNewPage ? "#" : (selectedStore?.shopifyDomain && pageData?.slug
-                ? `https://${selectedStore.shopifyDomain}/tools/lp/${pageData.slug}` 
-                : `/preview/${pageId}`)} 
+              href={isNewPage ? "#" : `/preview/${pageId}`} 
               target="_blank" 
               rel="noopener noreferrer"
             >
@@ -435,6 +457,26 @@ export default function Editor() {
               )}
               {saveMutation.isPending ? "Saving..." : "Save"}
             </Button>
+            {!isNewPage && (
+              <Button
+                size="sm"
+                className="gap-2"
+                variant={pageData?.status === "published" ? "outline" : "default"}
+                onClick={() => publishMutation.mutate(pageData?.status === "published" ? "draft" : "published")}
+                disabled={publishMutation.isPending || hasChanges}
+                title={hasChanges ? "Save changes before publishing" : undefined}
+                data-testid="button-publish"
+              >
+                {publishMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : pageData?.status === "published" ? (
+                  <Eye className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+                {pageData?.status === "published" ? "Unpublish" : "Publish"}
+              </Button>
+            )}
           </div>
         </header>
 
