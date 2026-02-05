@@ -222,7 +222,6 @@ export default function Stores() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="manual">Manual only</SelectItem>
-                            <SelectItem value="hourly">Every hour</SelectItem>
                             <SelectItem value="daily">Every day</SelectItem>
                             <SelectItem value="weekly">Every week</SelectItem>
                           </SelectContent>
