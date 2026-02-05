@@ -169,17 +169,12 @@ export default function Editor() {
     })
   );
 
-  const { isLoading, data: pageData } = useQuery({
+  const { isLoading, data: pageData } = useQuery<Page>({
     queryKey: ["/api/pages", pageId],
     enabled: !isNewPage && !!pageId,
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes - improves navigation speed
     gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
-    queryFn: async () => {
-      const response = await fetch(`/api/pages/${pageId}`);
-      if (!response.ok) throw new Error("Failed to load page");
-      const data = await response.json() as Page;
-      return data;
-    },
+    // Uses default queryFn which includes authenticatedFetch with shop context
   });
 
   // Update state when page data loads
