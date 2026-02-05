@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/lib/theme";
 import { StoreProvider } from "@/lib/store-context";
+import { ShopifyProviders } from "@/components/providers/AppBridgeProvider";
 import PagesList from "@/pages/PagesList";
 import Editor from "@/pages/Editor";
 import Preview from "@/pages/Preview";
@@ -32,14 +33,16 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <StoreProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Router />
-          </TooltipProvider>
-        </StoreProvider>
-      </ThemeProvider>
+      <ShopifyProviders>
+        <ThemeProvider>
+          <StoreProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Router />
+            </TooltipProvider>
+          </StoreProvider>
+        </ThemeProvider>
+      </ShopifyProviders>
     </QueryClientProvider>
   );
 }
