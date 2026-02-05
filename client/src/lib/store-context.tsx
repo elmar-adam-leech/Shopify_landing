@@ -64,24 +64,60 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const [needsAuth, setNeedsAuth] = useState(false);
 
-  // In embedded mode, fetch stores with shop context
+  // Helper to get session token from App Bridge
+  async function getSessionToken(): Promise<string | null> {
+    const app = (window as any).__SHOPIFY_APP_BRIDGE__;
+    if (!app) return null;
+    
+    try {
+      const { getSessionToken: getBridgeToken } = await import("@shopify/app-bridge/utilities");
+      return await getBridgeToken(app);
+    } catch (error) {
+      console.error("[StoreContext] Failed to get session token:", error);
+      return null;
+    }
+  }
+
+  // In embedded mode, fetch stores with shop context and session token
   const { data: stores = [], isLoading, error: storesError } = useQuery<Store[]>({
-    queryKey: ["/api/stores", shopFromUrl],
+    queryKey: ["/api/stores", shopFromUrl, isEmbedded],
     queryFn: async () => {
-      // If embedded, add shop param for authentication
-      const url = shopFromUrl 
-        ? `/api/stores?shop=${encodeURIComponent(shopFromUrl)}`
-        : "/api/stores";
-      const res = await fetch(url, { credentials: "include" });
+      const url = new URL("/api/stores", window.location.origin);
+      if (shopFromUrl) {
+        url.searchParams.set("shop", shopFromUrl);
+      }
+      
+      const headers: Record<string, string> = {};
+      
+      // In embedded mode, get session token for authentication
+      if (isEmbedded) {
+        const token = await getSessionToken();
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
+        }
+      }
+      
+      const res = await fetch(url.toString(), { 
+        credentials: "include",
+        headers,
+      });
+      
       if (!res.ok) {
-        // Return empty array on auth errors - will trigger OAuth flow
-        if (res.status === 401) {
+        // 401 in embedded mode means we need OAuth
+        if (res.status === 401 && isEmbedded) {
+          console.log("[StoreContext] 401 in embedded mode - need OAuth");
+          return [];
+        }
+        // 401 in non-embedded mode just means no auth context
+        if (res.status === 401 && !isEmbedded) {
           return [];
         }
         throw new Error("Failed to fetch stores");
       }
       return res.json();
     },
+    // Only enable when we have enough context
+    enabled: true,
   });
 
   const { data: shopifyAuth } = useQuery<ShopifyAuthStatus>({
