@@ -245,3 +245,238 @@ export async function updateCustomerTags(
 export function isShopifyConfigured(): boolean {
   return getShopifyConfig() !== null;
 }
+
+// ============================================================================
+// GraphQL Admin API Helpers (2025-01)
+// ============================================================================
+
+const ADMIN_GRAPHQL_VERSION = "2025-01";
+
+function getGraphQLEndpoint(storeUrl: string): string {
+  const cleanUrl = storeUrl.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  return `https://${cleanUrl}/admin/api/${ADMIN_GRAPHQL_VERSION}/graphql.json`;
+}
+
+/**
+ * Search for existing customer by email or phone using GraphQL Admin API
+ */
+export async function searchCustomerByEmailOrPhone(
+  config: ShopifyConfig,
+  email?: string,
+  phone?: string
+): Promise<{ id: string; tags: string[] } | null> {
+  if (!config.accessToken || (!email && !phone)) return null;
+
+  const queryParts: string[] = [];
+  if (email) queryParts.push(`email:${email}`);
+  if (phone) queryParts.push(`phone:${phone}`);
+  const searchQuery = queryParts.join(" OR ");
+
+  const query = `
+    query searchCustomer($query: String!) {
+      customers(first: 1, query: $query) {
+        edges {
+          node {
+            id
+            tags
+          }
+        }
+      }
+    }
+  `;
+
+  try {
+    const response = await fetch(getGraphQLEndpoint(config.storeUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": config.accessToken,
+      },
+      body: JSON.stringify({ query, variables: { query: searchQuery } }),
+    });
+
+    if (!response.ok) {
+      console.error("GraphQL search error:", response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    const customer = data.data?.customers?.edges?.[0]?.node;
+    return customer ? { id: customer.id, tags: customer.tags || [] } : null;
+  } catch (error) {
+    console.error("Failed to search customer:", error);
+    return null;
+  }
+}
+
+/**
+ * Update customer tags using GraphQL Admin API (merges with existing tags)
+ */
+export async function updateCustomerTagsGraphQL(
+  config: ShopifyConfig,
+  customerId: string,
+  newTags: string[]
+): Promise<boolean> {
+  if (!config.accessToken) return false;
+
+  // First fetch existing tags
+  const fetchQuery = `
+    query getCustomerTags($id: ID!) {
+      customer(id: $id) {
+        tags
+      }
+    }
+  `;
+
+  try {
+    const fetchRes = await fetch(getGraphQLEndpoint(config.storeUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": config.accessToken,
+      },
+      body: JSON.stringify({ query: fetchQuery, variables: { id: customerId } }),
+    });
+
+    if (!fetchRes.ok) {
+      console.error("Failed to fetch customer tags:", fetchRes.status);
+      return false;
+    }
+
+    const fetchData = await fetchRes.json();
+    const existingTags: string[] = fetchData.data?.customer?.tags || [];
+    const mergedTags = Array.from(new Set([...existingTags, ...newTags]));
+
+    // Update with merged tags
+    const updateMutation = `
+      mutation customerUpdate($input: CustomerInput!) {
+        customerUpdate(input: $input) {
+          customer { id }
+          userErrors { field message }
+        }
+      }
+    `;
+
+    const updateRes = await fetch(getGraphQLEndpoint(config.storeUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": config.accessToken,
+      },
+      body: JSON.stringify({
+        query: updateMutation,
+        variables: { input: { id: customerId, tags: mergedTags } },
+      }),
+    });
+
+    if (!updateRes.ok) {
+      console.error("Failed to update customer tags:", updateRes.status);
+      return false;
+    }
+
+    const updateData = await updateRes.json();
+    const userErrors = updateData.data?.customerUpdate?.userErrors;
+    if (userErrors?.length) {
+      console.error("Customer update errors:", userErrors);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Failed to update customer tags:", error);
+    return false;
+  }
+}
+
+/**
+ * Create customer using GraphQL Admin API with tags and optional marketing consent
+ */
+export async function createShopifyCustomerGraphQL(
+  config: ShopifyConfig,
+  input: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    phone?: string;
+    tags: string[];
+    emailMarketingConsent?: boolean;
+  }
+): Promise<{ id: string } | { error: string }> {
+  if (!config.accessToken) {
+    return { error: "No access token configured" };
+  }
+
+  const mutation = `
+    mutation customerCreate($input: CustomerInput!) {
+      customerCreate(input: $input) {
+        customer {
+          id
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+  `;
+
+  const customerInput: Record<string, any> = {
+    tags: input.tags,
+  };
+  if (input.firstName) customerInput.firstName = input.firstName;
+  if (input.lastName) customerInput.lastName = input.lastName;
+  if (input.email) customerInput.email = input.email;
+  if (input.phone) customerInput.phone = input.phone;
+
+  // Only add email marketing consent if email is present and consent given
+  if (input.email && input.emailMarketingConsent) {
+    customerInput.emailMarketingConsent = {
+      marketingState: "SUBSCRIBED",
+      marketingOptInLevel: "SINGLE_OPT_IN",
+    };
+  }
+
+  const executeWithRetry = async (attempt = 1): Promise<Response> => {
+    const res = await fetch(getGraphQLEndpoint(config.storeUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": config.accessToken!,
+      },
+      body: JSON.stringify({ query: mutation, variables: { input: customerInput } }),
+    });
+
+    // Handle rate limiting with exponential backoff
+    if (res.status === 429 && attempt < 3) {
+      console.warn(`Rate limited, retrying in ${attempt}s...`);
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
+      return executeWithRetry(attempt + 1);
+    }
+    return res;
+  };
+
+  try {
+    const response = await executeWithRetry();
+    if (!response.ok) {
+      return { error: `HTTP ${response.status}` };
+    }
+
+    const data = await response.json();
+    const userErrors = data.data?.customerCreate?.userErrors;
+    if (userErrors?.length) {
+      console.error("Customer create errors:", userErrors);
+      return { error: userErrors[0].message };
+    }
+
+    const customerId = data.data?.customerCreate?.customer?.id;
+    if (!customerId) {
+      return { error: "No customer ID returned" };
+    }
+
+    console.log("Created Shopify customer via GraphQL:", customerId);
+    return { id: customerId };
+  } catch (err: any) {
+    console.error("Failed to create customer:", err);
+    return { error: err.message || "Unknown error" };
+  }
+}
