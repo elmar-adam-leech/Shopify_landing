@@ -102,11 +102,18 @@ The core entities are:
 - TikTok Pixel
 - Pinterest Tag
 
-### Shopify Customer Creation
-- **Form Submissions**: Creates Shopify customers when form block has `createShopifyCustomer` enabled
+### Shopify Customer Creation (GraphQL Admin API)
+- **API Version**: GraphQL Admin API 2025-01 (`server/lib/shopify.ts`)
+- **Search Before Create**: Uses `customerSearch` query to find existing customers by email OR phone
+- **Create New**: Uses `customerCreate` mutation with optional email marketing consent
+- **Update Existing**: Uses `customerUpdate` mutation to append tags to existing customers
+- **Form Submissions**: Creates/updates Shopify customers when form block has `createShopifyCustomer` enabled
 - **Phone Calls**: Creates Shopify customers from Twilio call tracking events
-- **Tagging**: Automatic source tags (`source:page-slug`, `page:title`, `form-lead`/`phone-lead`)
-- **UTM Support**: UTM parameters passed through to customer notes
+- **Full UTM Tagging**: Customer tags include `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content`, `gclid`
+- **Configurable Source Tags**: Set `shopifyCustomerTagSource: false` to disable `page:slug` and `form:blockId` tags
+- **Email Marketing Consent**: Opt-in consent passed when form has `consent` or `marketing` field set to true
+- **Customer ID Storage**: `shopifyCustomerId` field on `formSubmissions` stores the Shopify GID
+- **Analytics Integration**: Form submissions log `form_submission` events with full UTM parameters
 - **OAuth Scopes**: Requires `write_customers` and `read_customers` scopes
 
 ### Twilio Call Tracking Integration
