@@ -681,13 +681,25 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Page not found" });
       }
       
+      // Include store info for dynamic product loading (only public fields)
+      let storeInfo = null;
+      if (page.storeId) {
+        const [store] = await db.select().from(stores).where(eq(stores.id, page.storeId)).limit(1);
+        if (store) {
+          storeInfo = {
+            shopifyDomain: store.shopifyDomain,
+            storefrontAccessToken: store.storefrontAccessToken,
+          };
+        }
+      }
+      
       // Add cache headers for landing pages (cache for 5 minutes, stale-while-revalidate for 1 hour)
       res.set({
         'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600',
         'Vary': 'Accept-Encoding'
       });
       
-      res.json(page);
+      res.json({ ...page, storeInfo });
     } catch (error) {
       console.error("Error fetching public page:", error);
       res.status(500).json({ error: "Failed to fetch page" });
