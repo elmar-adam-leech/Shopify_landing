@@ -162,6 +162,16 @@ The core entities are:
 - **Analytics Integration**: Form submissions log `form_submission` events with full UTM parameters
 - **OAuth Scopes**: Requires `write_customers` and `read_customers` scopes
 
+### Automated Product Sync
+- **Sync Service**: `server/lib/sync-service.ts` handles product synchronization from Shopify stores
+- **Background Scheduler**: `server/lib/sync-scheduler.ts` runs every 5 minutes checking for stores due for sync
+- **Sync Schedules**: Each store can configure sync frequency: `manual`, `hourly`, `daily`, or `weekly`
+- **Initial Sync**: Automatically triggered after OAuth install (runs asynchronously without blocking redirect)
+- **Rate Limiting**: Adaptive rate limiting based on GraphQL cost extensions and 429 handling with exponential backoff
+- **Tracking Fields**: `lastSyncAt` timestamp on stores, sync logs in `store_sync_logs` table
+- **Sync Types**: `manual` (user-triggered), `scheduled` (automatic), `install` (post-OAuth), `webhook` (future)
+- **Null Safety**: Handles missing `compareAtPriceRange` and `priceRangeV2` data from Shopify API
+
 ### Twilio Call Tracking Integration
 - **Dynamic Number Insertion (DNI)**: Swap phone numbers based on GCLID/UTM parameters
 - **Tracking Numbers**: Per-store tracking numbers with forwarding configuration

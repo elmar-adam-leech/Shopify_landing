@@ -8,6 +8,7 @@ import {
   isShopifyConfigured,
   shopifyConfig
 } from "./shopify";
+import { triggerInitialSync } from "./lib/sync-service";
 import { db } from "./db";
 import { shopifySessions } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
@@ -462,6 +463,9 @@ router.get("/api/auth/callback", async (req: Request, res: Response) => {
     });
     
     console.log(`[Auth] Offline token stored for ${shop}, redirecting to online auth`);
+    
+    // Trigger initial product sync asynchronously (don't wait for it)
+    triggerInitialSync(shop);
     
     // Auto-redirect to online auth after offline auth completes
     // Preserve host parameter for embedded context

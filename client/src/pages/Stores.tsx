@@ -7,9 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Store, ArrowLeft, Settings, Trash2, Link as LinkIcon } from "lucide-react";
+import { Plus, Store, ArrowLeft, Settings, Trash2, Link as LinkIcon, RefreshCw } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import type { Store as StoreType } from "@shared/schema";
 
@@ -35,6 +36,7 @@ export default function Stores() {
     name: "",
     shopifyDomain: "",
     customDomain: "",
+    syncSchedule: "daily" as "manual" | "hourly" | "daily" | "weekly",
     twilioAccountSid: "",
     twilioAuthToken: "",
     twilioForwardTo: "",
@@ -93,6 +95,7 @@ export default function Stores() {
       name: "",
       shopifyDomain: "",
       customDomain: "",
+      syncSchedule: "daily",
       twilioAccountSid: "",
       twilioAuthToken: "",
       twilioForwardTo: "",
@@ -105,6 +108,7 @@ export default function Stores() {
       name: store.name,
       shopifyDomain: store.shopifyDomain,
       customDomain: store.customDomain || "",
+      syncSchedule: (store.syncSchedule as "manual" | "hourly" | "daily" | "weekly") || "daily",
       twilioAccountSid: store.twilioAccountSid || "",
       twilioAuthToken: store.twilioAuthToken || "",
       twilioForwardTo: store.twilioForwardTo || "",
@@ -198,6 +202,37 @@ export default function Stores() {
                       </div>
                     </div>
                   </div>
+
+                  {editingStore && (
+                    <div className="space-y-4">
+                      <h3 className="font-medium text-sm text-muted-foreground flex items-center gap-2">
+                        <RefreshCw className="h-4 w-4" />
+                        Product Sync Settings
+                      </h3>
+                      <div className="space-y-2">
+                        <Label htmlFor="syncSchedule">Sync Schedule</Label>
+                        <Select
+                          value={formData.syncSchedule}
+                          onValueChange={(value: "manual" | "hourly" | "daily" | "weekly") => 
+                            setFormData({ ...formData, syncSchedule: value })
+                          }
+                        >
+                          <SelectTrigger data-testid="select-sync-schedule">
+                            <SelectValue placeholder="Select sync frequency" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="manual">Manual only</SelectItem>
+                            <SelectItem value="hourly">Every hour</SelectItem>
+                            <SelectItem value="daily">Every day</SelectItem>
+                            <SelectItem value="weekly">Every week</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          How often to automatically sync products from your Shopify store
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   {editingStore && (
                     <div className="space-y-4">

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, jsonb, boolean, integer, timestamp, uniqueIndex, serial } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, jsonb, boolean, integer, timestamp, uniqueIndex, index, serial } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -417,6 +417,9 @@ export const stores = pgTable("stores", {
   installState: text("install_state", { enum: ["pending", "installed", "uninstalled"] }).notNull().default("pending"),
   installedAt: timestamp("installed_at"),
   uninstalledAt: timestamp("uninstalled_at"),
+  // Product sync settings
+  syncSchedule: text("sync_schedule", { enum: ["manual", "hourly", "daily", "weekly"] }).notNull().default("daily"),
+  lastSyncAt: timestamp("last_sync_at"),
   // Twilio integration
   twilioAccountSid: text("twilio_account_sid"),
   twilioAuthToken: text("twilio_auth_token"),
@@ -603,8 +606,8 @@ export const shopifyProducts = pgTable("shopify_products", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   uniqueProductPerStore: uniqueIndex("shopify_products_store_product_idx").on(table.storeId, table.shopifyProductId),
-  titleSearchIdx: uniqueIndex("shopify_products_title_idx").on(table.storeId, table.title),
-  handleIdx: uniqueIndex("shopify_products_handle_idx").on(table.storeId, table.handle),
+  titleSearchIdx: index("shopify_products_title_idx").on(table.storeId, table.title),
+  handleIdx: index("shopify_products_handle_idx").on(table.storeId, table.handle),
 }));
 
 // User product favorites for quick access in editor
@@ -621,7 +624,7 @@ export const userProductFavorites = pgTable("user_product_favorites", {
 export const storeSyncLogs = pgTable("store_sync_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   storeId: varchar("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
-  syncType: text("sync_type", { enum: ["manual", "webhook", "scheduled"] }).notNull(),
+  syncType: text("sync_type", { enum: ["manual", "webhook", "scheduled", "install"] }).notNull(),
   status: text("status", { enum: ["started", "completed", "failed"] }).notNull(),
   productsAdded: integer("products_added").default(0),
   productsUpdated: integer("products_updated").default(0),

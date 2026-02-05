@@ -592,8 +592,8 @@ export function convertShopifyProduct(
     status,
     tags: product.tags,
     featuredImageUrl: product.featuredImage?.url || null,
-    price: product.priceRangeV2.minVariantPrice.amount,
-    compareAtPrice: product.compareAtPriceRange.minVariantCompareAtPrice?.amount || null,
+    price: product.priceRangeV2?.minVariantPrice?.amount || "0",
+    compareAtPrice: product.compareAtPriceRange?.minVariantCompareAtPrice?.amount || null,
     description: product.description,
     productData: {
       id: product.id,
