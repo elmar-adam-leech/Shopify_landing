@@ -1362,6 +1362,31 @@ function ProductBlockSettings({
 
   return (
     <div className="space-y-6">
+      {/* Dynamic Mode Toggle */}
+      <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
+        <div className="flex items-center justify-between gap-2">
+          <div className="space-y-0.5">
+            <Label htmlFor="dynamic-mode">Load product dynamically from URL hash</Label>
+            <p className="text-xs text-muted-foreground">
+              Enable to load product by SKU from URL (e.g. #SKU123)
+            </p>
+          </div>
+          <Switch
+            id="dynamic-mode"
+            checked={config.dynamic || false}
+            onCheckedChange={(checked) => onUpdate({ ...config, dynamic: checked })}
+            data-testid="switch-dynamic-mode"
+          />
+        </div>
+        {config.dynamic && (
+          <div className="pt-2 border-t">
+            <p className="text-sm text-muted-foreground">
+              Page visitors can change product by adding <code className="px-1 py-0.5 bg-muted rounded">#SKU123</code> to the URL
+            </p>
+          </div>
+        )}
+      </div>
+
       <div className="space-y-2">
         <Label>Product</Label>
         {storeId ? (

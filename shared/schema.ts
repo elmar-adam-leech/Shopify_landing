@@ -44,6 +44,9 @@ export const productBlockConfigSchema = z.object({
   productId: z.string().optional(),
   productHandle: z.string().optional(),
   
+  // Dynamic mode - load product from URL hash (#sku-value)
+  dynamic: z.boolean().default(false),
+  
   // Component visibility toggles
   showImage: z.boolean().default(true),
   showTitle: z.boolean().default(true),
