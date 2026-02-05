@@ -1,0 +1,39 @@
+The plan for customer creation from form submissions is excellent: moving to GraphQL customerCreate, handling duplicates, tagging with UTMs, rate-limit backoff, and logging failures even on error.
+
+I approve proceeding with these refinements:
+
+1. Use **Admin GraphQL API** (not Storefront) — endpoint: https://{shop}.myshopify.com/admin/api/2025-01/graphql.json
+   - Auth: use admin access token from store config (shopifyAccessToken)
+
+2. Full flow in /api/forms/submit:
+   - Require store context (appProxyMiddleware or requireStoreContext)
+   - Read form data from req.body: { firstName?, lastName?, email, phone?, customFields?, utm? }
+   - Get UTM from utm param or stored in DB/session if needed
+   - Search for existing customer: customers(first: 1, query: "email:${email} OR phone:${phone}")
+   - If found → use customerUpdate to add tags
+   - If not found → customerCreate with tags + consent
+   - Tags: ["lead_from_landing_page", `utm_source:${utm.source || 'direct'}`, `utm_medium:${utm.medium || ''}`, `page:${page.slug}`, `form:${blockId}`]
+   - Consent: emailMarketingConsent: { marketingState: "SUBSCRIBED" } only if form has explicit consent checkbox
+
+3. Schema: Add shopifyCustomerId: varchar("shopify_customer_id").optional() to formSubmissions table
+
+4. Error handling:
+   - 429 → backoff + retry (2 attempts)
+   - userErrors → return { success: false, error: userErrors[0].message }
+   - Always save submission even if customer creation fails (set shopifyCustomerId: null)
+
+5. Response: { success: boolean, customerId?: string, alreadyExisted?: boolean, message?: string }
+
+Implementation Steps:
+Step 1: Update shared/schema.ts — add shopifyCustomerId to formSubmissions table
+Step 2: Enhance server/lib/shopify.ts — add:
+   - searchCustomerByEmailOrPhone(shopifyConfig, email?, phone?)
+   - updateCustomerTags(shopifyConfig, customerId, tags)
+   - (keep or update) createShopifyCustomer to use GraphQL
+Step 3: Add POST /api/forms/submit in server/routes.ts with full flow (search → create/update → tag → log → save submission)
+
+Start with Step 1 — show the schema change diff / code.
+
+Do NOT implement yet — show Step 1 first.
+
+After approval, proceed step-by-step.
