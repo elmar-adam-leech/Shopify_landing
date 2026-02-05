@@ -1,0 +1,45 @@
+Yes — the plan for dynamic product block enhancement is perfect: correct GraphQL approach, client-side hash handling, SSR placeholder, and strong security notes.
+
+I approve proceeding with these small refinements:
+
+1. Schema (shared/schema.ts):
+   - Add to ProductBlockConfig: dynamic: z.boolean().default(false)
+   - Optional: metafieldKeys: z.array(z.string()).optional() — to allow custom metafields per block
+
+2. Editor (BlockSettings.tsx):
+   - Add Switch labeled "Load product dynamically from URL hash (#sku-value)"
+   - If dynamic=true, show helper text: "Page visitors can change product by adding #SKU123 to URL"
+
+3. lib/shopify.ts (client):
+   - Implement getProductBySku(shopDomain: string, storefrontToken: string, sku: string)
+   - Use fetch with timeout (5000ms) + retry on 429
+   - Return full product or { error: string }
+
+4. Preview.tsx:
+   - useEffect: if block.config.dynamic && hash → setLoading(true) → fetch → update product state
+   - Render full product UI: carousel (images), title, descriptionHtml (use dangerouslySetInnerHTML), price, variants dropdown (select with price/stock), add-to-cart button (POST to /cart/add.js)
+   - Loading spinner + error message ("Product not found: " + sku)
+
+5. page-renderer.ts (server):
+   - For dynamic product-block: render placeholder HTML like:
+     <div data-dynamic-sku="true" data-block-id="${blockId}" class="dynamic-product">
+       <p>Loading product...</p>
+       <div class="product-placeholder">Enter SKU in URL (e.g. #ABC123)</div>
+     </div>
+   - Pass storefrontToken to hydration script: window.__PAGE_DATA__.storefrontToken = '${escapeHtml(store.storefrontAccessToken || '')}'
+
+6. Client Hydration Script (in page-renderer.ts):
+   - Expand fetchProduct(sku) to real fetch using window.__PAGE_DATA__.storefrontToken
+   - On success: update all [data-dynamic-sku] elements with product data (title, price, variants select, images, etc.)
+   - Add-to-cart: simple fetch('/cart/add.js', { method: 'POST', body: JSON.stringify({id: variantId, quantity: 1}) })
+
+Implementation Steps:
+Step 1: Update shared/schema.ts + BlockSettings.tsx (add dynamic toggle + helper text)
+Step 2: Create/update client/src/lib/shopify.ts with getProductBySku
+Step 3: Update Preview.tsx with hash detection + rendering logic
+Step 4: Update page-renderer.ts SSR placeholder + pass storefrontToken to hydration script
+Step 5: Expand generateHydrationScript with full fetch + DOM update code
+
+Start with Step 1 — show diffs/full code for schema.ts and BlockSettings.tsx changes.
+
+Do NOT apply anything yet — show first, then proceed step-by-step on approval.
