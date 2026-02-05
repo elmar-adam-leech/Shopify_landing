@@ -29,7 +29,7 @@ async function getSessionToken(): Promise<string | null> {
   }
 }
 
-async function authenticatedFetch(url: string, options: RequestInit = {}): Promise<Response> {
+export async function authenticatedFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const { shop, isEmbedded } = getShopContext();
   
   const fetchUrl = new URL(url, window.location.origin);

@@ -8,7 +8,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, Star, StarOff, Package, RefreshCw, ChevronLeft, ChevronRight, Image, ExternalLink } from "lucide-react";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient, apiRequest, authenticatedFetch } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import type { ShopifyProduct } from "@shared/schema";
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -50,6 +51,7 @@ export function ProductPicker({ storeId, userId, selectedProductId, selectedProd
   const [page, setPage] = useState(0);
   const [activeTab, setActiveTab] = useState<"all" | "favorites">("all");
   const limit = 20;
+  const { toast } = useToast();
 
   const debouncedSearch = useDebounce(search, 300);
   
@@ -72,7 +74,7 @@ export function ProductPicker({ storeId, userId, selectedProductId, selectedProd
       if (status) params.set("status", status);
       params.set("offset", String(page * limit));
       params.set("limit", String(limit));
-      const res = await fetch(`/api/stores/${storeId}/products?${params}`);
+      const res = await authenticatedFetch(`/api/stores/${storeId}/products?${params}`);
       if (!res.ok) throw new Error("Failed to fetch products");
       return res.json();
     },
@@ -86,7 +88,7 @@ export function ProductPicker({ storeId, userId, selectedProductId, selectedProd
       if (!userId) return [];
       const params = new URLSearchParams();
       if (storeId) params.set("storeId", storeId);
-      const res = await fetch(`/api/users/${userId}/products/favorites?${params}`);
+      const res = await authenticatedFetch(`/api/users/${userId}/products/favorites?${params}`);
       if (!res.ok) throw new Error("Failed to fetch favorites");
       return res.json();
     },
@@ -99,8 +101,20 @@ export function ProductPicker({ storeId, userId, selectedProductId, selectedProd
       const res = await apiRequest("POST", `/api/stores/${storeId}/sync`);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/stores", storeId, "products"] });
+      toast({
+        title: "Products synced",
+        description: `Added ${data.productsAdded || 0}, updated ${data.productsUpdated || 0}, removed ${data.productsRemoved || 0} products`,
+      });
+    },
+    onError: (error) => {
+      console.error("Sync failed:", error);
+      toast({
+        title: "Sync failed",
+        description: error instanceof Error ? error.message : "Failed to sync products from Shopify",
+        variant: "destructive",
+      });
     },
   });
 
