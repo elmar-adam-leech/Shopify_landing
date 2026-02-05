@@ -645,12 +645,39 @@ router.get("/api/auth/online/callback", async (req: Request, res: Response) => {
       }
     });
 
-    // Build redirect URL for embedded app
-    const hostUrl = process.env.HOST_URL || "http://localhost:5000";
-    const host = storedHost || Buffer.from(`${shop}/admin`).toString("base64");
-    const redirectUrl = `${hostUrl}/?shop=${encodeURIComponent(shop)}&host=${encodeURIComponent(host)}`;
+    // Build redirect URL for embedded app in Shopify admin
+    // Decode host to get the Shopify admin URL
+    const host = storedHost || Buffer.from(`admin.shopify.com/store/${shop.replace('.myshopify.com', '')}`).toString("base64");
+    let redirectUrl: string;
     
-    console.log(`[Auth] Online auth complete, redirecting to: ${redirectUrl}`);
+    // Get app handle from env (e.g., "landing-page-builder-6") for Shopify admin redirect
+    const appHandle = process.env.SHOPIFY_APP_HANDLE;
+    
+    if (storedHost && appHandle) {
+      // Redirect back to Shopify admin embedded app using app handle
+      try {
+        const decodedHost = Buffer.from(storedHost, "base64").toString("utf8");
+        // decodedHost is like "admin.shopify.com/store/test-1-111111111111111420"
+        redirectUrl = `https://${decodedHost}/apps/${appHandle}`;
+        console.log(`[Auth] Redirecting to Shopify admin: ${redirectUrl}`);
+      } catch (e) {
+        // Fallback to app URL with host param for App Bridge to handle
+        const hostUrl = process.env.HOST_URL || "http://localhost:5000";
+        redirectUrl = `${hostUrl}/?shop=${encodeURIComponent(shop)}&host=${encodeURIComponent(host)}`;
+        console.log(`[Auth] Host decode failed, fallback redirect: ${redirectUrl}`);
+      }
+    } else if (storedHost) {
+      // No app handle configured - redirect to app with host param for App Bridge redirect
+      const hostUrl = process.env.HOST_URL || "http://localhost:5000";
+      redirectUrl = `${hostUrl}/?shop=${encodeURIComponent(shop)}&host=${encodeURIComponent(storedHost)}`;
+      console.log(`[Auth] No app handle configured, redirect with host param: ${redirectUrl}`);
+    } else {
+      // No host stored, redirect to app with shop/host params
+      const hostUrl = process.env.HOST_URL || "http://localhost:5000";
+      redirectUrl = `${hostUrl}/?shop=${encodeURIComponent(shop)}&host=${encodeURIComponent(host)}`;
+      console.log(`[Auth] No stored host, redirect to: ${redirectUrl}`);
+    }
+    
     res.redirect(redirectUrl);
   } catch (error) {
     console.error("[Auth] Online OAuth callback error:", error);

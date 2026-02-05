@@ -427,7 +427,11 @@ export default function Editor() {
               Pixels
             </Button>
             <a 
-              href={isNewPage ? "#" : `/preview/${pageId}`} 
+              href={isNewPage ? "#" : (
+                pageData?.status === "published" && selectedStore?.shopifyDomain && pageData?.slug
+                  ? `https://${selectedStore.shopifyDomain}/tools/lp/${pageData.slug}`
+                  : `/preview/${pageId}`
+              )} 
               target="_blank" 
               rel="noopener noreferrer"
             >

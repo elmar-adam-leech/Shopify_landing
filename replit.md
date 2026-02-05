@@ -39,7 +39,7 @@ Preferred communication style: Simple, everyday language.
 - **Multi-tenancy**: All pages are scoped to stores via `storeId` foreign key
 - **Session Storage**: OAuth sessions stored in `shopify_sessions` table with expiry tracking
 - **Webhook**: `/api/webhooks/app-uninstalled` handles app uninstallation
-- **Environment Variables**: `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_SCOPES`, `HOST_URL`, `VITE_SHOPIFY_API_KEY` (for frontend)
+- **Environment Variables**: `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_SCOPES`, `HOST_URL`, `VITE_SHOPIFY_API_KEY` (for frontend), `SHOPIFY_APP_HANDLE` (app slug for post-OAuth redirect, e.g., "landing-page-builder-6")
 
 ### Shopify Auth Security (`server/shopify-auth.ts`)
 - **validateShopMiddleware**: Protects API routes with:

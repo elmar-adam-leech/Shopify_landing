@@ -231,7 +231,11 @@ export default function PagesList() {
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild>
                           <a 
-                            href={`/preview/${page.id}`} 
+                            href={
+                              page.status === "published" && selectedStore?.shopifyDomain && page.slug
+                                ? `https://${selectedStore.shopifyDomain}/tools/lp/${page.slug}`
+                                : `/preview/${page.id}`
+                            } 
                             target="_blank" 
                             rel="noopener noreferrer"
                           >
