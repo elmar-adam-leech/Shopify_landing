@@ -64,6 +64,22 @@ Preferred communication style: Simple, everyday language.
 
 ### Shopify App Proxy
 - **URL Format**: Landing pages accessible at `mystore.myshopify.com/tools/lp/{slug}` via Shopify App Proxy
+
+#### App Proxy Setup (Required for Preview URLs)
+To enable landing page preview via `mystore.myshopify.com/tools/lp/{slug}`:
+1. Go to your **Shopify Partner Dashboard** → Apps → Your App
+2. Click **Configuration** → **App proxy**
+3. Add a new proxy with:
+   - **Subpath prefix**: `tools`
+   - **Subpath**: `lp`
+   - **Proxy URL**: `https://YOUR-REPLIT-APP-URL.replit.app/pages/proxy`
+4. Save changes
+
+The app proxy routes requests through Shopify to your app, enabling:
+- Landing pages on your store's domain (better for SEO/ads)
+- Shopify theme integration (with `?liquid=true`)
+- HMAC signature verification for security
+
 - **Signature Verification**: HMAC-SHA256 verification of Shopify proxy requests (`server/lib/proxy-signature.ts`)
   - Production: Hard-fails if SHOPIFY_API_SECRET not configured (returns 500)
   - Development: Allows bypass with warning for testing
