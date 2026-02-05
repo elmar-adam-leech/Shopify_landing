@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { Plus, FileText, MoreHorizontal, Trash2, Copy, ExternalLink, Loader2, BarChart3, FlaskConical, Store } from "lucide-react";
+import { Plus, FileText, MoreHorizontal, Trash2, Copy, ExternalLink, Loader2, BarChart3, FlaskConical, Store, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +29,7 @@ import { useStore } from "@/lib/store-context";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Page, Block } from "@shared/schema";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { formatDistanceToNow } from "date-fns";
 
 export default function PagesList() {
@@ -37,7 +37,22 @@ export default function PagesList() {
   const [, navigate] = useLocation();
   const [deletePageId, setDeletePageId] = useState<string | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
-  const { selectedStoreId } = useStore();
+  const { selectedStoreId, isEmbedded, needsAuth, currentShop, isLoading: storeLoading } = useStore();
+
+  // Redirect to OAuth if store needs authentication
+  useEffect(() => {
+    if (needsAuth && currentShop && !storeLoading) {
+      const params = new URLSearchParams(window.location.search);
+      const host = params.get("host");
+      const authUrl = new URL("/api/auth/shopify", window.location.origin);
+      authUrl.searchParams.set("shop", currentShop);
+      if (host) {
+        authUrl.searchParams.set("host", host);
+      }
+      console.log("[PagesList] Redirecting to OAuth:", authUrl.toString());
+      window.location.href = authUrl.toString();
+    }
+  }, [needsAuth, currentShop, storeLoading]);
 
   const { data: pages, isLoading } = useQuery<Page[]>({
     queryKey: ["/api/pages/list", selectedStoreId],
@@ -115,11 +130,13 @@ export default function PagesList() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <StoreSelector />
-            <Link href="/stores">
-              <Button variant="ghost" size="icon" data-testid="button-stores">
-                <Store className="h-4 w-4" />
-              </Button>
-            </Link>
+            {!isEmbedded && (
+              <Link href="/stores">
+                <Button variant="ghost" size="icon" data-testid="button-stores">
+                  <Store className="h-4 w-4" />
+                </Button>
+              </Link>
+            )}
             <Link href="/ab-tests">
               <Button variant="outline" className="gap-2" data-testid="button-ab-tests">
                 <FlaskConical className="h-4 w-4" />
@@ -241,6 +258,26 @@ export default function PagesList() {
               </Card>
             ))}
           </div>
+        ) : needsAuth ? (
+          <Card className="max-w-md mx-auto">
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <ShieldCheck className="h-8 w-8 text-primary" />
+                </div>
+                <h3 className="text-lg font-medium mb-2">
+                  Setting up your store...
+                </h3>
+                <p className="text-sm text-muted-foreground mb-6">
+                  Please wait while we complete the app installation and grant the required permissions.
+                </p>
+                <div className="flex items-center justify-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm text-muted-foreground">Redirecting to authorization...</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         ) : (
           <Card className="max-w-md mx-auto">
             <CardContent className="pt-6">
@@ -249,12 +286,14 @@ export default function PagesList() {
                   <FileText className="h-8 w-8 text-muted-foreground" />
                 </div>
                 <h3 className="text-lg font-medium mb-2">
-                  {selectedStoreId ? "No pages yet" : "Select a store first"}
+                  {selectedStoreId ? "No pages yet" : (isEmbedded ? "Loading store..." : "Select a store first")}
                 </h3>
                 <p className="text-sm text-muted-foreground mb-6">
                   {selectedStoreId 
                     ? "Create your first landing page to start building high-converting ad experiences."
-                    : "Choose a store from the dropdown above to view or create pages."
+                    : (isEmbedded 
+                        ? "Please wait while we connect to your store." 
+                        : "Choose a store from the dropdown above to view or create pages.")
                   }
                 </p>
                 {selectedStoreId && (

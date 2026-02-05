@@ -125,10 +125,12 @@ export function useSessionToken() {
       return;
     }
     
+    const appInstance = app; // Type narrowing - app is not null here
+    
     async function fetchToken() {
       try {
         const { getSessionToken } = await import("@shopify/app-bridge/utilities");
-        const token = await getSessionToken(app);
+        const token = await getSessionToken(appInstance);
         setSessionToken(token);
         console.log("[SessionToken] Retrieved session token");
       } catch (error) {
