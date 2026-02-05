@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertPageSchema, updatePageSchema, insertFormSubmissionSchema, insertAnalyticsEventSchema, insertAbTestSchema, insertAbTestVariantSchema, insertStoreSchema, updateStoreSchema, stores, type Page } from "@shared/schema";
+import { insertPageSchema, updatePageSchema, insertFormSubmissionSchema, insertAnalyticsEventSchema, insertAbTestSchema, insertAbTestVariantSchema, insertStoreSchema, updateStoreSchema, stores, pages, formSubmissions, analyticsEvents, type Page } from "@shared/schema";
 import { z } from "zod";
 import { registerTwilioRoutes } from "./twilioRoutes";
 import shopifyAuthRouter from "./shopify-auth";
@@ -12,6 +12,7 @@ import { logSecurityEvent } from "./lib/audit";
 import { apiRateLimiter } from "./middleware/rate-limit";
 import { appProxyMiddleware } from "./lib/proxy-signature";
 import { renderPage, render404Page, renderErrorPage } from "./lib/page-renderer";
+import { getShopifyConfigForStore, searchCustomerByEmailOrPhone, updateCustomerTagsGraphQL, createShopifyCustomerGraphQL } from "./lib/shopify";
 
 function validatePageAccess(page: Page | undefined, storeId: string | undefined): { valid: boolean; error?: string; statusCode?: number } {
   if (!page) {
@@ -795,11 +796,11 @@ export async function registerRoutes(
     }
   });
 
-  // Submit form
+  // Submit form with Shopify customer creation via GraphQL
   app.post("/api/pages/:pageId/submissions", async (req, res) => {
     try {
       const { pageId } = req.params;
-      const { blockId, ...formData } = req.body;
+      const { blockId, visitorId, sessionId, ...formData } = req.body;
       
       // Check if page exists and get its storeId
       const page = await storage.getPage(pageId);
@@ -811,10 +812,14 @@ export async function registerRoutes(
         ...formData,
         blockId,
         pageId,
-        storeId: page.storeId, // Inherit storeId from page
+        storeId: page.storeId,
       });
       
+      // Create initial submission (without shopifyCustomerId)
       const submission = await storage.createFormSubmission(validatedData as any);
+      
+      let shopifyCustomerId: string | null = null;
+      let alreadyExisted = false;
       
       // Find the form block to get configuration
       if (blockId && page.blocks) {
@@ -822,49 +827,79 @@ export async function registerRoutes(
         
         // Handle Shopify customer creation if enabled
         if (formBlock?.config?.createShopifyCustomer && page.storeId) {
-          const { createShopifyCustomer } = await import("./lib/shopify");
+          const config = await getShopifyConfigForStore(page.storeId);
           
-          const formDataObj = submission.data as Record<string, any>;
-          const tags: string[] = [...(formBlock.config.shopifyCustomerTags || [])];
-          
-          // Add source tags if enabled
-          if (formBlock.config.shopifyCustomerTagSource !== false) {
-            tags.push(`source:${page.slug}`);
-            tags.push(`page:${page.title}`);
-          }
-          tags.push("form-lead");
-          
-          // Extract customer data from form
-          const email = formDataObj.email || formDataObj.Email;
-          const phone = formDataObj.phone || formDataObj.Phone;
-          const name = formDataObj.name || formDataObj.Name || formDataObj.full_name || "";
-          
-          // Parse name into first/last
-          const nameParts = name.trim().split(/\s+/);
-          const firstName = nameParts[0] || "";
-          const lastName = nameParts.slice(1).join(" ") || "";
-          
-          // UTM data from submission
-          const utmParams = (submission as any).utmParams || {};
-          
-          createShopifyCustomer({
-            email,
-            phone,
-            firstName: formDataObj.firstName || formDataObj.first_name || firstName,
-            lastName: formDataObj.lastName || formDataObj.last_name || lastName,
-            gclid: utmParams.gclid,
-            utmSource: utmParams.utm_source,
-            utmMedium: utmParams.utm_medium,
-            utmCampaign: utmParams.utm_campaign,
-            additionalTags: tags,
-            storeId: page.storeId,
-          }).then(customer => {
-            if (customer) {
-              console.log(`Created Shopify customer from form: ${customer.id}`);
+          if (config) {
+            const formDataObj = submission.data as Record<string, any>;
+            
+            // Build tags
+            const tags: string[] = [
+              "lead_from_landing_page",
+              `page:${page.slug}`,
+              `form:${blockId}`,
+            ];
+            
+            // Add custom tags from block config
+            if (formBlock.config.shopifyCustomerTags) {
+              tags.push(...formBlock.config.shopifyCustomerTags);
             }
-          }).catch(err => {
-            console.error("Failed to create Shopify customer from form:", err);
-          });
+            
+            // Add UTM tags
+            const utmParams = (submission as any).utmParams || {};
+            tags.push(`utm_source:${utmParams.utm_source || 'direct'}`);
+            if (utmParams.utm_medium) tags.push(`utm_medium:${utmParams.utm_medium}`);
+            if (utmParams.utm_campaign) tags.push(`utm_campaign:${utmParams.utm_campaign}`);
+            if (utmParams.gclid) tags.push(`gclid:${utmParams.gclid}`);
+            
+            // Extract customer data
+            const email = formDataObj.email || formDataObj.Email;
+            const phone = formDataObj.phone || formDataObj.Phone;
+            const name = formDataObj.name || formDataObj.Name || formDataObj.full_name || "";
+            const nameParts = name.trim().split(/\s+/);
+            const firstName = formDataObj.firstName || formDataObj.first_name || nameParts[0] || "";
+            const lastName = formDataObj.lastName || formDataObj.last_name || nameParts.slice(1).join(" ") || "";
+            const consent = formDataObj.consent === true || formDataObj.consent === "true" || 
+                           formDataObj.marketing === true || formDataObj.marketing === "true";
+            
+            try {
+              // Search for existing customer
+              const existing = await searchCustomerByEmailOrPhone(config, email, phone);
+              
+              if (existing) {
+                // Update tags on existing customer
+                alreadyExisted = true;
+                shopifyCustomerId = existing.id;
+                await updateCustomerTagsGraphQL(config, existing.id, tags);
+                console.log(`Updated existing Shopify customer: ${existing.id}`);
+              } else if (email || phone) {
+                // Create new customer
+                const result = await createShopifyCustomerGraphQL(config, {
+                  firstName,
+                  lastName,
+                  email,
+                  phone,
+                  tags,
+                  emailMarketingConsent: consent,
+                });
+                
+                if ("id" in result) {
+                  shopifyCustomerId = result.id;
+                  console.log(`Created Shopify customer from form: ${result.id}`);
+                } else {
+                  console.error("Failed to create Shopify customer:", result.error);
+                }
+              }
+              
+              // Update submission with customer ID if created
+              if (shopifyCustomerId) {
+                await db.update(formSubmissions)
+                  .set({ shopifyCustomerId })
+                  .where(eq(formSubmissions.id, submission.id));
+              }
+            } catch (customerError) {
+              console.error("Shopify customer error:", customerError);
+            }
+          }
         }
         
         // Handle webhooks
@@ -880,6 +915,7 @@ export async function registerRoutes(
                   pageSlug: page.slug,
                   submittedAt: submission.submittedAt || new Date().toISOString(),
                   submissionId: submission.id,
+                  shopifyCustomerId,
                 };
                 
                 await fetch(webhook.url, {
@@ -900,7 +936,32 @@ export async function registerRoutes(
         }
       }
       
-      res.status(201).json(submission);
+      // Log analytics event
+      try {
+        const utmParams = (submission as any).utmParams || {};
+        await db.insert(analyticsEvents).values({
+          storeId: page.storeId,
+          pageId,
+          eventType: "form_submission",
+          blockId,
+          visitorId: visitorId || "anonymous",
+          sessionId,
+          utmSource: utmParams.utm_source,
+          utmMedium: utmParams.utm_medium,
+          utmCampaign: utmParams.utm_campaign,
+          utmTerm: utmParams.utm_term,
+          utmContent: utmParams.utm_content,
+          referrer: formData.referrer,
+        });
+      } catch (analyticsError) {
+        console.error("Failed to log analytics event:", analyticsError);
+      }
+      
+      res.status(201).json({
+        ...submission,
+        shopifyCustomerId,
+        alreadyExisted,
+      });
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Invalid data", details: error.errors });
