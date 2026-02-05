@@ -34,6 +34,7 @@ export default function Stores() {
   const [formData, setFormData] = useState({
     name: "",
     shopifyDomain: "",
+    customDomain: "",
     twilioAccountSid: "",
     twilioAuthToken: "",
     twilioForwardTo: "",
@@ -91,6 +92,7 @@ export default function Stores() {
     setFormData({
       name: "",
       shopifyDomain: "",
+      customDomain: "",
       twilioAccountSid: "",
       twilioAuthToken: "",
       twilioForwardTo: "",
@@ -102,6 +104,7 @@ export default function Stores() {
     setFormData({
       name: store.name,
       shopifyDomain: store.shopifyDomain,
+      customDomain: store.customDomain || "",
       twilioAccountSid: store.twilioAccountSid || "",
       twilioAuthToken: store.twilioAuthToken || "",
       twilioForwardTo: store.twilioForwardTo || "",
@@ -178,6 +181,19 @@ export default function Stores() {
                         />
                         <p className="text-xs text-muted-foreground">
                           {editingStore ? "Connected via Shopify OAuth" : "You'll connect via Shopify OAuth after creating the store"}
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="customDomain">Custom Domain (Optional)</Label>
+                        <Input
+                          id="customDomain"
+                          value={formData.customDomain}
+                          onChange={(e) => setFormData({ ...formData, customDomain: e.target.value })}
+                          placeholder="mystore.com"
+                          data-testid="input-custom-domain"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          If your store uses a custom domain, enter it here for published page URLs
                         </p>
                       </div>
                     </div>

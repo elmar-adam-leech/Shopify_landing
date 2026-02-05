@@ -429,7 +429,7 @@ export default function Editor() {
             <a 
               href={isNewPage ? "#" : (
                 pageData?.status === "published" && selectedStore?.shopifyDomain && pageData?.slug
-                  ? `https://${selectedStore.shopifyDomain}/tools/lp/${pageData.slug}`
+                  ? `https://${selectedStore.customDomain || selectedStore.shopifyDomain}/tools/lp/${pageData.slug}`
                   : `/preview/${pageId}${selectedStore?.shopifyDomain ? `?shop=${selectedStore.shopifyDomain}` : ''}`
               )} 
               target="_blank" 

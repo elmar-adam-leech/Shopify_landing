@@ -233,7 +233,7 @@ export default function PagesList() {
                           <a 
                             href={
                               page.status === "published" && selectedStore?.shopifyDomain && page.slug
-                                ? `https://${selectedStore.shopifyDomain}/tools/lp/${page.slug}`
+                                ? `https://${selectedStore.customDomain || selectedStore.shopifyDomain}/tools/lp/${page.slug}`
                                 : `/preview/${page.id}${selectedStore?.shopifyDomain ? `?shop=${selectedStore.shopifyDomain}` : ''}`
                             } 
                             target="_blank" 
