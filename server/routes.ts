@@ -266,10 +266,12 @@ export async function registerRoutes(
   });
   
   // Direct preview route - works without Shopify App Proxy
-  // Use this for previewing pages during development
+  // Use this for previewing draft pages during development
+  // For published pages, use the Shopify App Proxy URL instead
   app.get("/preview/:id", async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
+      const shopParam = req.query.shop as string | undefined;
       
       // Try to find page by ID first
       let page = await storage.getPage(id);
@@ -292,6 +294,12 @@ export async function registerRoutes(
       if (page.storeId) {
         const [foundStore] = await db.select().from(stores).where(eq(stores.id, page.storeId)).limit(1);
         store = foundStore;
+      }
+      
+      // If shop parameter provided, validate it matches the page's store (security check)
+      if (shopParam && store && store.shopifyDomain !== shopParam) {
+        console.warn(`Preview access denied: shop param ${shopParam} doesn't match page store ${store.shopifyDomain}`);
+        return res.status(403).send(renderErrorPage("Access denied - store mismatch"));
       }
       
       // Render the page with store info if available
