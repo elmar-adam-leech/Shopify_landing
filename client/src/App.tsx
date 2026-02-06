@@ -59,7 +59,8 @@ function AdminApp() {
   }, []);
 
   const handleLogout = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ["/api/admin/session"] });
+    queryClient.setQueryData(["/api/admin/session"], { authenticated: false });
+    queryClient.removeQueries({ queryKey: ["/api/admin/stores"] });
   }, []);
 
   if (isLoading) {

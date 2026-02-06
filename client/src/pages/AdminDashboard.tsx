@@ -55,7 +55,6 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.clear();
       onLogout();
     },
     onError: () => {
