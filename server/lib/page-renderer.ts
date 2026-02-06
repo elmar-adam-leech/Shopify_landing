@@ -274,11 +274,37 @@ function renderProductBlock(config: Record<string, any>, blockId: string): strin
   const showTitle = config.showTitle !== false;
   const showPrice = config.showPrice !== false;
   const showDescription = config.showDescription !== false;
+  const showAddToCart = config.showAddToCart !== false;
+  const showBuyNow = config.showBuyNow === true;
+  const showCompareAtPrice = config.showCompareAtPrice !== false;
+  const showVendor = config.showVendor === true;
   const addToCartText = escapeHtml(config.addToCartText || "Add to Cart");
+  const buyNowText = escapeHtml(config.buyNowText || "Buy Now");
+
+  const productTitle = config.productTitle ? escapeHtml(config.productTitle) : "Product Title";
+  const productImage = config.productImage || null;
+  const rawPrice = config.productPrice ? parseFloat(config.productPrice) : NaN;
+  const rawComparePrice = config.productCompareAtPrice ? parseFloat(config.productCompareAtPrice) : NaN;
+  const productPrice = isNaN(rawPrice) ? null : rawPrice;
+  const productCompareAtPrice = isNaN(rawComparePrice) ? null : rawComparePrice;
+  const productDescription = config.productDescription ? escapeHtml(config.productDescription) : "Product description goes here.";
+  const productVendor = config.productVendor ? escapeHtml(config.productVendor) : null;
+  const productData = config.productData || null;
+
+  const formattedPrice = productPrice !== null
+    ? `$${productPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : null;
+  const formattedComparePrice = productCompareAtPrice !== null
+    ? `$${productCompareAtPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : null;
+  const savings = productPrice !== null && productCompareAtPrice !== null && productPrice < productCompareAtPrice
+    ? Math.round((1 - productPrice / productCompareAtPrice) * 100)
+    : 0;
 
   if (isDynamic) {
     return `
-      <section class="lp-product-block" data-block-id="${escapeHtml(blockId)}" data-dynamic-sku="true">
+      <section class="lp-product-block" data-block-id="${escapeHtml(blockId)}" data-dynamic-sku="true"
+        ${config.shopifyProductId ? `data-default-product-id="${escapeHtml(config.shopifyProductId)}"` : ""}>
         <div class="lp-product-loading">
           <div class="lp-spinner"></div>
           <p>Loading product...</p>
@@ -286,16 +312,58 @@ function renderProductBlock(config: Record<string, any>, blockId: string): strin
       </section>`;
   }
 
+  const imageHtml = productImage
+    ? `<div class="lp-product-image"><img src="${escapeHtml(productImage)}" alt="${productTitle}" style="max-width:100%;height:auto;object-fit:contain;" loading="lazy" decoding="async" /></div>`
+    : '<div class="lp-product-image-placeholder">Product Image</div>';
+
+  const variantHtml = productData?.variants?.length > 1
+    ? renderVariantSelectors(productData.variants)
+    : "";
+
   return `
-    <section class="lp-product-block" data-block-id="${escapeHtml(blockId)}">
-      <div class="lp-product-card">
-        ${showImage ? '<div class="lp-product-image-placeholder">Product Image</div>' : ""}
-        ${showTitle ? '<h2 class="lp-product-title">Product Title</h2>' : ""}
-        ${showPrice ? '<div class="lp-product-price"><span class="lp-price-current">$99.00</span></div>' : ""}
-        ${showDescription ? '<p class="lp-product-description">Product description goes here.</p>' : ""}
-        <button class="lp-btn lp-btn-primary lp-add-to-cart">${addToCartText}</button>
+    <section class="lp-product-block" data-block-id="${escapeHtml(blockId)}" style="max-width:100%;overflow:hidden;">
+      <div class="lp-product-card" style="max-width:100%;overflow:hidden;">
+        ${showImage ? imageHtml : ""}
+        <div class="lp-product-info" style="padding:1.5rem;max-width:100%;overflow:hidden;">
+          ${showVendor && productVendor ? `<p class="lp-product-vendor" style="font-size:0.875rem;text-transform:uppercase;letter-spacing:0.05em;color:#666;margin-bottom:0.5rem;">${productVendor}</p>` : ""}
+          ${showTitle ? `<h2 class="lp-product-title" style="word-wrap:break-word;overflow-wrap:break-word;">${productTitle}</h2>` : ""}
+          ${showPrice && formattedPrice ? `
+            <div class="lp-product-price">
+              <span class="lp-price-current">${formattedPrice}</span>
+              ${showCompareAtPrice && formattedComparePrice ? `<span class="lp-price-compare" style="text-decoration:line-through;color:#999;margin-left:0.5rem;">${formattedComparePrice}</span>` : ""}
+              ${showCompareAtPrice && savings > 0 ? `<span class="lp-price-savings" style="background:#e8f5e9;color:#2e7d32;padding:0.125rem 0.5rem;border-radius:4px;font-size:0.875rem;margin-left:0.5rem;">Save ${savings}%</span>` : ""}
+            </div>
+          ` : ""}
+          ${showDescription ? `<p class="lp-product-description" style="word-wrap:break-word;overflow-wrap:break-word;">${productDescription}</p>` : ""}
+          ${variantHtml}
+          <div class="lp-product-actions" style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
+            ${showAddToCart ? `<button class="lp-btn lp-btn-primary lp-add-to-cart" style="flex:1;min-width:0;">${addToCartText}</button>` : ""}
+            ${showBuyNow ? `<button class="lp-btn lp-btn-secondary lp-buy-now" style="flex:1;min-width:0;">${buyNowText}</button>` : ""}
+          </div>
+        </div>
       </div>
     </section>`;
+}
+
+function renderVariantSelectors(variants: any[]): string {
+  const options: Record<string, Set<string>> = {};
+  variants.forEach((v: any) => {
+    v.selectedOptions?.forEach((opt: { name: string; value: string }) => {
+      if (!options[opt.name]) options[opt.name] = new Set();
+      options[opt.name].add(opt.value);
+    });
+  });
+
+  if (Object.keys(options).length === 0) return "";
+
+  return Object.entries(options).map(([name, values]) => `
+    <div class="lp-variant-selector" style="margin-top:1rem;">
+      <label style="display:block;font-size:0.875rem;font-weight:500;margin-bottom:0.25rem;">${escapeHtml(name)}</label>
+      <select style="width:100%;padding:0.5rem;border:1px solid #ddd;border-radius:4px;font-size:1rem;">
+        ${Array.from(values).map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("")}
+      </select>
+    </div>
+  `).join("");
 }
 
 function renderProductGridBlock(config: Record<string, any>, blockId: string): string {

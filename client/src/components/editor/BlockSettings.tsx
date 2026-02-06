@@ -1379,16 +1379,19 @@ function ProductBlockSettings({
           />
         </div>
         {config.dynamic && (
-          <div className="pt-2 border-t">
+          <div className="pt-2 border-t space-y-1">
             <p className="text-sm text-muted-foreground">
-              Page visitors can change product by adding <code className="px-1 py-0.5 bg-muted rounded">#SKU123</code> to the URL
+              The product from the URL hash will replace any selected product below.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Example: <code className="px-1 py-0.5 bg-muted rounded">yourpage.com/tools/lp/slug#SKU123</code>
             </p>
           </div>
         )}
       </div>
 
       <div className="space-y-2">
-        <Label>Product</Label>
+        <Label>{config.dynamic ? "Default Product (shown when no SKU in URL)" : "Product"}</Label>
         {storeId ? (
           <ProductPicker
             storeId={storeId}
