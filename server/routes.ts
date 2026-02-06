@@ -1138,19 +1138,14 @@ export async function registerRoutes(
     try {
       const { id } = req.params;
       const storeId = req.storeContext?.storeId;
-      const isAdmin = (req.session as any)?.adminRole === "admin";
       
-      // Check if page exists and validate access
       const existingPage = await storage.getPage(id);
       if (!existingPage) {
         return res.status(404).json({ error: "Page not found" });
       }
-      // Admin users bypass store context check
-      if (!isAdmin) {
-        const access = validatePageAccess(existingPage, storeId);
-        if (!access.valid) {
-          return res.status(access.statusCode || 403).json({ error: access.error });
-        }
+      const access = validatePageAccess(existingPage, storeId);
+      if (!access.valid) {
+        return res.status(access.statusCode || 403).json({ error: access.error });
       }
       
       // Prevent changing storeId (remove from update data)

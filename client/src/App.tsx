@@ -76,14 +76,7 @@ function AdminApp() {
   }
 
   return (
-    <StoreProvider>
-      <Switch>
-        <Route path="/editor/:id" component={Editor} />
-        <Route>
-          <AdminDashboard onLogout={handleLogout} />
-        </Route>
-      </Switch>
-    </StoreProvider>
+    <AdminDashboard onLogout={handleLogout} />
   );
 }
 
