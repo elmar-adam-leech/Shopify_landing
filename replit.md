@@ -62,11 +62,19 @@ Preferred communication style: Simple, everyday language.
   - `useAuthenticatedFetch()`: Make authenticated API calls
 - **Query Client Integration**: `authenticatedFetch` adds session token to all API requests in embedded context
 
-### Shopify App Proxy
-- **URL Format**: Landing pages accessible at `mystore.myshopify.com/tools/lp/{slug}` via Shopify App Proxy
+### Public Page Routes
+- **Direct Public URL**: Published pages accessible at `/p/{slug}` (e.g., `/p/fujitsu`)
+  - Only serves pages with `status="published"`, returns 404 for drafts or non-existent pages
+  - 5-minute public cache with stale-while-revalidate
+  - Security headers: X-Content-Type-Options, X-Frame-Options, Referrer-Policy
+  - No authentication required - intended for public sharing and ad campaigns
+- **Preview URL**: Draft pages accessible at `/preview/{id}` (no caching, for development)
 
-#### App Proxy Setup (Required for Preview URLs)
-To enable landing page preview via `mystore.myshopify.com/tools/lp/{slug}`:
+### Shopify App Proxy
+- **URL Format**: Landing pages also accessible at `mystore.myshopify.com/tools/lp/{slug}` via Shopify App Proxy
+
+#### App Proxy Setup (Optional - for Shopify domain URLs)
+To enable landing page access via `mystore.myshopify.com/tools/lp/{slug}`:
 1. Go to your **Shopify Partner Dashboard** → Apps → Your App
 2. Click **Configuration** → **App proxy**
 3. Add a new proxy with:

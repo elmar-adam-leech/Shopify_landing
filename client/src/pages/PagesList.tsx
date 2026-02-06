@@ -232,15 +232,15 @@ export default function PagesList() {
                         <DropdownMenuItem asChild>
                           <a 
                             href={
-                              page.status === "published" && selectedStore?.shopifyDomain && page.slug
-                                ? `https://${selectedStore.customDomain || selectedStore.shopifyDomain}/tools/lp/${page.slug}`
+                              page.status === "published" && page.slug
+                                ? `/p/${page.slug}`
                                 : `/preview/${page.id}${selectedStore?.shopifyDomain ? `?shop=${selectedStore.shopifyDomain}` : ''}`
                             } 
                             target="_blank" 
                             rel="noopener noreferrer"
                           >
                             <ExternalLink className="h-4 w-4 mr-2" />
-                            Preview
+                            {page.status === "published" ? "View Live" : "Preview"}
                           </a>
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild>

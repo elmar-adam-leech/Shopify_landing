@@ -266,6 +266,59 @@ export async function registerRoutes(
     }
   });
   
+  // Public page route - serves published pages directly without Shopify App Proxy
+  // URL: /p/:slug (e.g., /p/fujitsu)
+  // This is the primary way to view published pages when not using Shopify App Proxy
+  app.get("/p/:slug", async (req: Request, res: Response) => {
+    try {
+      const { slug } = req.params;
+      
+      const allPages = await db.select().from(pages).where(eq(pages.slug, slug)).limit(1);
+      const page = allPages.length > 0 ? allPages[0] : null;
+      
+      if (!page) {
+        return res.status(404).send(render404Page());
+      }
+      
+      if (page.status !== "published") {
+        return res.status(404).send(render404Page());
+      }
+      
+      let store = null;
+      if (page.storeId) {
+        const [foundStore] = await db.select().from(stores).where(eq(stores.id, page.storeId)).limit(1);
+        store = foundStore;
+      }
+      
+      const storeInfo = store ? {
+        id: store.id,
+        name: store.name,
+        shopifyDomain: store.shopifyDomain,
+        storefrontAccessToken: store.storefrontAccessToken,
+      } : {
+        id: page.storeId || "",
+        name: "Page",
+        shopifyDomain: "",
+        storefrontAccessToken: null,
+      };
+      
+      const { html, contentType } = await renderPage(req, page, storeInfo);
+      
+      res.set({
+        "Content-Type": contentType,
+        "Cache-Control": "public, max-age=300, stale-while-revalidate=60",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "SAMEORIGIN",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+      });
+      
+      res.send(html);
+    } catch (error) {
+      console.error("Public page render error:", error);
+      res.status(500).send(renderErrorPage("Failed to load page"));
+    }
+  });
+
   // Direct preview route - works without Shopify App Proxy
   // Use this for previewing draft pages during development
   // For published pages, use the Shopify App Proxy URL instead

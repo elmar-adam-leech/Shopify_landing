@@ -428,8 +428,8 @@ export default function Editor() {
             </Button>
             <a 
               href={isNewPage ? "#" : (
-                pageData?.status === "published" && selectedStore?.shopifyDomain && pageData?.slug
-                  ? `https://${selectedStore.customDomain || selectedStore.shopifyDomain}/tools/lp/${pageData.slug}`
+                pageData?.status === "published" && pageData?.slug
+                  ? `/p/${pageData.slug}`
                   : `/preview/${pageId}${selectedStore?.shopifyDomain ? `?shop=${selectedStore.shopifyDomain}` : ''}`
               )} 
               target="_blank" 
@@ -443,7 +443,7 @@ export default function Editor() {
                 data-testid="button-preview"
               >
                 <Eye className="h-4 w-4" />
-                Preview
+                {pageData?.status === "published" ? "View Live" : "Preview"}
               </Button>
             </a>
             <Button
