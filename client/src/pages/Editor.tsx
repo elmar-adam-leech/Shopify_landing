@@ -197,21 +197,21 @@ export default function Editor() {
       }
       
       const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-      const pageData = {
+      const saveData: Record<string, unknown> = {
         title,
         slug,
         blocks,
         sections,
         pixelSettings,
         allowIndexing,
-        status: "draft" as const,
-        storeId: selectedStoreId,
       };
 
       if (isNewPage) {
-        return apiRequest("POST", "/api/pages", pageData);
+        saveData.status = "draft";
+        saveData.storeId = selectedStoreId;
+        return apiRequest("POST", "/api/pages", saveData);
       } else {
-        return apiRequest("PATCH", `/api/pages/${pageId}`, pageData);
+        return apiRequest("PATCH", `/api/pages/${pageId}`, saveData);
       }
     },
     onSuccess: async (response) => {

@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { Link } from "wouter";
 import {
   Store,
   FileText,
@@ -13,6 +14,7 @@ import {
   Eye,
   Globe,
   ChevronRight,
+  Pencil,
   LayoutDashboard,
 } from "lucide-react";
 import { useState } from "react";
@@ -199,6 +201,17 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                             >
                               {page.status}
                             </Badge>
+                            <Link href={`/editor/${page.id}`}>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1"
+                                data-testid={`button-edit-${page.id}`}
+                              >
+                                <Pencil className="h-3 w-3" />
+                                Edit
+                              </Button>
+                            </Link>
                             {page.status === "published" && page.slug && (
                               <a
                                 href={`/p/${page.slug}`}

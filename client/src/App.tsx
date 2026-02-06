@@ -75,7 +75,16 @@ function AdminApp() {
     return <AdminLogin onLoginSuccess={handleLoginSuccess} />;
   }
 
-  return <AdminDashboard onLogout={handleLogout} />;
+  return (
+    <StoreProvider>
+      <Switch>
+        <Route path="/editor/:id" component={Editor} />
+        <Route>
+          <AdminDashboard onLogout={handleLogout} />
+        </Route>
+      </Switch>
+    </StoreProvider>
+  );
 }
 
 function App() {

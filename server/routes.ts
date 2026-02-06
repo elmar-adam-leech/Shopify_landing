@@ -981,10 +981,16 @@ export async function registerRoutes(
       const { id } = req.params;
       const page = await storage.getPage(id);
       const storeId = req.storeContext?.storeId;
+      const isAdmin = (req.session as any)?.adminRole === "admin";
       
-      const access = validatePageAccess(page, storeId);
-      if (!access.valid) {
-        return res.status(access.statusCode || 403).json({ error: access.error });
+      if (!page) {
+        return res.status(404).json({ error: "Page not found" });
+      }
+      if (!isAdmin) {
+        const access = validatePageAccess(page, storeId);
+        if (!access.valid) {
+          return res.status(access.statusCode || 403).json({ error: access.error });
+        }
       }
       
       res.json(page);
@@ -1132,12 +1138,19 @@ export async function registerRoutes(
     try {
       const { id } = req.params;
       const storeId = req.storeContext?.storeId;
+      const isAdmin = (req.session as any)?.adminRole === "admin";
       
       // Check if page exists and validate access
       const existingPage = await storage.getPage(id);
-      const access = validatePageAccess(existingPage, storeId);
-      if (!access.valid) {
-        return res.status(access.statusCode || 403).json({ error: access.error });
+      if (!existingPage) {
+        return res.status(404).json({ error: "Page not found" });
+      }
+      // Admin users bypass store context check
+      if (!isAdmin) {
+        const access = validatePageAccess(existingPage, storeId);
+        if (!access.valid) {
+          return res.status(access.statusCode || 403).json({ error: access.error });
+        }
       }
       
       // Prevent changing storeId (remove from update data)
