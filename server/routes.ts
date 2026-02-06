@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertPageSchema, updatePageSchema, insertFormSubmissionSchema, insertAnalyticsEventSchema, insertAbTestSchema, insertAbTestVariantSchema, insertStoreSchema, updateStoreSchema, stores, pages, formSubmissions, analyticsEvents, type Page } from "@shared/schema";
+import { insertPageSchema, updatePageSchema, insertFormSubmissionSchema, insertAnalyticsEventSchema, insertAbTestSchema, insertAbTestVariantSchema, insertStoreSchema, updateStoreSchema, stores, pages, formSubmissions, analyticsEvents, users, userStoreAssignments, type Page } from "@shared/schema";
 import { z } from "zod";
 import { registerTwilioRoutes } from "./twilioRoutes";
 import shopifyAuthRouter from "./shopify-auth";
@@ -14,6 +14,7 @@ import { appProxyMiddleware } from "./lib/proxy-signature";
 import { renderPage, render404Page, renderErrorPage } from "./lib/page-renderer";
 import { getShopifyConfigForStore, searchCustomerByEmailOrPhone, updateCustomerTagsGraphQL, createShopifyCustomerGraphQL } from "./lib/shopify";
 import { syncProductsForStore } from "./lib/sync-service";
+import { createSessionMiddleware, createAdminRouter, requireAdmin } from "./admin-auth";
 
 function validatePageAccess(page: Page | undefined, storeId: string | undefined): { valid: boolean; error?: string; statusCode?: number } {
   if (!page) {
@@ -185,6 +186,35 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
+  // Setup admin session middleware (must be before routes)
+  const sessionMiddleware = createSessionMiddleware();
+  app.use(sessionMiddleware);
+
+  // Register admin auth routes
+  app.use("/api/admin", createAdminRouter());
+
+  // Admin API routes - protected by requireAdmin middleware
+  app.get("/api/admin/stores", requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      const allStores = await db.select().from(stores);
+      res.json(allStores);
+    } catch (error) {
+      console.error("Admin stores error:", error);
+      res.status(500).json({ error: "Failed to fetch stores" });
+    }
+  });
+
+  app.get("/api/admin/stores/:storeId/pages", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { storeId } = req.params;
+      const storePages = await db.select().from(pages).where(eq(pages.storeId, storeId));
+      res.json(storePages);
+    } catch (error) {
+      console.error("Admin pages error:", error);
+      res.status(500).json({ error: "Failed to fetch pages" });
+    }
+  });
+
   // Register Shopify OAuth routes
   app.use(shopifyAuthRouter);
   
