@@ -1,4 +1,5 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
+import twilio from "twilio";
 import {
   getOrAssignTrackingNumber,
   getTrackingNumberByPhone,
@@ -18,6 +19,42 @@ import { db } from "./db";
 import { pages } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { validateStoreOwnership } from "./lib/store-ownership";
+
+function validateTwilioWebhook(req: Request, res: Response, next: NextFunction) {
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  if (!authToken) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("[Twilio] No TWILIO_AUTH_TOKEN set - skipping webhook validation in dev mode");
+      return next();
+    }
+    console.error("[Twilio] TWILIO_AUTH_TOKEN not configured for webhook validation");
+    return res.status(500).type("text/xml").send(
+      '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Server configuration error.</Say></Response>'
+    );
+  }
+
+  const twilioSignature = req.headers["x-twilio-signature"] as string;
+  if (!twilioSignature) {
+    console.warn("[Twilio] Missing X-Twilio-Signature header");
+    return res.status(403).type("text/xml").send(
+      '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Forbidden.</Say></Response>'
+    );
+  }
+
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+  const host = req.headers["host"];
+  const url = `${protocol}://${host}${req.originalUrl}`;
+
+  const isValid = twilio.validateRequest(authToken, twilioSignature, url, req.body || {});
+  if (!isValid) {
+    console.warn("[Twilio] Invalid webhook signature");
+    return res.status(403).type("text/xml").send(
+      '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Forbidden.</Say></Response>'
+    );
+  }
+
+  next();
+}
 
 export function registerTwilioRoutes(app: Express) {
   // DNI (Dynamic Number Insertion) - Get tracking number for GCLID (requires store ownership)
@@ -61,7 +98,7 @@ export function registerTwilioRoutes(app: Express) {
   });
 
   // Twilio webhook for incoming calls
-  app.post("/api/incoming-call", async (req: Request, res: Response) => {
+  app.post("/api/incoming-call", validateTwilioWebhook, async (req: Request, res: Response) => {
     try {
       const { From, To, CallSid, CallStatus } = req.body;
 
@@ -135,7 +172,7 @@ export function registerTwilioRoutes(app: Express) {
   });
 
   // Twilio call status callback
-  app.post("/api/call-status", async (req: Request, res: Response) => {
+  app.post("/api/call-status", validateTwilioWebhook, async (req: Request, res: Response) => {
     try {
       const { CallSid, CallStatus, CallDuration } = req.body;
 

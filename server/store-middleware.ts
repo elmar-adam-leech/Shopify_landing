@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { stores } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { verifySessionToken } from "./shopify-auth";
 
 declare global {
   namespace Express {
@@ -39,6 +40,27 @@ function setCachedStore(key: string, context: Omit<CachedStore, "timestamp">) {
   storeCache.set(key, { ...context, timestamp: Date.now() });
 }
 
+function extractShopFromToken(req: Request): string | null {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+  if (!token) return null;
+
+  const apiSecret = process.env.SHOPIFY_API_SECRET;
+  if (!apiSecret) return null;
+
+  const result = verifySessionToken(token, apiSecret);
+  if (!result.valid || !result.payload) return null;
+
+  if (result.payload.dest) {
+    return result.payload.dest.replace("https://", "");
+  }
+  if (result.payload.iss) {
+    const match = result.payload.iss.match(/^https:\/\/([^\/]+)\/admin$/);
+    if (match) return match[1];
+  }
+  return null;
+}
+
 export async function resolveStoreContext(req: Request, res: Response, next: NextFunction) {
   const shop = req.query.shop as string | undefined;
   const storeId = req.query.storeId as string | undefined;
@@ -47,11 +69,40 @@ export async function resolveStoreContext(req: Request, res: Response, next: Nex
     return next();
   }
 
+  const isDev = process.env.NODE_ENV !== "production";
+  const isAdmin = !!(req.session as Record<string, unknown>)?.adminRole;
+
+  let verifiedShop: string | null = null;
+
+  if (isAdmin) {
+    verifiedShop = shop || null;
+  } else {
+    verifiedShop = extractShopFromToken(req);
+
+    if (!verifiedShop && isDev) {
+      verifiedShop = shop || null;
+    }
+
+    if (verifiedShop && shop && verifiedShop !== shop) {
+      console.warn(`[StoreContext] Token shop ${verifiedShop} does not match query shop ${shop}`);
+      return next();
+    }
+  }
+
+  if (!verifiedShop && !storeId) {
+    return next();
+  }
+
   try {
-    const cacheKey = storeId ? `id:${storeId}` : `shop:${shop}`;
+    const lookupKey = storeId || verifiedShop;
+    const cacheKey = storeId ? `id:${storeId}` : `shop:${lookupKey}`;
     const cached = getCachedStore(cacheKey);
 
     if (cached) {
+      if (verifiedShop && cached.shop !== verifiedShop && !isAdmin) {
+        console.warn(`[StoreContext] Cached store ${cached.shop} does not match verified shop ${verifiedShop}`);
+        return next();
+      }
       req.storeContext = {
         storeId: cached.storeId,
         shop: cached.shop,
@@ -69,16 +120,21 @@ export async function resolveStoreContext(req: Request, res: Response, next: Nex
         .where(eq(stores.id, storeId))
         .limit(1);
       store = found;
-    } else if (shop) {
+    } else if (verifiedShop) {
       const [found] = await db
         .select()
         .from(stores)
-        .where(eq(stores.shopifyDomain, shop))
+        .where(eq(stores.shopifyDomain, verifiedShop))
         .limit(1);
       store = found;
     }
 
     if (store && store.installState === "installed" && store.isActive) {
+      if (storeId && verifiedShop && store.shopifyDomain !== verifiedShop && !isAdmin) {
+        console.warn(`[StoreContext] Store ${store.shopifyDomain} does not match verified shop ${verifiedShop}`);
+        return next();
+      }
+
       const context = {
         storeId: store.id,
         shop: store.shopifyDomain,

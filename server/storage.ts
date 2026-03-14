@@ -496,7 +496,7 @@ export class DatabaseStorage implements IStorage {
     let conditions = [eq(shopifyProducts.storeId, storeId)];
     
     if (options?.status) {
-      conditions.push(eq(shopifyProducts.status, options.status as any));
+      conditions.push(eq(shopifyProducts.status, options.status as typeof shopifyProducts.status.enumValues[number]));
     }
     
     if (options?.search) {

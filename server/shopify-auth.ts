@@ -56,7 +56,7 @@ export function verifyHmac(queryParams: Record<string, any>, hmac: string, secre
  * Verify Shopify session token (JWT)
  * Full validation: signature, expiry, iat, nbf, aud, iss, dest
  */
-function verifySessionToken(
+export function verifySessionToken(
   token: string, 
   apiSecret: string,
   expectedShop?: string
