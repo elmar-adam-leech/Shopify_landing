@@ -20,24 +20,44 @@ import { pages } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { validateStoreOwnership } from "./lib/store-ownership";
 
-function validateTwilioWebhook(req: Request, res: Response, next: NextFunction) {
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
-  if (!authToken) {
-    if (process.env.NODE_ENV !== "production") {
-      console.warn("[Twilio] No TWILIO_AUTH_TOKEN set - skipping webhook validation in dev mode");
-      return next();
-    }
-    console.error("[Twilio] TWILIO_AUTH_TOKEN not configured for webhook validation");
-    return res.status(500).type("text/xml").send(
-      '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Server configuration error.</Say></Response>'
-    );
-  }
-
+async function validateTwilioWebhook(req: Request, res: Response, next: NextFunction) {
   const twilioSignature = req.headers["x-twilio-signature"] as string;
   if (!twilioSignature) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("[Twilio] Missing X-Twilio-Signature header - skipping validation in dev mode");
+      return next();
+    }
     console.warn("[Twilio] Missing X-Twilio-Signature header");
     return res.status(403).type("text/xml").send(
       '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Forbidden.</Say></Response>'
+    );
+  }
+
+  const toNumber = req.body?.To;
+  let authToken: string | undefined;
+
+  if (toNumber) {
+    const trackingNumber = await getTrackingNumberByPhone(toNumber);
+    if (trackingNumber?.storeId) {
+      const storeCreds = await getStoreCredentials(trackingNumber.storeId);
+      if (storeCreds) {
+        authToken = storeCreds.authToken;
+      }
+    }
+  }
+
+  if (!authToken) {
+    authToken = process.env.TWILIO_AUTH_TOKEN;
+  }
+
+  if (!authToken) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("[Twilio] No auth token available - skipping webhook validation in dev mode");
+      return next();
+    }
+    console.error("[Twilio] No auth token available for webhook validation");
+    return res.status(500).type("text/xml").send(
+      '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Server configuration error.</Say></Response>'
     );
   }
 
@@ -337,8 +357,13 @@ export function registerTwilioRoutes(app: Express) {
     }
   });
 
-  // Get JavaScript snippet for website integration
-  app.get("/api/dni-snippet", (_req: Request, res: Response) => {
+  // Get JavaScript snippet for website integration (requires storeId)
+  app.get("/api/dni-snippet", (req: Request, res: Response) => {
+    const storeId = req.query.storeId as string | undefined;
+    if (!storeId) {
+      return res.status(400).json({ error: "storeId query parameter is required" });
+    }
+
     const appUrl =
       process.env.REPLIT_URL ||
       `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
@@ -347,6 +372,7 @@ export function registerTwilioRoutes(app: Express) {
 <script>
 (function() {
   var API_URL = '${appUrl}/api/get-tracking-number';
+  var STORE_ID = '${storeId}';
   
   function getQueryParam(name) {
     var match = RegExp('[?&]' + name + '=([^&]*)').exec(window.location.search);
@@ -388,7 +414,7 @@ export function registerTwilioRoutes(app: Express) {
     var sessionId = getSessionId();
     var visitorId = getVisitorId();
     
-    var url = API_URL + '?sessionId=' + sessionId + '&visitorId=' + visitorId;
+    var url = API_URL + '?storeId=' + encodeURIComponent(STORE_ID) + '&sessionId=' + sessionId + '&visitorId=' + visitorId;
     if (gclid) {
       url += '&gclid=' + encodeURIComponent(gclid);
       localStorage.setItem('dni_gclid', gclid);
