@@ -57,19 +57,13 @@ function validateTwilioWebhook(req: Request, res: Response, next: NextFunction) 
 }
 
 export function registerTwilioRoutes(app: Express) {
-  // DNI (Dynamic Number Insertion) - Get tracking number for GCLID (requires store ownership)
+  // DNI (Dynamic Number Insertion) - Public endpoint called from merchant website snippet
   app.get("/api/get-tracking-number", async (req: Request, res: Response) => {
     try {
       const { gclid, sessionId, visitorId, storeId } = req.query;
 
       if (!storeId) {
         return res.status(400).json({ error: "storeId is required" });
-      }
-      
-      // Validate store ownership - prevent cross-tenant access
-      const ownership = validateStoreOwnership(req, storeId as string);
-      if (!ownership.valid) {
-        return res.status(ownership.statusCode || 403).json({ error: ownership.error });
       }
 
       const result = await getOrAssignTrackingNumber(
