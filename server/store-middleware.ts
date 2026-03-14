@@ -25,6 +25,7 @@ interface CachedStore {
 }
 
 const CACHE_TTL_MS = 30_000;
+const MAX_CACHE_SIZE = 500;
 const storeCache = new Map<string, CachedStore>();
 
 function getCachedStore(key: string): CachedStore | null {
@@ -38,6 +39,12 @@ function getCachedStore(key: string): CachedStore | null {
 }
 
 function setCachedStore(key: string, context: Omit<CachedStore, "timestamp">) {
+  if (storeCache.size >= MAX_CACHE_SIZE) {
+    const oldestKey = storeCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      storeCache.delete(oldestKey);
+    }
+  }
   storeCache.set(key, { ...context, timestamp: Date.now() });
 }
 

@@ -281,8 +281,11 @@ export function registerTwilioRoutes(app: Express) {
     }
     
     try {
-      const { gclid, sessionId, visitorId } = req.body;
-      const result = await getOrAssignTrackingNumber(gclid, sessionId, visitorId);
+      const { storeId, gclid, sessionId, visitorId } = req.body;
+      if (!storeId) {
+        return res.status(400).json({ error: "storeId is required" });
+      }
+      const result = await getOrAssignTrackingNumber(storeId, gclid, sessionId, visitorId);
 
       res.json({
         success: !!result,
@@ -472,9 +475,9 @@ export function registerTwilioRoutes(app: Express) {
       const country = (req.query.country as string) || "US";
       const limit = parseInt(req.query.limit as string) || 10;
 
-      const searchParams: any = { limit };
+      const searchParams: { limit: number; areaCode?: number } = { limit };
       if (areaCode) {
-        searchParams.areaCode = areaCode;
+        searchParams.areaCode = parseInt(areaCode, 10);
       }
 
       const numbers = await client.availablePhoneNumbers(country).local.list(searchParams);

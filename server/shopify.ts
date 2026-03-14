@@ -2,7 +2,7 @@ import "@shopify/shopify-api/adapters/node";
 import { shopifyApi, Session, ApiVersion, Shopify } from "@shopify/shopify-api";
 import { db } from "./db";
 import { shopifySessions, stores } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 function getEnvVar(name: string, required = false): string {
   const value = process.env[name];
@@ -120,9 +120,8 @@ export class PostgresSessionStorage {
 
   async deleteSessions(ids: string[]): Promise<boolean> {
     try {
-      for (const id of ids) {
-        await db.delete(shopifySessions).where(eq(shopifySessions.id, id));
-      }
+      if (ids.length === 0) return true;
+      await db.delete(shopifySessions).where(inArray(shopifySessions.id, ids));
       return true;
     } catch (error) {
       console.error("Failed to delete sessions:", error);
@@ -165,37 +164,27 @@ export async function createOrUpdateStore(
   scopes: string
 ): Promise<void> {
   const now = new Date();
-  
-  const existingStores = await db
-    .select()
-    .from(stores)
-    .where(eq(stores.shopifyDomain, shop))
-    .limit(1);
 
-  if (existingStores.length > 0) {
-    await db
-      .update(stores)
-      .set({
-        shopifyAccessToken: accessToken,
-        shopifyScopes: scopes,
-        installState: "installed",
-        installedAt: now,
-        uninstalledAt: null,
-        isActive: true,
-        updatedAt: now,
-      })
-      .where(eq(stores.shopifyDomain, shop));
-  } else {
-    await db.insert(stores).values({
-      name: shop.replace(".myshopify.com", ""),
-      shopifyDomain: shop,
+  await db.insert(stores).values({
+    name: shop.replace(".myshopify.com", ""),
+    shopifyDomain: shop,
+    shopifyAccessToken: accessToken,
+    shopifyScopes: scopes,
+    installState: "installed",
+    installedAt: now,
+    isActive: true,
+  }).onConflictDoUpdate({
+    target: stores.shopifyDomain,
+    set: {
       shopifyAccessToken: accessToken,
       shopifyScopes: scopes,
       installState: "installed",
       installedAt: now,
+      uninstalledAt: null,
       isActive: true,
-    });
-  }
+      updatedAt: now,
+    },
+  });
 }
 
 export async function getStoreByDomain(shop: string) {

@@ -20,6 +20,16 @@ const loginAttempts = new Map<string, { count: number; lastAttempt: number }>();
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_DURATION = 15 * 60 * 1000;
 
+const PRUNE_INTERVAL_MS = 5 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  loginAttempts.forEach((value, key) => {
+    if (now - value.lastAttempt > LOCKOUT_DURATION) {
+      loginAttempts.delete(key);
+    }
+  });
+}, PRUNE_INTERVAL_MS);
+
 function checkRateLimit(key: string): { allowed: boolean; retryAfter?: number } {
   const now = Date.now();
   const attempts = loginAttempts.get(key);

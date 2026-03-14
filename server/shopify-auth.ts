@@ -13,6 +13,18 @@ import { db } from "./db";
 import { shopifySessions } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 
+declare global {
+  namespace Express {
+    interface Request {
+      authMethod?: "hmac" | "session_token" | "dev_bypass";
+      sessionPayload?: Record<string, unknown>;
+      shopDomain?: string;
+      store?: Record<string, unknown>;
+      rawBody?: Buffer;
+    }
+  }
+}
+
 const router = Router();
 
 // ============== VALIDATION HELPERS ==============
@@ -179,7 +191,7 @@ export function validateShopMiddleware(req: Request, res: Response, next: NextFu
       return res.status(403).json({ error: "HMAC validation failed" });
     }
     
-    (req as any).authMethod = "hmac";
+    req.authMethod = "hmac";
     console.log(`[Auth] HMAC verified for ${shop}`);
   } else if (sessionToken) {
     // Verify session token (JWT) from App Bridge
@@ -199,15 +211,15 @@ export function validateShopMiddleware(req: Request, res: Response, next: NextFu
       });
     }
     
-    (req as any).authMethod = "session_token";
-    (req as any).sessionPayload = tokenResult.payload;
+    req.authMethod = "session_token";
+    req.sessionPayload = tokenResult.payload;
     console.log(`[Auth] Session token verified for ${shop}`);
   } else {
     // In development, allow shop-only auth for testing
     const isDev = process.env.NODE_ENV !== "production";
     if (isDev) {
       console.warn(`[Auth] Dev mode: allowing request without HMAC/session for ${shop}`);
-      (req as any).authMethod = "dev_bypass";
+      req.authMethod = "dev_bypass";
     } else {
       console.warn(`[Auth] Missing HMAC or session token for ${shop}`);
       return res.status(401).json({ 
@@ -217,8 +229,7 @@ export function validateShopMiddleware(req: Request, res: Response, next: NextFu
     }
   }
   
-  // Attach validated shop to request
-  (req as any).shopDomain = shop;
+  req.shopDomain = shop;
   next();
 }
 
@@ -226,7 +237,7 @@ export function validateShopMiddleware(req: Request, res: Response, next: NextFu
  * Middleware to ensure shop is installed (has offline access token)
  */
 export async function ensureInstalledOnShop(req: Request, res: Response, next: NextFunction) {
-  const shop = (req as any).shopDomain || req.query.shop as string;
+  const shop = req.shopDomain || req.query.shop as string;
   
   if (!validateShop(shop)) {
     return res.status(400).json({ error: "Shop parameter required" });
@@ -241,7 +252,7 @@ export async function ensureInstalledOnShop(req: Request, res: Response, next: N
       return res.redirect(`${hostUrl}/api/auth/shopify?shop=${shop}`);
     }
     
-    (req as any).store = store;
+    req.store = store;
     next();
   } catch (error) {
     console.error("[Auth] Error checking shop installation:", error);
@@ -702,7 +713,7 @@ router.post("/api/webhooks/app-uninstalled", async (req: Request, res: Response)
     return res.status(500).json({ error: "Server configuration error" });
   }
 
-  const rawBody = (req as any).rawBody;
+  const rawBody = req.rawBody;
   if (!rawBody) {
     return res.status(400).json({ error: "Missing request body" });
   }
@@ -812,7 +823,7 @@ router.get("/api/stores/current", async (req: Request, res: Response) => {
  * Uses online session with fallback to offline
  */
 router.get("/api/products", validateShopMiddleware, async (req: Request, res: Response) => {
-  const shop = (req as any).shopDomain as string;
+  const shop = req.shopDomain as string;
   
   try {
     // Try online session first, fall back to offline

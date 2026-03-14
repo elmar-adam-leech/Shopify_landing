@@ -191,57 +191,6 @@ async function findExistingCustomerByPhone(
   }
 }
 
-export async function updateCustomerTags(
-  customerId: number,
-  newTags: string[]
-): Promise<boolean> {
-  const config = getShopifyConfig();
-  if (!config) {
-    return false;
-  }
-  
-  const url = `${getShopifyApiUrl(config.storeUrl)}/customers/${customerId}.json`;
-  
-  try {
-    const getResponse = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        ...getAuthHeader(config),
-      },
-    });
-    
-    if (!getResponse.ok) {
-      return false;
-    }
-    
-    const customerData = await getResponse.json();
-    const existingTags: string[] = customerData.customer.tags
-      ? customerData.customer.tags.split(", ")
-      : [];
-    const mergedTags = Array.from(new Set([...existingTags, ...newTags]));
-    
-    const updateResponse = await fetch(url, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        ...getAuthHeader(config),
-      },
-      body: JSON.stringify({
-        customer: {
-          id: customerId,
-          tags: mergedTags.join(", "),
-        },
-      }),
-    });
-    
-    return updateResponse.ok;
-  } catch (error) {
-    console.error("Failed to update customer tags:", error);
-    return false;
-  }
-}
-
 export function isShopifyConfigured(): boolean {
   return getShopifyConfig() !== null;
 }

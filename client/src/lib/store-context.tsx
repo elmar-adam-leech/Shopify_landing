@@ -3,24 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import type { Store } from "@shared/schema";
 import { useAppBridge } from "@/components/providers/AppBridgeProvider";
 
-interface ShopifyAuthStatus {
-  authenticated: boolean;
-  configured: boolean;
-  store?: {
-    id: string;
-    name: string;
-    shop: string;
-    installedAt: string;
-  };
-}
-
 interface StoreContextType {
   stores: Store[];
   selectedStore: Store | null;
   selectedStoreId: string | null;
   setSelectedStoreId: (id: string | null) => void;
   isLoading: boolean;
-  shopifyAuth: ShopifyAuthStatus | null;
   currentShop: string | null;
   isEmbedded: boolean;
   needsAuth: boolean;
@@ -126,16 +114,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     enabled: isAppReady,
   });
 
-  const { data: shopifyAuth } = useQuery<ShopifyAuthStatus>({
-    queryKey: ["/api/auth/status", currentShop],
-    queryFn: async () => {
-      const params = currentShop ? `?shop=${encodeURIComponent(currentShop)}` : "";
-      const res = await fetch(`/api/auth/status${params}`);
-      return res.json();
-    },
-    enabled: true,
-  });
-
   const setSelectedStoreId = (id: string | null) => {
     setSelectedStoreIdState(id);
     if (id) {
@@ -179,15 +157,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [isEmbedded, shopFromUrl, stores, isLoading, storesError]);
 
-  useEffect(() => {
-    if (shopifyAuth?.authenticated && shopifyAuth.store) {
-      const matchingStore = stores.find(s => s.shopifyDomain === shopifyAuth.store?.shop);
-      if (matchingStore && matchingStore.id !== selectedStoreId) {
-        setSelectedStoreId(matchingStore.id);
-      }
-    }
-  }, [shopifyAuth, stores]);
-
   // Only auto-select first store in non-embedded mode
   useEffect(() => {
     if (!isEmbedded && !isLoading && stores.length > 0 && !selectedStoreId) {
@@ -222,7 +191,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         selectedStoreId,
         setSelectedStoreId,
         isLoading,
-        shopifyAuth: shopifyAuth || null,
         currentShop,
         isEmbedded,
         needsAuth,
