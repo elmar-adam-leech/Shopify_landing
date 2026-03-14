@@ -144,6 +144,19 @@ The core entities are:
 - **Tracking Number Expiry**: `/api/tracking-numbers/expire` requires store context authentication
 - **Twilio Routes**: Store context validated via typed `req.storeContext` (no `as any` casts)
 
+### Backend Route Architecture
+- **Modular Routers**: API routes split into domain-specific files under `server/routes/`:
+  - `server/routes/admin.ts` — Admin store/page listing (requireAdmin protected)
+  - `server/routes/proxy.ts` — Shopify App Proxy rendering, public page routes, preview routes, proxy form submissions
+  - `server/routes/stores.ts` — Store CRUD, user-store assignments
+  - `server/routes/products.ts` — Shopify products, favorites, sync
+  - `server/routes/pages.ts` — Page CRUD, form submissions, page version history, HTML generation
+  - `server/routes/analytics.ts` — Analytics event recording and summaries
+  - `server/routes/ab-tests.ts` — A/B tests, variants, and results
+  - `server/routes/helpers.ts` — Shared helpers (`validatePageAccess`, `requireStoreContext`, `processFormSubmissionCustomer`, `validateAbTestOwnership`)
+- **Orchestrator**: `server/routes.ts` is a thin orchestrator that applies middleware (session, admin auth, store context, rate limiting) and mounts each domain router
+- **Typed Request Properties**: `req.shopDomain` typed via Express declaration merging in `server/lib/proxy-signature.ts`; `req.session.adminRole` typed via `express-session` module augmentation in `server/admin-auth.ts`
+
 ### Key Design Patterns
 - **Monorepo Structure**: Client (`/client`), server (`/server`), and shared code (`/shared`)
 - **Shared Schema**: Database schema and Zod validators in `/shared/schema.ts` used by both frontend and backend

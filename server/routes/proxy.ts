@@ -1,0 +1,275 @@
+import { Router, type Request, type Response } from "express";
+import { db } from "../db";
+import { stores, pages } from "@shared/schema";
+import { eq } from "drizzle-orm";
+import { storage } from "../storage";
+import { logSecurityEvent } from "../lib/audit";
+import { appProxyMiddleware } from "../lib/proxy-signature";
+import {
+  renderPage,
+  render404Page,
+  renderErrorPage,
+} from "../lib/page-renderer";
+import { processFormSubmissionCustomer } from "./helpers";
+
+export function createProxyRoutes(): Router {
+  const router = Router();
+  const proxySecret = process.env.SHOPIFY_API_SECRET || "";
+  const proxyMiddleware = appProxyMiddleware(proxySecret);
+
+  router.get("/proxy/lp/:slug", proxyMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { slug } = req.params;
+      const shopDomain = req.shopDomain || (req.query.shop as string);
+
+      if (!shopDomain) {
+        return res.status(400).send(renderErrorPage("Missing shop parameter"));
+      }
+
+      const [store] = await db
+        .select()
+        .from(stores)
+        .where(eq(stores.shopifyDomain, shopDomain))
+        .limit(1);
+
+      if (!store) {
+        logSecurityEvent({
+          eventType: "access_denied",
+          req,
+          storeId: null,
+          details: { reason: "unknown_shop_domain", shop: shopDomain },
+        });
+        return res.status(404).send(render404Page());
+      }
+
+      const page = await storage.getPageBySlug(slug, store.id);
+
+      if (!page) {
+        return res.status(404).send(render404Page());
+      }
+
+      if (page.status !== "published") {
+        if (req.query.preview !== "true") {
+          return res.status(404).send(render404Page());
+        }
+      }
+
+      const useLiquidWrapper = req.query.liquid === "true";
+
+      const { html, contentType } = await renderPage(
+        req,
+        page,
+        {
+          id: store.id,
+          name: store.name,
+          shopifyDomain: store.shopifyDomain,
+          storefrontAccessToken: store.storefrontAccessToken,
+        },
+        { useLiquidWrapper }
+      );
+
+      res.set({
+        "Content-Type": contentType,
+        "Cache-Control": "public, max-age=300",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "SAMEORIGIN",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+      });
+
+      res.send(html);
+    } catch (error) {
+      console.error("App Proxy render error:", error);
+      res.status(500).send(renderErrorPage("Failed to load page"));
+    }
+  });
+
+  router.get("/p/:slug", async (req: Request, res: Response) => {
+    try {
+      const { slug } = req.params;
+
+      const allPages = await db
+        .select()
+        .from(pages)
+        .where(eq(pages.slug, slug))
+        .limit(1);
+      const page = allPages.length > 0 ? allPages[0] : null;
+
+      if (!page) {
+        return res.status(404).send(render404Page());
+      }
+
+      if (page.status !== "published") {
+        return res.status(404).send(render404Page());
+      }
+
+      let store = null;
+      if (page.storeId) {
+        const [foundStore] = await db
+          .select()
+          .from(stores)
+          .where(eq(stores.id, page.storeId))
+          .limit(1);
+        store = foundStore;
+      }
+
+      const storeInfo = store
+        ? {
+            id: store.id,
+            name: store.name,
+            shopifyDomain: store.shopifyDomain,
+            storefrontAccessToken: store.storefrontAccessToken,
+          }
+        : {
+            id: page.storeId || "",
+            name: "Page",
+            shopifyDomain: "",
+            storefrontAccessToken: null,
+          };
+
+      const { html, contentType } = await renderPage(req, page, storeInfo);
+
+      res.set({
+        "Content-Type": contentType,
+        "Cache-Control": "public, max-age=300, stale-while-revalidate=60",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "SAMEORIGIN",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+      });
+
+      res.send(html);
+    } catch (error) {
+      console.error("Public page render error:", error);
+      res.status(500).send(renderErrorPage("Failed to load page"));
+    }
+  });
+
+  router.get("/preview/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const shopParam = req.query.shop as string | undefined;
+
+      let page = await storage.getPage(id);
+
+      if (!page) {
+        const allPages = await db
+          .select()
+          .from(pages)
+          .where(eq(pages.slug, id))
+          .limit(1);
+        if (allPages.length > 0) {
+          page = allPages[0];
+        }
+      }
+
+      if (!page) {
+        return res.status(404).send(render404Page());
+      }
+
+      let store = null;
+      if (page.storeId) {
+        const [foundStore] = await db
+          .select()
+          .from(stores)
+          .where(eq(stores.id, page.storeId))
+          .limit(1);
+        store = foundStore;
+      }
+
+      if (shopParam && store && store.shopifyDomain !== shopParam) {
+        console.warn(
+          `Preview access denied: shop param ${shopParam} doesn't match page store ${store.shopifyDomain}`
+        );
+        return res
+          .status(403)
+          .send(renderErrorPage("Access denied - store mismatch"));
+      }
+
+      const storeInfo = store
+        ? {
+            id: store.id,
+            name: store.name,
+            shopifyDomain: store.shopifyDomain,
+            storefrontAccessToken: store.storefrontAccessToken,
+          }
+        : {
+            id: page.storeId || "",
+            name: "Preview",
+            shopifyDomain: "",
+            storefrontAccessToken: null,
+          };
+      const { html, contentType } = await renderPage(req, page, storeInfo);
+
+      res.set({
+        "Content-Type": contentType,
+        "Cache-Control": "no-cache",
+        "X-Content-Type-Options": "nosniff",
+      });
+
+      res.send(html);
+    } catch (error) {
+      console.error("Preview render error:", error);
+      res.status(500).send(renderErrorPage("Failed to load preview"));
+    }
+  });
+
+  router.post("/proxy/api/submit-form", proxyMiddleware, async (req: Request, res: Response) => {
+    try {
+      const shopDomain = req.shopDomain || (req.query.shop as string);
+
+      if (!shopDomain) {
+        return res.status(400).json({ error: "Missing shop parameter" });
+      }
+
+      const [store] = await db
+        .select()
+        .from(stores)
+        .where(eq(stores.shopifyDomain, shopDomain))
+        .limit(1);
+
+      if (!store) {
+        return res.status(404).json({ error: "Store not found" });
+      }
+
+      const { pageId, blockId, visitorId, sessionId, ...formData } = req.body;
+
+      if (!pageId) {
+        return res.status(400).json({ error: "Missing pageId" });
+      }
+
+      const page = await storage.getPage(pageId);
+      if (!page || page.storeId !== store.id) {
+        return res.status(403).json({ error: "Invalid page" });
+      }
+
+      const submission = await storage.createFormSubmission({
+        pageId,
+        blockId: blockId || "",
+        storeId: store.id,
+        data: formData,
+        referrer: req.get("referer") || null,
+      });
+
+      const { shopifyCustomerId, alreadyExisted } =
+        await processFormSubmissionCustomer(
+          page,
+          submission,
+          blockId,
+          visitorId,
+          sessionId,
+          req.get("referer")
+        );
+
+      res.json({
+        success: true,
+        submissionId: submission.id,
+        shopifyCustomerId,
+        alreadyExisted,
+      });
+    } catch (error) {
+      console.error("Form submission error:", error);
+      res.status(500).json({ error: "Failed to submit form" });
+    }
+  });
+
+  return router;
+}

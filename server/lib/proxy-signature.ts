@@ -2,6 +2,14 @@ import crypto from "crypto";
 import type { Request, Response, NextFunction } from "express";
 import { logSecurityEvent } from "./audit";
 
+declare global {
+  namespace Express {
+    interface Request {
+      shopDomain?: string;
+    }
+  }
+}
+
 // Keys that Shopify's infrastructure adds but should NOT be included in signature calculation
 const EXCLUDED_KEYS = new Set([
   "signature",
@@ -117,9 +125,8 @@ export function appProxyMiddleware(secret: string) {
       return res.status(403).json({ error: "Invalid signature" });
     }
     
-    // Attach shop domain to request for downstream use
     if (req.query.shop) {
-      (req as any).shopDomain = req.query.shop;
+      req.shopDomain = req.query.shop as string;
     }
     
     next();
