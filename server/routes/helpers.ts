@@ -1,8 +1,8 @@
 import type { Request } from "express";
 import type { Page, FormSubmission, AbTest } from "@shared/schema";
-import { formSubmissions, analyticsEvents } from "@shared/schema";
+import { formSubmissions, analyticsEvents, userStoreAssignments } from "@shared/schema";
 import { db } from "../db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { logSecurityEvent } from "../lib/audit";
 import {
   getShopifyConfigForStore,
@@ -46,6 +46,48 @@ export function requireStoreContext(
       error: "Store context required - provide shop or storeId parameter",
     };
   }
+  return { valid: true };
+}
+
+export async function validateUserAccess(
+  req: Request,
+  userId: string
+): Promise<{ valid: boolean; error?: string; statusCode?: number }> {
+  const storeId = req.storeContext?.storeId;
+  if (!storeId) {
+    return { valid: false, error: "Store context required", statusCode: 401 };
+  }
+
+  const isAdmin = !!(req.session as { adminRole?: string })?.adminRole;
+  if (isAdmin) {
+    return { valid: true };
+  }
+
+  const [assignment] = await db
+    .select()
+    .from(userStoreAssignments)
+    .where(
+      and(
+        eq(userStoreAssignments.userId, userId),
+        eq(userStoreAssignments.storeId, storeId)
+      )
+    )
+    .limit(1);
+
+  if (!assignment) {
+    logSecurityEvent({
+      eventType: "access_denied",
+      req,
+      storeId,
+      details: { reason: "user_not_assigned_to_store", targetUserId: userId },
+    });
+    return {
+      valid: false,
+      error: "Access denied - user not associated with this store",
+      statusCode: 403,
+    };
+  }
+
   return { valid: true };
 }
 

@@ -9,12 +9,21 @@ export function createAnalyticsRoutes(): Router {
 
   router.post("/api/analytics", async (req, res) => {
     try {
-      let storeId: string | undefined | null = undefined;
+      let storeId: string | undefined | null = req.storeContext?.storeId;
 
       if (req.body.pageId) {
-        const page = await storage.getPage(req.body.pageId);
-        if (page) {
-          storeId = page.storeId;
+        if (storeId) {
+          const page = await storage.getPage(req.body.pageId);
+          if (page && page.storeId !== storeId) {
+            return res
+              .status(403)
+              .json({ error: "Page does not belong to this store" });
+          }
+        } else {
+          const page = await storage.getPage(req.body.pageId);
+          if (page) {
+            storeId = page.storeId;
+          }
         }
       }
 

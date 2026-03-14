@@ -6,6 +6,7 @@ import { storage } from "../storage";
 import { validateStoreOwnership } from "../lib/store-ownership";
 import { getShopifyConfigForStore } from "../lib/shopify";
 import { syncProductsForStore } from "../lib/sync-service";
+import { validateUserAccess } from "./helpers";
 
 export function createProductRoutes(): Router {
   const router = Router();
@@ -109,9 +110,9 @@ export function createProductRoutes(): Router {
     try {
       const { userId } = req.params;
 
-      const storeId = req.storeContext?.storeId;
-      if (!storeId) {
-        return res.status(401).json({ error: "Store context required" });
+      const access = await validateUserAccess(req, userId);
+      if (!access.valid) {
+        return res.status(access.statusCode || 403).json({ error: access.error });
       }
 
       const favorites = await storage.getUserProductFavorites(
@@ -129,9 +130,9 @@ export function createProductRoutes(): Router {
     try {
       const { userId, productId } = req.params;
 
-      const storeId = req.storeContext?.storeId;
-      if (!storeId) {
-        return res.status(401).json({ error: "Store context required" });
+      const access = await validateUserAccess(req, userId);
+      if (!access.valid) {
+        return res.status(access.statusCode || 403).json({ error: access.error });
       }
 
       const favorite = await storage.addUserProductFavorite(userId, productId);
@@ -146,9 +147,9 @@ export function createProductRoutes(): Router {
     try {
       const { userId, productId } = req.params;
 
-      const storeId = req.storeContext?.storeId;
-      if (!storeId) {
-        return res.status(401).json({ error: "Store context required" });
+      const access = await validateUserAccess(req, userId);
+      if (!access.valid) {
+        return res.status(access.statusCode || 403).json({ error: access.error });
       }
 
       const removed = await storage.removeUserProductFavorite(userId, productId);
@@ -166,9 +167,9 @@ export function createProductRoutes(): Router {
     try {
       const { userId, productId } = req.params;
 
-      const storeId = req.storeContext?.storeId;
-      if (!storeId) {
-        return res.status(401).json({ error: "Store context required" });
+      const access = await validateUserAccess(req, userId);
+      if (!access.valid) {
+        return res.status(access.statusCode || 403).json({ error: access.error });
       }
 
       const isFavorite = await storage.isProductFavorite(userId, productId);

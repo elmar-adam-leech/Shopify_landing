@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { storage } from "../storage";
 import { validateStoreOwnership } from "../lib/store-ownership";
-import { requireStoreContext } from "./helpers";
+import { requireStoreContext, validateUserAccess } from "./helpers";
 
 export function createStoreRoutes(): Router {
   const router = Router();
@@ -195,11 +195,11 @@ export function createStoreRoutes(): Router {
     try {
       const { userId } = req.params;
 
-      const storeId = req.storeContext?.storeId;
-      if (!storeId) {
+      const access = await validateUserAccess(req, userId);
+      if (!access.valid) {
         return res
-          .status(401)
-          .json({ error: "Store context required" });
+          .status(access.statusCode || 403)
+          .json({ error: access.error });
       }
 
       const assignments = await storage.getUserStoreAssignments(userId);
