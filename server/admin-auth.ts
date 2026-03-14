@@ -62,7 +62,7 @@ export function createSessionMiddleware() {
 
   return session({
     store: new PgStore({
-      conString: process.env.DATABASE_URL,
+      conString: (process.env.NODE_ENV === "development" ? process.env.DATABASE_URL : process.env.NEON_SECRET) || process.env.DATABASE_URL,
       tableName: "admin_sessions",
       createTableIfMissing: true,
     }),

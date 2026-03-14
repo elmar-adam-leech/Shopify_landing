@@ -23,6 +23,7 @@ Preferred communication style: Simple, everyday language.
 - **Runtime**: Node.js with Express
 - **API Design**: RESTful endpoints under `/api/` prefix
 - **Database ORM**: Drizzle ORM with PostgreSQL
+- **Database Drivers**: Dual driver setup — `@neondatabase/serverless` (neon-http) for production autoscale deployments via `NEON_SECRET`, `pg` (node-postgres) for local development via `DATABASE_URL`. Environment detection in `server/db.ts`: when `NODE_ENV=development`, always uses local pg; otherwise prefers `NEON_SECRET` if set. Note: admin session store (`connect-pg-simple` in `server/admin-auth.ts`) uses standard pg/TCP connection in all environments (pointed at `NEON_SECRET` in production). To push schema to Neon: `npx drizzle-kit push` (picks up `NEON_SECRET` automatically from `drizzle.config.ts`).
 - **Schema Validation**: Zod for runtime type checking
 
 ### Shopify OAuth Integration (Dual Token Flow)
