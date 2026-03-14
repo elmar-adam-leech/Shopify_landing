@@ -312,12 +312,13 @@ export function createPageRoutes(): Router {
         );
 
         if (formBlock?.config?.webhooks) {
-          const webhookPromises = formBlock.config.webhooks
-            .filter(
-              (webhook: Record<string, unknown>) =>
-                webhook.enabled && webhook.url
-            )
-            .map(async (webhook: Record<string, unknown>) => {
+          const enabledWebhooks = formBlock.config.webhooks.filter(
+            (webhook: Record<string, unknown>) =>
+              webhook.enabled && webhook.url
+          );
+
+          const webhookPromises = enabledWebhooks.map(
+            async (webhook: Record<string, unknown>) => {
               const webhookPayload = {
                 formData: submission.data,
                 pageId,
@@ -337,24 +338,30 @@ export function createPageRoutes(): Router {
                 body: JSON.stringify(webhookPayload),
               });
 
-              return {
-                name: (webhook.name as string) || (webhook.url as string),
-                status: resp.status,
-                ok: resp.ok,
-              };
-            });
+              return { status: resp.status, ok: resp.ok };
+            }
+          );
 
           Promise.allSettled(webhookPromises).then((results) => {
-            for (const result of results) {
+            for (let i = 0; i < results.length; i++) {
+              const result = results[i];
+              const webhookName =
+                (enabledWebhooks[i].name as string) ||
+                (enabledWebhooks[i].url as string);
               if (result.status === "fulfilled" && result.value.ok) {
-                console.log(`Webhook sent to ${result.value.name}`);
+                console.log(`Webhook sent to ${webhookName}`);
               } else if (result.status === "fulfilled") {
                 console.warn(
-                  `Webhook to ${result.value.name} returned status ${result.value.status}`
+                  `Webhook to ${webhookName} returned status ${result.value.status}`
                 );
               } else {
-                const error = result.reason instanceof Error ? result.reason.message : String(result.reason);
-                console.warn(`Webhook delivery failed: ${error}`);
+                const error =
+                  result.reason instanceof Error
+                    ? result.reason.message
+                    : String(result.reason);
+                console.warn(
+                  `Webhook to ${webhookName} delivery failed: ${error}`
+                );
               }
             }
           });

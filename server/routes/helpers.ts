@@ -53,14 +53,14 @@ export async function validateUserAccess(
   req: Request,
   targetUserId: string
 ): Promise<{ valid: boolean; error?: string; statusCode?: number }> {
-  const storeId = req.storeContext?.storeId;
-  if (!storeId) {
-    return { valid: false, error: "Store context required", statusCode: 401 };
-  }
-
   const isAdmin = !!req.session?.adminRole;
   if (isAdmin) {
     return { valid: true };
+  }
+
+  const storeId = req.storeContext?.storeId;
+  if (!storeId) {
+    return { valid: false, error: "Store context required", statusCode: 401 };
   }
 
   const callerUserId = req.storeContext?.authenticatedUserId;
