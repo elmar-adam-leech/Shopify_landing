@@ -345,14 +345,15 @@ export function createPageRoutes(): Router {
           Promise.allSettled(webhookPromises).then((results) => {
             for (let i = 0; i < results.length; i++) {
               const result = results[i];
-              const webhookName =
-                (enabledWebhooks[i].name as string) ||
-                (enabledWebhooks[i].url as string);
+              const webhook = enabledWebhooks[i];
+              const webhookUrl = webhook.url as string;
+              const webhookLabel =
+                (webhook.name as string) || webhookUrl;
               if (result.status === "fulfilled" && result.value.ok) {
-                console.log(`Webhook sent to ${webhookName}`);
+                console.log(`Webhook sent to ${webhookLabel}`);
               } else if (result.status === "fulfilled") {
                 console.warn(
-                  `Webhook to ${webhookName} returned status ${result.value.status}`
+                  `Webhook to ${webhookLabel} (${webhookUrl}) returned status ${result.value.status}`
                 );
               } else {
                 const error =
@@ -360,7 +361,7 @@ export function createPageRoutes(): Router {
                     ? result.reason.message
                     : String(result.reason);
                 console.warn(
-                  `Webhook to ${webhookName} delivery failed: ${error}`
+                  `Webhook to ${webhookLabel} (${webhookUrl}) delivery failed: ${error}`
                 );
               }
             }
