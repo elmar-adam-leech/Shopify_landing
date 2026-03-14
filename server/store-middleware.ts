@@ -61,6 +61,10 @@ function extractShopFromToken(req: Request): string | null {
   return null;
 }
 
+interface SessionWithAdmin {
+  adminRole?: string;
+}
+
 export async function resolveStoreContext(req: Request, res: Response, next: NextFunction) {
   const shop = req.query.shop as string | undefined;
   const storeId = req.query.storeId as string | undefined;
@@ -70,7 +74,8 @@ export async function resolveStoreContext(req: Request, res: Response, next: Nex
   }
 
   const isDev = process.env.NODE_ENV !== "production";
-  const isAdmin = !!(req.session as Record<string, unknown>)?.adminRole;
+  const session = req.session as SessionWithAdmin | undefined;
+  const isAdmin = !!session?.adminRole;
 
   let verifiedShop: string | null = null;
 
@@ -89,17 +94,16 @@ export async function resolveStoreContext(req: Request, res: Response, next: Nex
     }
   }
 
-  if (!verifiedShop && !storeId) {
+  if (!verifiedShop) {
     return next();
   }
 
   try {
-    const lookupKey = storeId || verifiedShop;
-    const cacheKey = storeId ? `id:${storeId}` : `shop:${lookupKey}`;
+    const cacheKey = storeId ? `id:${storeId}` : `shop:${verifiedShop}`;
     const cached = getCachedStore(cacheKey);
 
     if (cached) {
-      if (verifiedShop && cached.shop !== verifiedShop && !isAdmin) {
+      if (cached.shop !== verifiedShop && !isAdmin) {
         console.warn(`[StoreContext] Cached store ${cached.shop} does not match verified shop ${verifiedShop}`);
         return next();
       }
@@ -120,7 +124,7 @@ export async function resolveStoreContext(req: Request, res: Response, next: Nex
         .where(eq(stores.id, storeId))
         .limit(1);
       store = found;
-    } else if (verifiedShop) {
+    } else {
       const [found] = await db
         .select()
         .from(stores)
@@ -130,7 +134,7 @@ export async function resolveStoreContext(req: Request, res: Response, next: Nex
     }
 
     if (store && store.installState === "installed" && store.isActive) {
-      if (storeId && verifiedShop && store.shopifyDomain !== verifiedShop && !isAdmin) {
+      if (store.shopifyDomain !== verifiedShop && !isAdmin) {
         console.warn(`[StoreContext] Store ${store.shopifyDomain} does not match verified shop ${verifiedShop}`);
         return next();
       }
