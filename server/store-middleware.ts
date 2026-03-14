@@ -11,6 +11,7 @@ declare global {
         storeId: string;
         shop: string;
         name: string;
+        authenticatedUserId?: string;
       };
     }
   }
@@ -40,25 +41,33 @@ function setCachedStore(key: string, context: Omit<CachedStore, "timestamp">) {
   storeCache.set(key, { ...context, timestamp: Date.now() });
 }
 
-function extractShopFromToken(req: Request): string | null {
+interface TokenInfo {
+  shop: string | null;
+  userId?: string;
+}
+
+function extractTokenInfo(req: Request): TokenInfo {
   const authHeader = req.headers["authorization"];
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
-  if (!token) return null;
+  if (!token) return { shop: null };
 
   const apiSecret = process.env.SHOPIFY_API_SECRET;
-  if (!apiSecret) return null;
+  if (!apiSecret) return { shop: null };
 
   const result = verifySessionToken(token, apiSecret);
-  if (!result.valid || !result.payload) return null;
+  if (!result.valid || !result.payload) return { shop: null };
 
+  let shop: string | null = null;
   if (result.payload.dest) {
-    return result.payload.dest.replace("https://", "");
-  }
-  if (result.payload.iss) {
+    shop = result.payload.dest.replace("https://", "");
+  } else if (result.payload.iss) {
     const match = result.payload.iss.match(/^https:\/\/([^\/]+)\/admin$/);
-    if (match) return match[1];
+    if (match) shop = match[1];
   }
-  return null;
+
+  const userId = result.payload.sub ? String(result.payload.sub) : undefined;
+
+  return { shop, userId };
 }
 
 interface SessionWithAdmin {
@@ -78,11 +87,14 @@ export async function resolveStoreContext(req: Request, res: Response, next: Nex
   const isAdmin = !!session?.adminRole;
 
   let verifiedShop: string | null = null;
+  let authenticatedUserId: string | undefined;
 
   if (isAdmin) {
     verifiedShop = shop || null;
   } else {
-    verifiedShop = extractShopFromToken(req);
+    const tokenInfo = extractTokenInfo(req);
+    verifiedShop = tokenInfo.shop;
+    authenticatedUserId = tokenInfo.userId;
 
     if (!verifiedShop && isDev) {
       verifiedShop = shop || null;
@@ -111,6 +123,7 @@ export async function resolveStoreContext(req: Request, res: Response, next: Nex
         storeId: cached.storeId,
         shop: cached.shop,
         name: cached.name,
+        authenticatedUserId,
       };
       return next();
     }
@@ -143,6 +156,7 @@ export async function resolveStoreContext(req: Request, res: Response, next: Nex
         storeId: store.id,
         shop: store.shopifyDomain,
         name: store.name,
+        authenticatedUserId,
       };
       req.storeContext = context;
       setCachedStore(`id:${store.id}`, context);

@@ -51,7 +51,7 @@ export function requireStoreContext(
 
 export async function validateUserAccess(
   req: Request,
-  userId: string
+  targetUserId: string
 ): Promise<{ valid: boolean; error?: string; statusCode?: number }> {
   const storeId = req.storeContext?.storeId;
   if (!storeId) {
@@ -63,12 +63,31 @@ export async function validateUserAccess(
     return { valid: true };
   }
 
+  const callerUserId = req.storeContext?.authenticatedUserId;
+  if (callerUserId && callerUserId !== targetUserId) {
+    logSecurityEvent({
+      eventType: "access_denied",
+      req,
+      storeId,
+      details: {
+        reason: "cross_user_access_attempt",
+        callerUserId,
+        targetUserId,
+      },
+    });
+    return {
+      valid: false,
+      error: "Access denied - cannot access another user's resources",
+      statusCode: 403,
+    };
+  }
+
   const [assignment] = await db
     .select()
     .from(userStoreAssignments)
     .where(
       and(
-        eq(userStoreAssignments.userId, userId),
+        eq(userStoreAssignments.userId, targetUserId),
         eq(userStoreAssignments.storeId, storeId)
       )
     )
@@ -79,7 +98,7 @@ export async function validateUserAccess(
       eventType: "access_denied",
       req,
       storeId,
-      details: { reason: "user_not_assigned_to_store", targetUserId: userId },
+      details: { reason: "user_not_assigned_to_store", targetUserId },
     });
     return {
       valid: false,
