@@ -35,7 +35,7 @@ import {
   type InsertStoreSyncLog,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, max, and, gte, lte, sql, count, ilike, or } from "drizzle-orm";
+import { eq, desc, max, and, gte, lte, sql, count, ilike, or, notInArray } from "drizzle-orm";
 import { encryptPIIFields, decryptPIIFields } from "./lib/crypto";
 
 // PII fields to encrypt/decrypt in form submission data
@@ -168,7 +168,7 @@ export class DatabaseStorage implements IStorage {
   async createPage(insertPage: InsertPage): Promise<Page> {
     const [page] = await db
       .insert(pages)
-      .values(insertPage as any)
+      .values(insertPage as typeof pages.$inferInsert)
       .returning();
     return page;
   }
@@ -176,7 +176,7 @@ export class DatabaseStorage implements IStorage {
   async updatePage(id: string, updateData: UpdatePage): Promise<Page | undefined> {
     const [page] = await db
       .update(pages)
-      .set({ ...updateData, updatedAt: new Date() } as any)
+      .set({ ...updateData, updatedAt: new Date() } as Partial<typeof pages.$inferInsert>)
       .where(eq(pages.id, id))
       .returning();
     return page || undefined;
@@ -221,7 +221,7 @@ export class DatabaseStorage implements IStorage {
     
     const [result] = await db
       .insert(formSubmissions)
-      .values({ ...submission, data: encryptedData } as any)
+      .values({ ...submission, data: encryptedData } as typeof formSubmissions.$inferInsert)
       .returning();
     
     // Return with decrypted data for immediate use
@@ -246,7 +246,7 @@ export class DatabaseStorage implements IStorage {
   async createPageVersion(version: InsertPageVersion): Promise<PageVersion> {
     const [result] = await db
       .insert(pageVersions)
-      .values(version as any)
+      .values(version as typeof pageVersions.$inferInsert)
       .returning();
     return result;
   }
@@ -271,7 +271,7 @@ export class DatabaseStorage implements IStorage {
   async createAnalyticsEvent(event: InsertAnalyticsEvent): Promise<AnalyticsEvent> {
     const [result] = await db
       .insert(analyticsEvents)
-      .values(event as any)
+      .values(event as typeof analyticsEvents.$inferInsert)
       .returning();
     return result;
   }
@@ -300,35 +300,49 @@ export class DatabaseStorage implements IStorage {
       conditions.push(lte(analyticsEvents.createdAt, endDate));
     }
 
-    const events = await db
-      .select()
-      .from(analyticsEvents)
-      .where(and(...conditions));
+    const whereClause = and(...conditions);
 
-    const pageViews = events.filter(e => e.eventType === "page_view").length;
-    const formSubmissions = events.filter(e => e.eventType === "form_submission").length;
-    const buttonClicks = events.filter(e => e.eventType === "button_click").length;
-    const phoneClicks = events.filter(e => e.eventType === "phone_click").length;
+    const [countsByType, bySourceRows, byDayRows] = await Promise.all([
+      db
+        .select({
+          eventType: analyticsEvents.eventType,
+          count: count(),
+        })
+        .from(analyticsEvents)
+        .where(whereClause)
+        .groupBy(analyticsEvents.eventType),
 
-    const sourceMap = new Map<string, number>();
-    events.forEach(e => {
-      const source = e.utmSource || "direct";
-      sourceMap.set(source, (sourceMap.get(source) || 0) + 1);
-    });
-    const bySource = Array.from(sourceMap.entries())
-      .map(([source, count]) => ({ source, count }))
-      .sort((a, b) => b.count - a.count);
+      db
+        .select({
+          source: sql<string>`COALESCE(${analyticsEvents.utmSource}, 'direct')`.as("source"),
+          count: count(),
+        })
+        .from(analyticsEvents)
+        .where(whereClause)
+        .groupBy(sql`COALESCE(${analyticsEvents.utmSource}, 'direct')`)
+        .orderBy(desc(count())),
 
-    const dayMap = new Map<string, number>();
-    events.forEach(e => {
-      const date = e.createdAt.toISOString().split('T')[0];
-      dayMap.set(date, (dayMap.get(date) || 0) + 1);
-    });
-    const byDay = Array.from(dayMap.entries())
-      .map(([date, count]) => ({ date, count }))
-      .sort((a, b) => a.date.localeCompare(b.date));
+      db
+        .select({
+          date: sql<string>`${analyticsEvents.createdAt}::date::text`.as("date"),
+          count: count(),
+        })
+        .from(analyticsEvents)
+        .where(whereClause)
+        .groupBy(sql`${analyticsEvents.createdAt}::date`)
+        .orderBy(sql`${analyticsEvents.createdAt}::date`),
+    ]);
 
-    return { pageViews, formSubmissions, buttonClicks, phoneClicks, bySource, byDay };
+    const typeMap = new Map(countsByType.map(r => [r.eventType, Number(r.count)]));
+
+    return {
+      pageViews: typeMap.get("page_view") || 0,
+      formSubmissions: typeMap.get("form_submission") || 0,
+      buttonClicks: typeMap.get("button_click") || 0,
+      phoneClicks: typeMap.get("phone_click") || 0,
+      bySource: bySourceRows.map(r => ({ source: r.source, count: Number(r.count) })),
+      byDay: byDayRows.map(r => ({ date: r.date, count: Number(r.count) })),
+    };
   }
 
   // A/B Tests
@@ -389,7 +403,7 @@ export class DatabaseStorage implements IStorage {
   async createAbTest(test: InsertAbTest): Promise<AbTest> {
     const [result] = await db
       .insert(abTests)
-      .values(test as any)
+      .values(test as typeof abTests.$inferInsert)
       .returning();
     return result;
   }
@@ -397,7 +411,7 @@ export class DatabaseStorage implements IStorage {
   async updateAbTest(id: string, test: Partial<InsertAbTest>): Promise<AbTest | undefined> {
     const [result] = await db
       .update(abTests)
-      .set({ ...test, updatedAt: new Date() } as any)
+      .set({ ...test, updatedAt: new Date() } as Partial<typeof abTests.$inferInsert>)
       .where(eq(abTests.id, id))
       .returning();
     return result || undefined;
@@ -425,7 +439,7 @@ export class DatabaseStorage implements IStorage {
   async createAbTestVariant(variant: InsertAbTestVariant): Promise<AbTestVariant> {
     const [result] = await db
       .insert(abTestVariants)
-      .values(variant as any)
+      .values(variant as typeof abTestVariants.$inferInsert)
       .returning();
     return result;
   }
@@ -433,7 +447,7 @@ export class DatabaseStorage implements IStorage {
   async updateAbTestVariant(id: string, variant: Partial<InsertAbTestVariant>): Promise<AbTestVariant | undefined> {
     const [result] = await db
       .update(abTestVariants)
-      .set(variant as any)
+      .set(variant as Partial<typeof abTestVariants.$inferInsert>)
       .where(eq(abTestVariants.id, id))
       .returning();
     return result || undefined;
@@ -464,7 +478,7 @@ export class DatabaseStorage implements IStorage {
   async createUserStoreAssignment(assignment: InsertUserStoreAssignment): Promise<UserStoreAssignment> {
     const [result] = await db
       .insert(userStoreAssignments)
-      .values(assignment as any)
+      .values(assignment as typeof userStoreAssignments.$inferInsert)
       .returning();
     return result;
   }
@@ -529,7 +543,7 @@ export class DatabaseStorage implements IStorage {
   async createShopifyProduct(product: InsertShopifyProduct): Promise<ShopifyProduct> {
     const [result] = await db
       .insert(shopifyProducts)
-      .values(product as any)
+      .values(product as typeof shopifyProducts.$inferInsert)
       .returning();
     return result;
   }
@@ -537,26 +551,36 @@ export class DatabaseStorage implements IStorage {
   async updateShopifyProduct(id: string, product: Partial<InsertShopifyProduct>): Promise<ShopifyProduct | undefined> {
     const [result] = await db
       .update(shopifyProducts)
-      .set({ ...product, syncedAt: new Date() } as any)
+      .set({ ...product, syncedAt: new Date() } as Partial<typeof shopifyProducts.$inferInsert>)
       .where(eq(shopifyProducts.id, id))
       .returning();
     return result || undefined;
   }
 
   async upsertShopifyProduct(storeId: string, shopifyProductId: string, product: Omit<InsertShopifyProduct, 'storeId' | 'shopifyProductId'>): Promise<{ product: ShopifyProduct; created: boolean }> {
-    const existing = await this.getShopifyProductByShopifyId(storeId, shopifyProductId);
-    
-    if (existing) {
-      const updated = await this.updateShopifyProduct(existing.id, product);
-      return { product: updated!, created: false };
-    } else {
-      const newProduct = await this.createShopifyProduct({
-        storeId,
-        shopifyProductId,
-        ...product,
-      } as InsertShopifyProduct);
-      return { product: newProduct, created: true };
-    }
+    const now = new Date();
+    const values = {
+      storeId,
+      shopifyProductId,
+      ...product,
+      syncedAt: now,
+      createdAt: now,
+    };
+
+    const [result] = await db
+      .insert(shopifyProducts)
+      .values(values as typeof shopifyProducts.$inferInsert)
+      .onConflictDoUpdate({
+        target: [shopifyProducts.storeId, shopifyProducts.shopifyProductId],
+        set: {
+          ...product,
+          syncedAt: now,
+        } as Partial<typeof shopifyProducts.$inferInsert>,
+      })
+      .returning();
+
+    const created = result.createdAt.getTime() === now.getTime();
+    return { product: result, created };
   }
 
   async deleteShopifyProduct(id: string): Promise<boolean> {
@@ -614,7 +638,7 @@ export class DatabaseStorage implements IStorage {
   async addUserProductFavorite(userId: string, productId: string): Promise<UserProductFavorite> {
     const [result] = await db
       .insert(userProductFavorites)
-      .values({ userId, productId } as any)
+      .values({ userId, productId } as typeof userProductFavorites.$inferInsert)
       .onConflictDoNothing()
       .returning();
     
@@ -649,7 +673,7 @@ export class DatabaseStorage implements IStorage {
   async createStoreSyncLog(log: InsertStoreSyncLog): Promise<StoreSyncLog> {
     const [result] = await db
       .insert(storeSyncLogs)
-      .values(log as any)
+      .values(log as typeof storeSyncLogs.$inferInsert)
       .returning();
     return result;
   }
@@ -657,7 +681,7 @@ export class DatabaseStorage implements IStorage {
   async updateStoreSyncLog(id: string, log: Partial<InsertStoreSyncLog>): Promise<StoreSyncLog | undefined> {
     const [result] = await db
       .update(storeSyncLogs)
-      .set(log as any)
+      .set(log as Partial<typeof storeSyncLogs.$inferInsert>)
       .where(eq(storeSyncLogs.id, id))
       .returning();
     return result || undefined;

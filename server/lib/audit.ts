@@ -1,8 +1,6 @@
 import { db } from "../db";
+import { auditLogs } from "@shared/schema";
 import type { Request } from "express";
-
-// Note: auditLogs table will be defined in shared/schema.ts
-// Import will be added after schema update in Step 2
 
 type AuditEventType = 
   | "access_denied"       // 403 - User has store context but tried to access different store's data
@@ -77,10 +75,6 @@ async function insertAuditLog(logData: {
   details: Record<string, any> | null;
 }): Promise<void> {
   try {
-    // Dynamic import to avoid circular dependency issues
-    // auditLogs table will be added in Step 2
-    const { auditLogs } = await import("@shared/schema");
-    
     await db.insert(auditLogs).values({
       storeId: logData.storeId,
       attemptedStoreId: logData.attemptedStoreId,

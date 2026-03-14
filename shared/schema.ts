@@ -539,7 +539,11 @@ export const analyticsEvents = pgTable("analytics_events", {
   variantId: varchar("variant_id"),
   metadata: jsonb("metadata").$type<Record<string, any>>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  pageIdIdx: index("analytics_events_page_id_idx").on(table.pageId),
+  storeIdIdx: index("analytics_events_store_id_idx").on(table.storeId),
+  createdAtIdx: index("analytics_events_created_at_idx").on(table.createdAt),
+}));
 
 // A/B Tests table
 export const abTests = pgTable("ab_tests", {

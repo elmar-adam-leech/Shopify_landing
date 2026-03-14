@@ -126,9 +126,22 @@ The core entities are:
 - Analytics tracking includes variant ID for performance measurement
 
 ### Performance Optimizations
+- **Analytics SQL Aggregation**: `getPageAnalyticsSummary` uses SQL `COUNT/GROUP BY` instead of loading all events into memory
+- **Product Upsert**: `upsertShopifyProduct` uses `INSERT...ON CONFLICT DO UPDATE` (single query) instead of select-then-insert
+- **Sync Deletion**: Product sync uses DB `NOT IN` set-difference query instead of fetching all products into memory
+- **Database Indexes**: Analytics events table has indexes on `pageId`, `storeId`, and `createdAt` for fast queries
+- **Store Context Caching**: `resolveStoreContext` middleware caches lookups in-memory with 30s TTL to avoid DB hits on every request
+- **Route-Level Code Splitting**: All pages use `React.lazy()` with `Suspense` for smaller initial bundle
+- **Component Memoization**: `SortableBlock` wrapped in `React.memo`; sortable items array memoized with `useMemo`
 - Public cached API endpoint (`/api/public/pages/:id`) with 5-minute cache and stale-while-revalidate
 - Image blocks use lazy loading (`loading="lazy"`, `decoding="async"`)
-- TanStack Query with 5-minute staleTime for client-side caching
+- TanStack Query with 30-second staleTime for client-side caching
+
+### Security
+- **Store Ownership Validation**: Shared `validateStoreOwnership()` helper in `server/lib/store-ownership.ts` enforces cross-tenant isolation
+- **Audit Logging**: Security events (cross-tenant access, unauthorized requests) logged to `audit_logs` table via `server/lib/audit.ts`
+- **Tracking Number Expiry**: `/api/tracking-numbers/expire` requires store context authentication
+- **Twilio Routes**: Store context validated via typed `req.storeContext` (no `as any` casts)
 
 ### Key Design Patterns
 - **Monorepo Structure**: Client (`/client`), server (`/server`), and shared code (`/shared`)

@@ -15,6 +15,30 @@ declare global {
   }
 }
 
+interface CachedStore {
+  storeId: string;
+  shop: string;
+  name: string;
+  timestamp: number;
+}
+
+const CACHE_TTL_MS = 30_000;
+const storeCache = new Map<string, CachedStore>();
+
+function getCachedStore(key: string): CachedStore | null {
+  const entry = storeCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+    storeCache.delete(key);
+    return null;
+  }
+  return entry;
+}
+
+function setCachedStore(key: string, context: Omit<CachedStore, "timestamp">) {
+  storeCache.set(key, { ...context, timestamp: Date.now() });
+}
+
 export async function resolveStoreContext(req: Request, res: Response, next: NextFunction) {
   const shop = req.query.shop as string | undefined;
   const storeId = req.query.storeId as string | undefined;
@@ -24,6 +48,18 @@ export async function resolveStoreContext(req: Request, res: Response, next: Nex
   }
 
   try {
+    const cacheKey = storeId ? `id:${storeId}` : `shop:${shop}`;
+    const cached = getCachedStore(cacheKey);
+
+    if (cached) {
+      req.storeContext = {
+        storeId: cached.storeId,
+        shop: cached.shop,
+        name: cached.name,
+      };
+      return next();
+    }
+
     let store = null;
 
     if (storeId) {
@@ -43,11 +79,14 @@ export async function resolveStoreContext(req: Request, res: Response, next: Nex
     }
 
     if (store && store.installState === "installed" && store.isActive) {
-      req.storeContext = {
+      const context = {
         storeId: store.id,
         shop: store.shopifyDomain,
         name: store.name,
       };
+      req.storeContext = context;
+      setCachedStore(`id:${store.id}`, context);
+      setCachedStore(`shop:${store.shopifyDomain}`, context);
     }
   } catch (error) {
     console.error("Error resolving store context:", error);

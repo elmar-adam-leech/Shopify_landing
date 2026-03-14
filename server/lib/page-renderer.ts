@@ -90,7 +90,7 @@ pintrk('page');
 }
 
 function generateHydrationScript(store: Store, page: Page): string {
-  const storefrontDomain = store.shopifyDomain.replace(".myshopify.com", ".myshopify.com");
+  const storefrontDomain = store.shopifyDomain;
   const storefrontToken = store.storefrontAccessToken || "";
   
   return `

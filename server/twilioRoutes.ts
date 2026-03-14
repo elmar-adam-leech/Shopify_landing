@@ -17,28 +17,7 @@ import { createShopifyCustomer, isShopifyConfigured } from "./lib/shopify";
 import { db } from "./db";
 import { pages } from "@shared/schema";
 import { eq } from "drizzle-orm";
-import { logSecurityEvent } from "./lib/audit";
-
-function validateStoreOwnership(req: Request, targetStoreId: string): { valid: boolean; error?: string; statusCode?: number } {
-  const contextStoreId = req.storeContext?.storeId;
-  
-  if (!contextStoreId) {
-    return { valid: false, error: "Store context required", statusCode: 401 };
-  }
-  
-  if (contextStoreId !== targetStoreId) {
-    logSecurityEvent({
-      eventType: "access_denied",
-      req,
-      storeId: contextStoreId,
-      attemptedStoreId: targetStoreId,
-      details: { reason: "cross_tenant_access_attempt", route: "twilio" },
-    });
-    return { valid: false, error: "Access denied - not authorized for this store", statusCode: 403 };
-  }
-  
-  return { valid: true };
-}
+import { validateStoreOwnership } from "./lib/store-ownership";
 
 export function registerTwilioRoutes(app: Express) {
   // DNI (Dynamic Number Insertion) - Get tracking number for GCLID (requires store ownership)
@@ -313,10 +292,13 @@ export function registerTwilioRoutes(app: Express) {
     }
   });
 
-  // Expire old number assignments manually
-  app.post("/api/tracking-numbers/expire", async (_req: Request, res: Response) => {
+  app.post("/api/tracking-numbers/expire", async (req: Request, res: Response) => {
+    const storeId = req.storeContext?.storeId;
+    if (!storeId) {
+      return res.status(401).json({ error: "Store context required" });
+    }
     try {
-      await expireOldAssignments();
+      await expireOldAssignments(storeId);
       res.json({ success: true, message: "Expired old assignments" });
     } catch (error) {
       console.error("Error expiring assignments:", error);
@@ -417,12 +399,11 @@ export function registerTwilioRoutes(app: Express) {
   // Search available Twilio phone numbers
   app.get("/api/twilio/available-numbers", async (req: Request, res: Response) => {
     try {
-      const storeId = (req as any).storeContext?.storeId;
+      const storeId = req.storeContext?.storeId;
       if (!storeId) {
         return res.status(401).json({ error: "Store context required" });
       }
 
-      // Try store-specific credentials first, fall back to app-level
       const storeCredentials = await getStoreCredentials(storeId);
       const client = getTwilioClient(storeCredentials || undefined);
 
@@ -460,7 +441,7 @@ export function registerTwilioRoutes(app: Express) {
   // Purchase a Twilio phone number
   app.post("/api/twilio/purchase-number", async (req: Request, res: Response) => {
     try {
-      const storeId = (req as any).storeContext?.storeId;
+      const storeId = req.storeContext?.storeId;
       if (!storeId) {
         return res.status(401).json({ error: "Store context required" });
       }

@@ -6,17 +6,26 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/lib/theme";
 import { StoreProvider } from "@/lib/store-context";
 import { ShopifyProviders } from "@/components/providers/AppBridgeProvider";
-import PagesList from "@/pages/PagesList";
-import Editor from "@/pages/Editor";
-import Preview from "@/pages/Preview";
-import Analytics from "@/pages/Analytics";
-import ABTests from "@/pages/ABTests";
-import ABTestResults from "@/pages/ABTestResults";
-import Stores from "@/pages/Stores";
-import AdminLogin from "@/pages/AdminLogin";
-import AdminDashboard from "@/pages/AdminDashboard";
-import NotFound from "@/pages/not-found";
-import { useState, useCallback } from "react";
+import { lazy, Suspense, useState, useCallback } from "react";
+
+const PagesList = lazy(() => import("@/pages/PagesList"));
+const Editor = lazy(() => import("@/pages/Editor"));
+const Preview = lazy(() => import("@/pages/Preview"));
+const Analytics = lazy(() => import("@/pages/Analytics"));
+const ABTests = lazy(() => import("@/pages/ABTests"));
+const ABTestResults = lazy(() => import("@/pages/ABTestResults"));
+const Stores = lazy(() => import("@/pages/Stores"));
+const AdminLogin = lazy(() => import("@/pages/AdminLogin"));
+const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
+const NotFound = lazy(() => import("@/pages/not-found"));
+
+function PageFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="animate-pulse text-muted-foreground">Loading...</div>
+    </div>
+  );
+}
 
 function isShopifyEmbedded(): boolean {
   const params = new URLSearchParams(window.location.search);
@@ -25,16 +34,18 @@ function isShopifyEmbedded(): boolean {
 
 function ShopifyRouter() {
   return (
-    <Switch>
-      <Route path="/" component={PagesList} />
-      <Route path="/stores" component={Stores} />
-      <Route path="/editor/:id" component={Editor} />
-      <Route path="/preview/:id" component={Preview} />
-      <Route path="/analytics/:id" component={Analytics} />
-      <Route path="/ab-tests" component={ABTests} />
-      <Route path="/ab-tests/:id" component={ABTestResults} />
-      <Route component={NotFound} />
-    </Switch>
+    <Suspense fallback={<PageFallback />}>
+      <Switch>
+        <Route path="/" component={PagesList} />
+        <Route path="/stores" component={Stores} />
+        <Route path="/editor/:id" component={Editor} />
+        <Route path="/preview/:id" component={Preview} />
+        <Route path="/analytics/:id" component={Analytics} />
+        <Route path="/ab-tests" component={ABTests} />
+        <Route path="/ab-tests/:id" component={ABTestResults} />
+        <Route component={NotFound} />
+      </Switch>
+    </Suspense>
   );
 }
 
@@ -72,11 +83,17 @@ function AdminApp() {
   }
 
   if (!authenticated) {
-    return <AdminLogin onLoginSuccess={handleLoginSuccess} />;
+    return (
+      <Suspense fallback={<PageFallback />}>
+        <AdminLogin onLoginSuccess={handleLoginSuccess} />
+      </Suspense>
+    );
   }
 
   return (
-    <AdminDashboard onLogout={handleLogout} />
+    <Suspense fallback={<PageFallback />}>
+      <AdminDashboard onLogout={handleLogout} />
+    </Suspense>
   );
 }
 

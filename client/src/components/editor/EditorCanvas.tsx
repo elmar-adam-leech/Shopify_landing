@@ -6,6 +6,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, Settings, Trash2, Copy } from "lucide-react";
+import { memo, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Block } from "@shared/schema";
@@ -62,7 +63,7 @@ function getBlockPreview(block: Block) {
   }
 }
 
-function SortableBlock({
+const SortableBlock = memo(function SortableBlock({
   block,
   isSelected,
   onSelect,
@@ -155,7 +156,7 @@ function SortableBlock({
       </div>
     </div>
   );
-}
+});
 
 export function EditorCanvas({
   blocks,
@@ -168,6 +169,8 @@ export function EditorCanvas({
   const { setNodeRef, isOver } = useDroppable({
     id: "editor-canvas",
   });
+
+  const sortableItems = useMemo(() => blocks.map((b) => b.id), [blocks]);
 
   return (
     <ScrollArea className="flex-1 h-full">
@@ -197,7 +200,7 @@ export function EditorCanvas({
             </div>
           ) : (
             <SortableContext
-              items={blocks.map((b) => b.id)}
+              items={sortableItems}
               strategy={verticalListSortingStrategy}
             >
               <div className="space-y-6 py-4">

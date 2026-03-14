@@ -1,6 +1,6 @@
 import { db } from "../db";
-import { stores, storeSyncLogs, shopifyProducts } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { stores, storeSyncLogs, shopifyProducts as shopifyProductsTable } from "@shared/schema";
+import { eq, and, notInArray } from "drizzle-orm";
 import { fetchAllShopifyProducts, convertShopifyProduct, type ShopifyConfig } from "./shopify";
 import { storage } from "../storage";
 
@@ -86,15 +86,26 @@ export async function syncProductsForStore(
       }
     }
     
-    const existingProducts = await storage.getShopifyProducts(storeId, { limit: 10000, offset: 0 });
-    const syncedIds = new Set(shopifyProducts.map(p => p.id));
-    
+    const syncedShopifyIds = shopifyProducts.map(p => p.id);
+
     let productsRemoved = 0;
-    for (const existing of existingProducts) {
-      if (!syncedIds.has(existing.shopifyProductId)) {
-        await storage.deleteShopifyProduct(existing.id);
-        productsRemoved++;
-      }
+    if (syncedShopifyIds.length > 0) {
+      const staleProducts = await db
+        .delete(shopifyProductsTable)
+        .where(
+          and(
+            eq(shopifyProductsTable.storeId, storeId),
+            notInArray(shopifyProductsTable.shopifyProductId, syncedShopifyIds)
+          )
+        )
+        .returning();
+      productsRemoved = staleProducts.length;
+    } else {
+      const staleProducts = await db
+        .delete(shopifyProductsTable)
+        .where(eq(shopifyProductsTable.storeId, storeId))
+        .returning();
+      productsRemoved = staleProducts.length;
     }
     
     await storage.updateStoreSyncLog(syncLog.id, {
