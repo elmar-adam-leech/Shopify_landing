@@ -58,7 +58,7 @@ export async function validateUserAccess(
     return { valid: false, error: "Store context required", statusCode: 401 };
   }
 
-  const isAdmin = !!(req.session as { adminRole?: string })?.adminRole;
+  const isAdmin = !!req.session?.adminRole;
   if (isAdmin) {
     return { valid: true };
   }

@@ -353,7 +353,8 @@ export function createPageRoutes(): Router {
                   `Webhook to ${result.value.name} returned status ${result.value.status}`
                 );
               } else {
-                console.warn(`Webhook delivery failed: ${result.reason}`);
+                const error = result.reason instanceof Error ? result.reason.message : String(result.reason);
+                console.warn(`Webhook delivery failed: ${error}`);
               }
             }
           });
