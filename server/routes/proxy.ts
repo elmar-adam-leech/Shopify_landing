@@ -1,7 +1,4 @@
 import { Router, type Request, type Response } from "express";
-import { db } from "../db";
-import { stores, pages } from "@shared/schema";
-import { eq } from "drizzle-orm";
 import { storage } from "../storage";
 import { logSecurityEvent } from "../lib/audit";
 import { appProxyMiddleware } from "../lib/proxy-signature";
@@ -26,11 +23,7 @@ export function createProxyRoutes(): Router {
         return res.status(400).send(renderErrorPage("Missing shop parameter"));
       }
 
-      const [store] = await db
-        .select()
-        .from(stores)
-        .where(eq(stores.shopifyDomain, shopDomain))
-        .limit(1);
+      const store = await storage.getStoreByDomain(shopDomain);
 
       if (!store) {
         logSecurityEvent({
@@ -87,12 +80,7 @@ export function createProxyRoutes(): Router {
     try {
       const { slug } = req.params;
 
-      const allPages = await db
-        .select()
-        .from(pages)
-        .where(eq(pages.slug, slug))
-        .limit(1);
-      const page = allPages.length > 0 ? allPages[0] : null;
+      const page = await storage.getPageBySlug(slug);
 
       if (!page) {
         return res.status(404).send(render404Page());
@@ -104,12 +92,7 @@ export function createProxyRoutes(): Router {
 
       let store = null;
       if (page.storeId) {
-        const [foundStore] = await db
-          .select()
-          .from(stores)
-          .where(eq(stores.id, page.storeId))
-          .limit(1);
-        store = foundStore;
+        store = await storage.getStore(page.storeId) || null;
       }
 
       const storeInfo = store
@@ -151,14 +134,7 @@ export function createProxyRoutes(): Router {
       let page = await storage.getPage(id);
 
       if (!page) {
-        const allPages = await db
-          .select()
-          .from(pages)
-          .where(eq(pages.slug, id))
-          .limit(1);
-        if (allPages.length > 0) {
-          page = allPages[0];
-        }
+        page = await storage.getPageBySlug(id);
       }
 
       if (!page) {
@@ -179,12 +155,7 @@ export function createProxyRoutes(): Router {
 
       let store = null;
       if (page.storeId) {
-        const [foundStore] = await db
-          .select()
-          .from(stores)
-          .where(eq(stores.id, page.storeId))
-          .limit(1);
-        store = foundStore;
+        store = await storage.getStore(page.storeId) || null;
       }
 
       if (shopParam && store && store.shopifyDomain !== shopParam) {
@@ -235,11 +206,7 @@ export function createProxyRoutes(): Router {
         return res.status(400).json({ error: "Missing shop parameter" });
       }
 
-      const [store] = await db
-        .select()
-        .from(stores)
-        .where(eq(stores.shopifyDomain, shopDomain))
-        .limit(1);
+      const store = await storage.getStoreByDomain(shopDomain);
 
       if (!store) {
         return res.status(404).json({ error: "Store not found" });

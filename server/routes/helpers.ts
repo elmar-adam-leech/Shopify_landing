@@ -1,8 +1,9 @@
 import type { Request } from "express";
 import type { Page, FormSubmission, AbTest } from "@shared/schema";
-import { formSubmissions, analyticsEvents, userStoreAssignments } from "@shared/schema";
+import { formSubmissions, userStoreAssignments } from "@shared/schema";
 import { db } from "../db";
 import { eq, and } from "drizzle-orm";
+import { storage } from "../storage";
 import { logSecurityEvent } from "../lib/audit";
 import {
   getShopifyConfigForStore,
@@ -253,7 +254,7 @@ export async function processFormSubmissionCustomer(
 
   try {
     const utmParams = submission.utmParams || {};
-    await db.insert(analyticsEvents).values({
+    await storage.createAnalyticsEvent({
       storeId: page.storeId,
       pageId: page.id,
       eventType: "form_submission",

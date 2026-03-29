@@ -1,7 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { db } from "../db";
-import { stores, insertPageSchema, updatePageSchema, insertFormSubmissionSchema, type InsertPage, type UpdatePage, type InsertPageVersion, type InsertFormSubmission } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { insertPageSchema, updatePageSchema, insertFormSubmissionSchema, type InsertPage, type UpdatePage, type InsertPageVersion, type InsertFormSubmission } from "@shared/schema";
 import { z } from "zod";
 import dns from "dns/promises";
 import net from "net";
@@ -165,11 +163,7 @@ export function createPageRoutes(): Router {
 
       let storeInfo = null;
       if (page.storeId) {
-        const [store] = await db
-          .select()
-          .from(stores)
-          .where(eq(stores.id, page.storeId))
-          .limit(1);
+        const store = await storage.getStore(page.storeId);
         if (store) {
           storeInfo = {
             shopifyDomain: store.shopifyDomain,
@@ -213,11 +207,7 @@ export function createPageRoutes(): Router {
           .json({ error: "Page has no associated store" });
       }
 
-      const [store] = await db
-        .select()
-        .from(stores)
-        .where(eq(stores.id, page.storeId))
-        .limit(1);
+      const store = await storage.getStore(page.storeId);
       if (!store) {
         return res.status(404).json({ error: "Store not found" });
       }
@@ -438,19 +428,40 @@ export function createPageRoutes(): Router {
               const webhookLabel =
                 (webhook.name as string) || webhookUrl;
               if (result.status === "fulfilled" && result.value.ok) {
-                console.log(`Webhook sent to ${webhookLabel}`);
+                console.log(JSON.stringify({
+                  level: "info",
+                  event: "webhook_delivery_success",
+                  webhook: webhookLabel,
+                  url: webhookUrl,
+                  status: result.value.status,
+                  pageId,
+                  blockId,
+                }));
               } else if (result.status === "fulfilled") {
-                console.warn(
-                  `Webhook to ${webhookLabel} (${webhookUrl}) returned status ${result.value.status}`
-                );
+                console.error(JSON.stringify({
+                  level: "error",
+                  event: "webhook_delivery_failed",
+                  webhook: webhookLabel,
+                  url: webhookUrl,
+                  status: result.value.status,
+                  error: `HTTP ${result.value.status}`,
+                  pageId,
+                  blockId,
+                }));
               } else {
-                const error =
+                const errorMsg =
                   result.reason instanceof Error
                     ? result.reason.message
                     : String(result.reason);
-                console.warn(
-                  `Webhook to ${webhookLabel} (${webhookUrl}) delivery failed: ${error}`
-                );
+                console.error(JSON.stringify({
+                  level: "error",
+                  event: "webhook_delivery_error",
+                  webhook: webhookLabel,
+                  url: webhookUrl,
+                  error: errorMsg,
+                  pageId,
+                  blockId,
+                }));
               }
             }
           });
@@ -523,11 +534,7 @@ export function createPageRoutes(): Router {
         storefrontAccessToken: null as string | null,
       };
       if (page.storeId) {
-        const [store] = await db
-          .select()
-          .from(stores)
-          .where(eq(stores.id, page.storeId))
-          .limit(1);
+        const store = await storage.getStore(page.storeId);
         if (store) {
           storeInfo = {
             id: store.id,

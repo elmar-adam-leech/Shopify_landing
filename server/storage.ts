@@ -1,5 +1,6 @@
 import { 
   users, 
+  stores,
   pages,
   formSubmissions,
   pageVersions,
@@ -12,6 +13,8 @@ import {
   storeSyncLogs,
   type User, 
   type InsertUser,
+  type Store,
+  type InsertStore,
   type Page,
   type InsertPage,
   type UpdatePage,
@@ -43,6 +46,15 @@ const FORM_PII_FIELDS = ["phone", "email", "first_name", "last_name", "firstName
 
 /** Storage interface defining all CRUD operations for the application. */
 export interface IStorage {
+  // Stores
+  getAllStores(options?: { limit?: number; offset?: number }): Promise<Store[]>;
+  countStores(): Promise<number>;
+  getStore(id: string): Promise<Store | undefined>;
+  getStoreByDomain(shopifyDomain: string): Promise<Store | undefined>;
+  createStore(store: InsertStore): Promise<Store>;
+  updateStore(id: string, data: Partial<InsertStore>): Promise<Store | undefined>;
+  deleteStore(id: string): Promise<Store | undefined>;
+
   // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
@@ -128,6 +140,50 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  // Stores
+  async getAllStores(options?: { limit?: number; offset?: number }): Promise<Store[]> {
+    const limit = options?.limit || 50;
+    const offset = options?.offset || 0;
+    return db.select().from(stores).limit(limit).offset(offset);
+  }
+
+  async countStores(): Promise<number> {
+    const [result] = await db.select({ count: count() }).from(stores);
+    return result?.count || 0;
+  }
+
+  async getStore(id: string): Promise<Store | undefined> {
+    const [store] = await db.select().from(stores).where(eq(stores.id, id));
+    return store || undefined;
+  }
+
+  async getStoreByDomain(shopifyDomain: string): Promise<Store | undefined> {
+    const [store] = await db.select().from(stores).where(eq(stores.shopifyDomain, shopifyDomain));
+    return store || undefined;
+  }
+
+  async createStore(insertStore: InsertStore): Promise<Store> {
+    const [store] = await db.insert(stores).values(insertStore).returning();
+    return store;
+  }
+
+  async updateStore(id: string, data: Partial<InsertStore>): Promise<Store | undefined> {
+    const [store] = await db
+      .update(stores)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(stores.id, id))
+      .returning();
+    return store || undefined;
+  }
+
+  async deleteStore(id: string): Promise<Store | undefined> {
+    const [store] = await db
+      .delete(stores)
+      .where(eq(stores.id, id))
+      .returning();
+    return store || undefined;
+  }
+
   // Users
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));

@@ -261,7 +261,13 @@ export const blockVariantSchema = z.object({
 
 export type BlockVariant = z.infer<typeof blockVariantSchema>;
 
-// Positioning schema (legacy, kept for backwards compatibility)
+/**
+ * @deprecated Legacy positioning schema from the freeform layout era.
+ * The application now uses flow-based layouts exclusively. This schema is
+ * retained only for backwards compatibility with existing persisted data.
+ * Do NOT use for new features. When a migration strategy is in place,
+ * remove this schema and the corresponding `position` field on `blockSchema`.
+ */
 export const blockPositionSchema = z.object({
   x: z.number().default(0),
   y: z.number().default(0),
@@ -269,7 +275,6 @@ export const blockPositionSchema = z.object({
   height: z.number().default(100),
   zIndex: z.number().default(1),
   locked: z.boolean().default(false),
-  // Responsive breakpoint positions (optional overrides)
   tablet: z.object({
     x: z.number().optional(),
     y: z.number().optional(),
@@ -284,6 +289,7 @@ export const blockPositionSchema = z.object({
   }).optional(),
 });
 
+/** @deprecated See {@link blockPositionSchema}. */
 export type BlockPosition = z.infer<typeof blockPositionSchema>;
 
 // Column schema for column layouts
@@ -357,7 +363,7 @@ export const blockSchema = z.object({
   visibilityRules: visibilityRulesSchema.optional(),
   // Section ID this block belongs to (optional, for backward compatibility)
   sectionId: z.string().optional(),
-  // Positioning (legacy, kept for backwards compatibility)
+  /** @deprecated Legacy freeform positioning — see {@link blockPositionSchema}. */
   position: blockPositionSchema.optional(),
 });
 

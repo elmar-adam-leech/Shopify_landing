@@ -1,5 +1,6 @@
 import type { Request } from "express";
 import type { Block, Page, PixelSettings } from "@shared/schema";
+import { escapeHtml, escapeJs } from "@shared/html-utils";
 
 interface Store {
   id: string;
@@ -10,26 +11,6 @@ interface Store {
 
 interface RenderOptions {
   useLiquidWrapper?: boolean;
-}
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function escapeJs(str: string): string {
-  return str
-    .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"')
-    .replace(/'/g, "\\'")
-    .replace(/\n/g, "\\n")
-    .replace(/\r/g, "\\r")
-    .replace(/</g, "\\x3c")
-    .replace(/>/g, "\\x3e");
 }
 
 function generatePixelScripts(pixels: PixelSettings | undefined): string {

@@ -1,5 +1,6 @@
 import type { PixelSettings } from "@shared/schema";
 import { getStoredUTMParams } from "./utm";
+import { escapeHtml } from "@shared/html-utils";
 
 export type PixelEventName = 
   | "PageView"
@@ -276,16 +277,6 @@ export function fireViewContentEvent(
   };
 
   firePixelEvent("ViewContent", eventData, pixelSettings);
-}
-
-/** Escapes HTML special characters to prevent XSS in template literals. */
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
 }
 
 /** Strips non-alphanumeric characters (except dashes, underscores, slashes) and escapes the result for safe embedding in HTML script tags. */

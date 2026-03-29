@@ -1,7 +1,4 @@
 import { Router } from "express";
-import { db } from "../db";
-import { stores } from "@shared/schema";
-import { eq } from "drizzle-orm";
 import { storage } from "../storage";
 import { validateStoreOwnership } from "../lib/store-ownership";
 import { getShopifyConfigForStore } from "../lib/shopify";
@@ -241,10 +238,7 @@ export function createProductRoutes(): Router {
         return res.status(400).json({ error: "Invalid sync schedule" });
       }
 
-      await db
-        .update(stores)
-        .set({ syncSchedule, updatedAt: new Date() })
-        .where(eq(stores.id, storeId));
+      await storage.updateStore(storeId, { syncSchedule: syncSchedule as "manual" | "hourly" | "daily" | "weekly" });
 
       res.json({
         message: "Sync settings updated",

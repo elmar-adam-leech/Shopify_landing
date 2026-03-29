@@ -1,7 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { db } from "../db";
-import { stores, pages } from "@shared/schema";
-import { eq, desc, count } from "drizzle-orm";
+import { storage } from "../storage";
 import { requireAdmin } from "../admin-auth";
 
 export function createAdminRoutes(): Router {
@@ -12,11 +10,11 @@ export function createAdminRoutes(): Router {
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
       const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
 
-      const [allStores, [countResult]] = await Promise.all([
-        db.select().from(stores).limit(limit).offset(offset),
-        db.select({ count: count() }).from(stores),
+      const [allStores, total] = await Promise.all([
+        storage.getAllStores({ limit, offset }),
+        storage.countStores(),
       ]);
-      res.json({ data: allStores, total: countResult?.count || 0, limit, offset });
+      res.json({ data: allStores, total, limit, offset });
     } catch (error) {
       console.error("Admin stores error:", error);
       res.status(500).json({ error: "Failed to fetch stores" });
@@ -29,11 +27,11 @@ export function createAdminRoutes(): Router {
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
       const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
 
-      const [storePages, [countResult]] = await Promise.all([
-        db.select().from(pages).where(eq(pages.storeId, storeId)).orderBy(desc(pages.updatedAt)).limit(limit).offset(offset),
-        db.select({ count: count() }).from(pages).where(eq(pages.storeId, storeId)),
+      const [storePages, total] = await Promise.all([
+        storage.getAllPages(storeId, { limit, offset }),
+        storage.countPages(storeId),
       ]);
-      res.json({ data: storePages, total: countResult?.count || 0, limit, offset });
+      res.json({ data: storePages, total, limit, offset });
     } catch (error) {
       console.error("Admin pages error:", error);
       res.status(500).json({ error: "Failed to fetch pages" });

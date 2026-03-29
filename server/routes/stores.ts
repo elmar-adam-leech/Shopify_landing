@@ -1,8 +1,6 @@
 import { Router } from "express";
-import { db } from "../db";
-import { stores, type UpdateStoreValidation } from "@shared/schema";
+import { type UpdateStoreValidation } from "@shared/schema";
 import { insertStoreSchema, updateStoreSchema } from "@shared/schema";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { storage } from "../storage";
 import { validateStoreOwnership } from "../lib/store-ownership";
@@ -23,11 +21,7 @@ export function createStoreRoutes(): Router {
           });
       }
 
-      const [store] = await db
-        .select()
-        .from(stores)
-        .where(eq(stores.id, storeId))
-        .limit(1);
+      const store = await storage.getStore(storeId);
       if (!store) {
         return res.json([]);
       }
@@ -58,11 +52,7 @@ export function createStoreRoutes(): Router {
           .json({ error: ownership.error });
       }
 
-      const [store] = await db
-        .select()
-        .from(stores)
-        .where(eq(stores.id, id))
-        .limit(1);
+      const store = await storage.getStore(id);
       if (!store) {
         return res.status(404).json({ error: "Store not found" });
       }
@@ -93,7 +83,7 @@ export function createStoreRoutes(): Router {
       }
 
       const validatedData = insertStoreSchema.parse(req.body);
-      const [store] = await db.insert(stores).values(validatedData).returning();
+      const store = await storage.createStore(validatedData);
       res.status(201).json(store);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -126,11 +116,7 @@ export function createStoreRoutes(): Router {
         }
       }
 
-      const [updated] = await db
-        .update(stores)
-        .set({ ...updateData, updatedAt: new Date() })
-        .where(eq(stores.id, id))
-        .returning();
+      const updated = await storage.updateStore(id, updateData);
 
       if (!updated) {
         return res.status(404).json({ error: "Store not found" });
@@ -158,10 +144,7 @@ export function createStoreRoutes(): Router {
           .json({ error: ownership.error });
       }
 
-      const [deleted] = await db
-        .delete(stores)
-        .where(eq(stores.id, id))
-        .returning();
+      const deleted = await storage.deleteStore(id);
       if (!deleted) {
         return res.status(404).json({ error: "Store not found" });
       }

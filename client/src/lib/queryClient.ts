@@ -1,4 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { getSessionToken } from "./session-token";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -14,19 +15,6 @@ function getShopContext() {
     host: params.get("host"),
     isEmbedded: !!params.get("shop") && !!params.get("host"),
   };
-}
-
-async function getSessionToken(): Promise<string | null> {
-  const app = (window as any).__SHOPIFY_APP_BRIDGE__;
-  if (!app) return null;
-  
-  try {
-    const { getSessionToken } = await import("@shopify/app-bridge/utilities");
-    return await getSessionToken(app);
-  } catch (error) {
-    console.error("[QueryClient] Failed to get session token:", error);
-    return null;
-  }
 }
 
 export async function authenticatedFetch(url: string, options: RequestInit = {}): Promise<Response> {

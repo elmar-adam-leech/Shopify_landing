@@ -191,9 +191,6 @@ async function findExistingCustomerByPhone(
   }
 }
 
-export function isShopifyConfigured(): boolean {
-  return getShopifyConfig() !== null;
-}
 
 // ============================================================================
 // Product Sync via GraphQL Admin API

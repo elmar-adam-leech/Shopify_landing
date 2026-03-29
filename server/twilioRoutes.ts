@@ -14,10 +14,9 @@ import {
   getTwilioClient,
   getStoreCredentials,
 } from "./lib/twilio";
-import { createShopifyCustomer, isShopifyConfigured } from "./lib/shopify";
-import { db } from "./db";
-import { pages } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { createShopifyCustomer } from "./lib/shopify";
+import { isShopifyConfigured } from "./shopify";
+import { storage } from "./storage";
 import { validateStoreOwnership } from "./lib/store-ownership";
 
 async function validateTwilioWebhook(req: Request, res: Response, next: NextFunction) {
@@ -137,14 +136,9 @@ export function registerTwilioRoutes(app: Express) {
       // Build customer tags including source information
       const customerTags: string[] = ["phone-call", "twilio-lead"];
       
-      // Get page info for source tagging if we have a storeId
       if (storeId) {
-        const [storePage] = await db
-          .select()
-          .from(pages)
-          .where(eq(pages.storeId, storeId))
-          .limit(1);
-        
+        const storePages = await storage.getAllPages(storeId, { limit: 1 });
+        const storePage = storePages[0];
         if (storePage) {
           customerTags.push(`source:${storePage.slug}`);
           customerTags.push(`page:${storePage.title}`);

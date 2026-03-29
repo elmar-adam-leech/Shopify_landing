@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from "
 import { useQuery } from "@tanstack/react-query";
 import type { Store } from "@shared/schema";
 import { useAppBridge } from "@/components/providers/AppBridgeProvider";
+import { getSessionToken } from "./session-token";
 
 interface StoreContextType {
   stores: Store[];
@@ -56,18 +57,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const [needsAuth, setNeedsAuth] = useState(false);
 
-  // Helper to get session token from App Bridge
-  async function getSessionToken(): Promise<string | null> {
-    if (!app) return null;
-    
-    try {
-      const { getSessionToken: getBridgeToken } = await import("@shopify/app-bridge/utilities");
-      return await getBridgeToken(app);
-    } catch (error) {
-      console.error("[StoreContext] Failed to get session token:", error);
-      return null;
-    }
-  }
 
   // In embedded mode, fetch stores with shop context and session token
   // Wait for App Bridge to be ready before making authenticated requests
@@ -83,7 +72,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       
       // In embedded mode, get session token for authentication
       if (isEmbedded && app) {
-        const token = await getSessionToken();
+        const token = await getSessionToken(app);
         if (token) {
           headers["Authorization"] = `Bearer ${token}`;
         } else {
