@@ -87,8 +87,10 @@ export function createPageRoutes(): Router {
         return res.status(401).json({ error: storeCheck.error });
       }
 
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+      const parsedLimit = parseInt(req.query.limit as string);
+      const limit = Math.min(Math.max(Number.isFinite(parsedLimit) ? parsedLimit : 50, 1), 100);
+      const parsedOffset = parseInt(req.query.offset as string);
+      const offset = Math.max(Number.isFinite(parsedOffset) ? parsedOffset : 0, 0);
 
       const [lightweightPages, total] = await Promise.all([
         storage.getAllPagesLightweight(storeId, { limit, offset }),
@@ -487,8 +489,10 @@ export function createPageRoutes(): Router {
           .json({ error: access.error });
       }
 
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+      const parsedLimit = parseInt(req.query.limit as string);
+      const limit = Math.min(Math.max(Number.isFinite(parsedLimit) ? parsedLimit : 50, 1), 100);
+      const parsedOffset = parseInt(req.query.offset as string);
+      const offset = Math.max(Number.isFinite(parsedOffset) ? parsedOffset : 0, 0);
 
       const [submissions, total] = await Promise.all([
         storage.getFormSubmissions(pageId, req.storeContext?.storeId, { limit, offset }),

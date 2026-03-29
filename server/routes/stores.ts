@@ -6,6 +6,11 @@ import { storage } from "../storage";
 import { validateStoreOwnership } from "../lib/store-ownership";
 import { requireStoreContext, validateUserAccess } from "./helpers";
 
+const assignUserSchema = z.object({
+  userId: z.string().min(1, "userId is required"),
+  role: z.enum(["owner", "admin", "editor", "viewer"]).default("editor"),
+});
+
 export function createStoreRoutes(): Router {
   const router = Router();
 
@@ -204,19 +209,20 @@ export function createStoreRoutes(): Router {
           .json({ error: ownership.error });
       }
 
-      const { userId, role } = req.body;
-
-      if (!userId) {
-        return res.status(400).json({ error: "userId is required" });
-      }
+      const { userId, role } = assignUserSchema.parse(req.body);
 
       const assignment = await storage.createUserStoreAssignment({
         userId,
         storeId,
-        role: role || "editor",
+        role,
       });
       res.status(201).json(assignment);
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res
+          .status(400)
+          .json({ error: "Invalid data", details: error.errors });
+      }
       console.error("Error assigning user to store:", error);
       res.status(500).json({ error: "Failed to assign user to store" });
     }

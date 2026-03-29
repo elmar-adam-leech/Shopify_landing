@@ -1,9 +1,14 @@
 import { Router } from "express";
+import { z } from "zod";
 import { storage } from "../storage";
 import { validateStoreOwnership } from "../lib/store-ownership";
 import { getShopifyConfigForStore } from "../lib/shopify";
 import { syncProductsForStore } from "../lib/sync-service";
 import { validateUserAccess } from "./helpers";
+
+const syncSettingsSchema = z.object({
+  syncSchedule: z.enum(["manual", "hourly", "daily", "weekly"]),
+});
 
 export function createProductRoutes(): Router {
   const router = Router();
@@ -20,8 +25,10 @@ export function createProductRoutes(): Router {
       }
 
       const search = req.query.search as string | undefined;
-      const limit = parseInt(req.query.limit as string) || 50;
-      const offset = parseInt(req.query.offset as string) || 0;
+      const parsedLimit = parseInt(req.query.limit as string);
+      const limit = Math.min(Math.max(Number.isFinite(parsedLimit) ? parsedLimit : 50, 1), 100);
+      const parsedOffset = parseInt(req.query.offset as string);
+      const offset = Math.max(Number.isFinite(parsedOffset) ? parsedOffset : 0, 0);
       const status = req.query.status as string | undefined;
 
       const products = await storage.getShopifyProducts(storeId, {
@@ -191,8 +198,7 @@ export function createProductRoutes(): Router {
       const shopifyConfig = await getShopifyConfigForStore(storeId);
       if (!shopifyConfig || !shopifyConfig.accessToken) {
         return res.status(400).json({
-          error: "Shopify OAuth not connected",
-          message: "Please re-install the app to connect your Shopify store",
+          error: "Shopify OAuth not connected. Please re-install the app to connect your Shopify store.",
         });
       }
 
@@ -205,7 +211,7 @@ export function createProductRoutes(): Router {
       if (!result.success) {
         return res.status(500).json({
           error: "Sync failed",
-          message: result.error,
+          details: result.error,
         });
       }
 
@@ -224,8 +230,6 @@ export function createProductRoutes(): Router {
   router.patch("/api/stores/:storeId/sync/settings", async (req, res) => {
     try {
       const { storeId } = req.params;
-      const { syncSchedule } = req.body;
-
       const ownership = validateStoreOwnership(req, storeId);
       if (!ownership.valid) {
         return res
@@ -233,10 +237,7 @@ export function createProductRoutes(): Router {
           .json({ error: ownership.error });
       }
 
-      const validSchedules = ["manual", "hourly", "daily", "weekly"];
-      if (!validSchedules.includes(syncSchedule)) {
-        return res.status(400).json({ error: "Invalid sync schedule" });
-      }
+      const { syncSchedule } = syncSettingsSchema.parse(req.body);
 
       await storage.updateStore(storeId, { syncSchedule: syncSchedule as "manual" | "hourly" | "daily" | "weekly" });
 
@@ -245,6 +246,11 @@ export function createProductRoutes(): Router {
         syncSchedule,
       });
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res
+          .status(400)
+          .json({ error: "Invalid data", details: error.errors });
+      }
       console.error("Error updating sync settings:", error);
       res.status(500).json({ error: "Failed to update sync settings" });
     }

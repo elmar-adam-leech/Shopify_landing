@@ -490,7 +490,7 @@ export type UTMParams = z.infer<typeof utmParamsSchema>;
 export const formSubmissions = pgTable("form_submissions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   storeId: varchar("store_id").references(() => stores.id, { onDelete: "cascade" }),
-  pageId: varchar("page_id").notNull().references(() => pages.id),
+  pageId: varchar("page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
   blockId: text("block_id").notNull(),
   data: jsonb("data").$type<Record<string, string>>().notNull(),
   utmParams: jsonb("utm_params").$type<UTMParams>().default({}),

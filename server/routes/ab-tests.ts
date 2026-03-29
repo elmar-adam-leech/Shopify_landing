@@ -4,6 +4,24 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { validatePageAccess, validateAbTestOwnership } from "./helpers";
 
+const updateAbTestBodySchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().nullable().optional(),
+  status: z.enum(["draft", "running", "paused", "completed"]).optional(),
+  trafficSplitType: z.enum(["random", "source_based"]).optional(),
+  goalType: z.enum(["form_submission", "button_click", "page_view"]).optional(),
+  startDate: z.coerce.date().nullable().optional(),
+  endDate: z.coerce.date().nullable().optional(),
+}).strict();
+
+const updateAbTestVariantBodySchema = z.object({
+  pageId: z.string().optional(),
+  name: z.string().min(1).optional(),
+  trafficPercentage: z.number().int().min(0).max(100).optional(),
+  utmSourceMatch: z.string().nullable().optional(),
+  isControl: z.boolean().optional(),
+}).strict();
+
 export function createAbTestRoutes(): Router {
   const router = Router();
 
@@ -18,8 +36,10 @@ export function createAbTestRoutes(): Router {
           });
       }
 
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+      const parsedLimit = parseInt(req.query.limit as string);
+      const limit = Math.min(Math.max(Number.isFinite(parsedLimit) ? parsedLimit : 50, 1), 100);
+      const parsedOffset = parseInt(req.query.offset as string);
+      const offset = Math.max(Number.isFinite(parsedOffset) ? parsedOffset : 0, 0);
 
       const [tests, total] = await Promise.all([
         storage.getAllAbTests(storeId, { limit, offset }),
@@ -121,11 +141,17 @@ export function createAbTestRoutes(): Router {
           .json({ error: ownership.error });
       }
 
-      const { storeId, originalPageId, ...allowedUpdates } = req.body;
+      const { storeId, originalPageId, ...rawUpdates } = req.body;
+      const allowedUpdates = updateAbTestBodySchema.parse(rawUpdates);
 
       const test = await storage.updateAbTest(id, allowedUpdates);
       res.json(test);
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res
+          .status(400)
+          .json({ error: "Invalid data", details: error.errors });
+      }
       console.error("Error updating A/B test:", error);
       res.status(500).json({ error: "Failed to update A/B test" });
     }
@@ -255,7 +281,8 @@ export function createAbTestRoutes(): Router {
           .json({ error: "Access denied - store mismatch" });
       }
 
-      const { abTestId: _, ...updateData } = req.body;
+      const { abTestId: _, ...rawData } = req.body;
+      const updateData = updateAbTestVariantBodySchema.parse(rawData);
 
       if (updateData.pageId) {
         const variantPage = await storage.getPage(updateData.pageId);
@@ -275,6 +302,11 @@ export function createAbTestRoutes(): Router {
       }
       res.json(variant);
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res
+          .status(400)
+          .json({ error: "Invalid data", details: error.errors });
+      }
       console.error("Error updating variant:", error);
       res.status(500).json({ error: "Failed to update variant" });
     }

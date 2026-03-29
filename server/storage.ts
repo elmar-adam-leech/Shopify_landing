@@ -302,10 +302,15 @@ export class DatabaseStorage implements IStorage {
     const limit = options?.limit || 50;
     const offset = options?.offset || 0;
 
+    const conditions = [eq(formSubmissions.pageId, pageId)];
+    if (storeId) {
+      conditions.push(eq(formSubmissions.storeId, storeId));
+    }
+
     const results = await db
       .select()
       .from(formSubmissions)
-      .where(eq(formSubmissions.pageId, pageId))
+      .where(and(...conditions))
       .orderBy(desc(formSubmissions.submittedAt))
       .limit(limit)
       .offset(offset);
