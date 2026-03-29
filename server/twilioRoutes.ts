@@ -276,7 +276,8 @@ export function registerTwilioRoutes(app: Express) {
   
   // Test endpoint for simulating number assignment (development only)
   app.post("/api/test/assign-number", async (req: Request, res: Response) => {
-    if (isProduction) {
+    const devSecret = process.env.DEV_TEST_SECRET;
+    if (isProduction || !devSecret || req.headers["x-dev-secret"] !== devSecret) {
       return res.status(404).json({ error: "Not found" });
     }
     
@@ -299,7 +300,8 @@ export function registerTwilioRoutes(app: Express) {
 
   // Test endpoint for simulating incoming call webhook (development only)
   app.post("/api/test/incoming-call", async (req: Request, res: Response) => {
-    if (isProduction) {
+    const devSecret = process.env.DEV_TEST_SECRET;
+    if (isProduction || !devSecret || req.headers["x-dev-secret"] !== devSecret) {
       return res.status(404).json({ error: "Not found" });
     }
     
@@ -371,11 +373,16 @@ export function registerTwilioRoutes(app: Express) {
       process.env.REPLIT_URL ||
       `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
 
+    const escapedStoreId = storeId.replace(/[\\'"<>&]/g, function(c: string) {
+      const map: Record<string, string> = { '\\': '\\\\', "'": "\\'", '"': '\\"', '<': '\\x3C', '>': '\\x3E', '&': '\\x26' };
+      return map[c] || c;
+    });
+
     const snippet = `<!-- Dynamic Number Insertion Script -->
 <script>
 (function() {
   var API_URL = '${appUrl}/api/get-tracking-number';
-  var STORE_ID = '${storeId}';
+  var STORE_ID = '${escapedStoreId}';
   
   function getQueryParam(name) {
     var match = RegExp('[?&]' + name + '=([^&]*)').exec(window.location.search);
@@ -385,7 +392,7 @@ export function registerTwilioRoutes(app: Express) {
   function getSessionId() {
     var sessionId = sessionStorage.getItem('dni_session_id');
     if (!sessionId) {
-      sessionId = 'sess_' + Math.random().toString(36).substr(2, 9);
+      sessionId = 'sess_' + (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substr(2, 9));
       sessionStorage.setItem('dni_session_id', sessionId);
     }
     return sessionId;
@@ -394,7 +401,7 @@ export function registerTwilioRoutes(app: Express) {
   function getVisitorId() {
     var visitorId = localStorage.getItem('dni_visitor_id');
     if (!visitorId) {
-      visitorId = 'vis_' + Math.random().toString(36).substr(2, 9);
+      visitorId = 'vis_' + (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substr(2, 9));
       localStorage.setItem('dni_visitor_id', visitorId);
     }
     return visitorId;

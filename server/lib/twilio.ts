@@ -1,7 +1,7 @@
 import Twilio from "twilio";
 import { db } from "../db";
 import { trackingNumbers, callLogs, stores } from "@shared/schema";
-import { eq, and, lt, gt, isNull, or } from "drizzle-orm";
+import { eq, and, lt, gt, isNull, or, sql } from "drizzle-orm";
 import { encryptPII, decryptPII } from "./crypto";
 
 const ASSIGNMENT_DURATION_MINUTES = 60;
@@ -49,79 +49,90 @@ export async function getOrAssignTrackingNumber(
   visitorId?: string
 ): Promise<{ phoneNumber: string; isNew: boolean } | null> {
   const now = new Date();
-  
-  // First check for existing active assignment by GCLID for this store
-  if (gclid) {
-    const existing = await db
-      .select()
-      .from(trackingNumbers)
-      .where(
-        and(
-          eq(trackingNumbers.storeId, storeId),
-          eq(trackingNumbers.gclid, gclid),
-          eq(trackingNumbers.isAvailable, false),
-          gt(trackingNumbers.expiresAt, now) // Not yet expired
-        )
-      )
-      .limit(1);
-    
-    if (existing.length > 0) {
-      return { phoneNumber: existing[0].phoneNumber, isNew: false };
-    }
-  }
-  
-  // Also check by sessionId or visitorId for returning visitors without GCLID
-  if (sessionId || visitorId) {
-    const bySession = await db
-      .select()
-      .from(trackingNumbers)
-      .where(
-        and(
-          eq(trackingNumbers.storeId, storeId),
-          eq(trackingNumbers.isAvailable, false),
-          gt(trackingNumbers.expiresAt, now),
-          or(
-            sessionId ? eq(trackingNumbers.sessionId, sessionId) : undefined,
-            visitorId ? eq(trackingNumbers.visitorId, visitorId) : undefined
+  const expiresAt = new Date(now.getTime() + ASSIGNMENT_DURATION_MINUTES * 60 * 1000);
+
+  return await db.transaction(async (tx) => {
+    if (gclid) {
+      const existing = await tx
+        .select()
+        .from(trackingNumbers)
+        .where(
+          and(
+            eq(trackingNumbers.storeId, storeId),
+            eq(trackingNumbers.gclid, gclid),
+            eq(trackingNumbers.isAvailable, false),
+            gt(trackingNumbers.expiresAt, now)
           )
         )
-      )
-      .limit(1);
-    
-    if (bySession.length > 0) {
-      return { phoneNumber: bySession[0].phoneNumber, isNew: false };
+        .limit(1);
+
+      if (existing.length > 0) {
+        return { phoneNumber: existing[0].phoneNumber, isNew: false };
+      }
     }
-  }
-  
-  await expireOldAssignments(storeId);
-  
-  const available = await db
-    .select()
-    .from(trackingNumbers)
-    .where(and(eq(trackingNumbers.storeId, storeId), eq(trackingNumbers.isAvailable, true)))
-    .limit(1);
-  
-  if (available.length === 0) {
-    console.warn("No tracking numbers available in pool for store:", storeId);
-    return null;
-  }
-  
-  const number = available[0];
-  const expiresAt = new Date(now.getTime() + ASSIGNMENT_DURATION_MINUTES * 60 * 1000);
-  
-  await db
-    .update(trackingNumbers)
-    .set({
-      gclid: gclid || null,
-      sessionId: sessionId || null,
-      visitorId: visitorId || null,
-      assignedAt: now,
-      expiresAt,
-      isAvailable: false,
-    })
-    .where(eq(trackingNumbers.id, number.id));
-  
-  return { phoneNumber: number.phoneNumber, isNew: true };
+
+    if (sessionId || visitorId) {
+      const bySession = await tx
+        .select()
+        .from(trackingNumbers)
+        .where(
+          and(
+            eq(trackingNumbers.storeId, storeId),
+            eq(trackingNumbers.isAvailable, false),
+            gt(trackingNumbers.expiresAt, now),
+            or(
+              sessionId ? eq(trackingNumbers.sessionId, sessionId) : undefined,
+              visitorId ? eq(trackingNumbers.visitorId, visitorId) : undefined
+            )
+          )
+        )
+        .limit(1);
+
+      if (bySession.length > 0) {
+        return { phoneNumber: bySession[0].phoneNumber, isNew: false };
+      }
+    }
+
+    await tx
+      .update(trackingNumbers)
+      .set({ isAvailable: true, gclid: null, sessionId: null, visitorId: null, assignedAt: null, expiresAt: null })
+      .where(
+        and(
+          eq(trackingNumbers.storeId, storeId),
+          eq(trackingNumbers.isAvailable, false),
+          lt(trackingNumbers.expiresAt, now)
+        )
+      );
+
+    const rawResult = await tx.execute(
+      sql`SELECT id, phone_number FROM tracking_numbers WHERE store_id = ${storeId} AND is_available = true LIMIT 1 FOR UPDATE SKIP LOCKED`
+    );
+    const available = (
+      "rows" in rawResult ? rawResult.rows : rawResult
+    ) as { id: string; phone_number: string }[];
+
+    if (!available || available.length === 0) {
+      console.warn("No tracking numbers available in pool for store:", storeId);
+      return null;
+    }
+
+    const numberId = available[0].id;
+    const phoneNumber = available[0].phone_number;
+
+    await tx
+      .update(trackingNumbers)
+      .set({
+        gclid: gclid || null,
+        sessionId: sessionId || null,
+        visitorId: visitorId || null,
+        assignedAt: now,
+        expiresAt,
+        isAvailable: false,
+      })
+      .where(eq(trackingNumbers.id, numberId));
+
+    return { phoneNumber, isNew: true };
+  });
 }
 
 export async function getGclidByPhoneNumber(phoneNumber: string): Promise<string | null> {

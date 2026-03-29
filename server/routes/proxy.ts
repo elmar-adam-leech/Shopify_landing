@@ -264,7 +264,7 @@ export function createProxyRoutes(): Router {
         referrer: req.get("referer") || null,
       });
 
-      const { shopifyCustomerId, alreadyExisted } =
+      const { shopifyCustomerId, alreadyExisted, shopifyCustomerError } =
         await processFormSubmissionCustomer(
           page,
           submission,
@@ -279,6 +279,7 @@ export function createProxyRoutes(): Router {
         submissionId: submission.id,
         shopifyCustomerId,
         alreadyExisted,
+        ...(shopifyCustomerError && { shopifyCustomerError }),
       });
     } catch (error) {
       console.error("Form submission error:", error);

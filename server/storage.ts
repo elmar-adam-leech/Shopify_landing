@@ -231,10 +231,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async countFormSubmissions(pageId: string, storeId?: string): Promise<number> {
+    const conditions = [eq(formSubmissions.pageId, pageId)];
+    if (storeId) {
+      conditions.push(eq(formSubmissions.storeId, storeId));
+    }
     const [result] = await db
       .select({ count: count() })
       .from(formSubmissions)
-      .where(eq(formSubmissions.pageId, pageId));
+      .where(and(...conditions));
     return result?.count || 0;
   }
 
@@ -377,13 +381,13 @@ export class DatabaseStorage implements IStorage {
 
   // A/B Tests
   async getAllAbTests(storeId?: string, options?: { limit?: number; offset?: number }): Promise<AbTest[]> {
-    const limit = options?.limit ?? 1000;
-    const offset = options?.offset ?? 0;
-    let query = db.select().from(abTests).orderBy(desc(abTests.createdAt)).limit(limit).offset(offset);
+    const limitVal = options?.limit ?? 1000;
+    const offsetVal = options?.offset ?? 0;
+    let query = db.select().from(abTests).orderBy(desc(abTests.createdAt));
     if (storeId) {
       query = query.where(eq(abTests.storeId, storeId)) as typeof query;
     }
-    return query;
+    return query.limit(limitVal).offset(offsetVal);
   }
 
   async countAbTests(storeId?: string): Promise<number> {

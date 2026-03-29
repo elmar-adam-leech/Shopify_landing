@@ -3,9 +3,79 @@ import { db } from "../db";
 import { stores, insertPageSchema, updatePageSchema, insertFormSubmissionSchema, type InsertPage, type UpdatePage, type InsertPageVersion, type InsertFormSubmission } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import dns from "dns/promises";
+import net from "net";
 import { storage } from "../storage";
 import { renderPage, render404Page, renderErrorPage } from "../lib/page-renderer";
 import { validatePageAccess, requireStoreContext, processFormSubmissionCustomer } from "./helpers";
+
+function isPrivateIp(ip: string): boolean {
+  if (net.isIPv4(ip)) {
+    const parts = ip.split(".").map(Number);
+    if (parts[0] === 10) return true;
+    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+    if (parts[0] === 192 && parts[1] === 168) return true;
+    if (parts[0] === 127) return true;
+    if (parts[0] === 169 && parts[1] === 254) return true;
+    if (parts[0] === 0) return true;
+    return false;
+  }
+  if (net.isIPv6(ip)) {
+    const normalized = ip.toLowerCase();
+    if (normalized === "::1" || normalized === "::") return true;
+    if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
+    if (normalized.startsWith("fe80")) return true;
+    if (normalized.startsWith("::ffff:")) {
+      const v4part = normalized.slice(7);
+      if (net.isIPv4(v4part)) return isPrivateIp(v4part);
+    }
+    return false;
+  }
+  return true;
+}
+
+function isAllowedWebhookUrlSync(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return false;
+    }
+    const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (
+      hostname === "localhost" ||
+      hostname.endsWith(".local") ||
+      hostname.endsWith(".internal") ||
+      hostname === "metadata.google.internal" ||
+      hostname === "169.254.169.254"
+    ) {
+      return false;
+    }
+    if (net.isIP(hostname)) {
+      return !isPrivateIp(hostname);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function isAllowedWebhookUrl(urlStr: string): Promise<boolean> {
+  if (!isAllowedWebhookUrlSync(urlStr)) return false;
+  try {
+    const parsed = new URL(urlStr);
+    const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (net.isIP(hostname)) return !isPrivateIp(hostname);
+
+    const addresses = await dns.resolve4(hostname).catch(() => [] as string[]);
+    const addresses6 = await dns.resolve6(hostname).catch(() => [] as string[]);
+    const allAddresses = [...addresses, ...addresses6];
+    if (allAddresses.length === 0) return false;
+    if (allAddresses.some(addr => isPrivateIp(addr))) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function createPageRoutes(): Router {
   const router = Router();
@@ -160,7 +230,7 @@ export function createPageRoutes(): Router {
         referrer: req.get("referer") || null,
       });
 
-      const { shopifyCustomerId, alreadyExisted } =
+      const { shopifyCustomerId, alreadyExisted, shopifyCustomerError } =
         await processFormSubmissionCustomer(
           page,
           submission,
@@ -175,6 +245,7 @@ export function createPageRoutes(): Router {
         submissionId: submission.id,
         shopifyCustomerId,
         alreadyExisted,
+        ...(shopifyCustomerError && { shopifyCustomerError }),
       });
     } catch (error) {
       console.error("Public form submission error:", error);
@@ -304,7 +375,7 @@ export function createPageRoutes(): Router {
 
       const submission = await storage.createFormSubmission(validatedData as InsertFormSubmission);
 
-      const { shopifyCustomerId, alreadyExisted } =
+      const { shopifyCustomerId, alreadyExisted, shopifyCustomerError } =
         await processFormSubmissionCustomer(
           page,
           submission,
@@ -327,6 +398,14 @@ export function createPageRoutes(): Router {
 
           const webhookPromises = enabledWebhooks.map(
             async (webhook: Record<string, unknown>) => {
+              const webhookUrl = webhook.url as string;
+
+              const allowed = await isAllowedWebhookUrl(webhookUrl);
+              if (!allowed) {
+                console.warn(`Blocked webhook to disallowed URL: ${webhookUrl}`);
+                return { status: 0, ok: false, blocked: true };
+              }
+
               const webhookPayload = {
                 formData: submission.data,
                 pageId,
@@ -337,13 +416,14 @@ export function createPageRoutes(): Router {
                 shopifyCustomerId,
               };
 
-              const resp = await fetch(webhook.url as string, {
+              const resp = await fetch(webhookUrl, {
                 method: (webhook.method as string) || "POST",
                 headers: {
                   "Content-Type": "application/json",
                   ...((webhook.headers as Record<string, string>) || {}),
                 },
                 body: JSON.stringify(webhookPayload),
+                redirect: "error",
               });
 
               return { status: resp.status, ok: resp.ok };
@@ -381,6 +461,7 @@ export function createPageRoutes(): Router {
         ...submission,
         shopifyCustomerId,
         alreadyExisted,
+        ...(shopifyCustomerError && { shopifyCustomerError }),
       });
     } catch (error) {
       if (error instanceof z.ZodError) {

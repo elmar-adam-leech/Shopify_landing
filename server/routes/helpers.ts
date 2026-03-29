@@ -146,9 +146,10 @@ export async function processFormSubmissionCustomer(
   visitorId: string | undefined,
   sessionId: string | undefined,
   referrer: string | undefined
-): Promise<{ shopifyCustomerId: string | null; alreadyExisted: boolean }> {
+): Promise<{ shopifyCustomerId: string | null; alreadyExisted: boolean; shopifyCustomerError?: string }> {
   let shopifyCustomerId: string | null = null;
   let alreadyExisted = false;
+  let shopifyCustomerError: string | undefined;
 
   if (blockId && page.blocks) {
     const formBlock = page.blocks.find(
@@ -232,6 +233,7 @@ export async function processFormSubmissionCustomer(
                 "Failed to create Shopify customer:",
                 result.error
               );
+              shopifyCustomerError = result.error || "Failed to create Shopify customer";
             }
           }
 
@@ -243,6 +245,7 @@ export async function processFormSubmissionCustomer(
           }
         } catch (customerError) {
           console.error("Shopify customer error:", customerError);
+          shopifyCustomerError = customerError instanceof Error ? customerError.message : String(customerError);
         }
       }
     }
@@ -268,5 +271,5 @@ export async function processFormSubmissionCustomer(
     console.error("Failed to log analytics event:", analyticsError);
   }
 
-  return { shopifyCustomerId, alreadyExisted };
+  return { shopifyCustomerId, alreadyExisted, shopifyCustomerError };
 }
