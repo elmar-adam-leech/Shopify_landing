@@ -5,6 +5,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { validateStoreOwnership } from "../lib/store-ownership";
 import { requireStoreContext, validateUserAccess } from "./helpers";
+import { logError } from "../lib/logger";
 
 const assignUserSchema = z.object({
   userId: z.string().min(1, "userId is required"),
@@ -41,7 +42,7 @@ export function createStoreRoutes(): Router {
       };
       res.json([safeStore]);
     } catch (error) {
-      console.error("Error fetching stores:", error);
+      logError("Failed to fetch stores", { endpoint: "GET /api/stores", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to fetch stores" });
     }
   });
@@ -71,7 +72,7 @@ export function createStoreRoutes(): Router {
       };
       res.json(safeStore);
     } catch (error) {
-      console.error("Error fetching store:", error);
+      logError("Failed to fetch store", { endpoint: "GET /api/stores/:id", storeId: req.params.id }, error);
       res.status(500).json({ error: "Failed to fetch store" });
     }
   });
@@ -96,7 +97,7 @@ export function createStoreRoutes(): Router {
           .status(400)
           .json({ error: "Invalid data", details: error.errors });
       }
-      console.error("Error creating store:", error);
+      logError("Failed to create store", { endpoint: "POST /api/stores", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to create store" });
     }
   });
@@ -133,7 +134,7 @@ export function createStoreRoutes(): Router {
           .status(400)
           .json({ error: "Invalid data", details: error.errors });
       }
-      console.error("Error updating store:", error);
+      logError("Failed to update store", { endpoint: "PATCH /api/stores/:id", storeId: req.params.id }, error);
       res.status(500).json({ error: "Failed to update store" });
     }
   });
@@ -155,7 +156,7 @@ export function createStoreRoutes(): Router {
       }
       res.status(204).send();
     } catch (error) {
-      console.error("Error deleting store:", error);
+      logError("Failed to delete store", { endpoint: "DELETE /api/stores/:id", storeId: req.params.id }, error);
       res.status(500).json({ error: "Failed to delete store" });
     }
   });
@@ -174,7 +175,7 @@ export function createStoreRoutes(): Router {
       const assignments = await storage.getStoreUserAssignments(storeId);
       res.json(assignments);
     } catch (error) {
-      console.error("Error fetching store users:", error);
+      logError("Failed to fetch store users", { endpoint: "GET /api/stores/:storeId/users", storeId: req.params.storeId }, error);
       res.status(500).json({ error: "Failed to fetch store users" });
     }
   });
@@ -193,7 +194,7 @@ export function createStoreRoutes(): Router {
       const assignments = await storage.getUserStoreAssignments(userId);
       res.json(assignments);
     } catch (error) {
-      console.error("Error fetching user stores:", error);
+      logError("Failed to fetch user stores", { endpoint: "GET /api/users/:userId/stores", storeId: req.storeContext?.storeId, userId: req.params.userId }, error);
       res.status(500).json({ error: "Failed to fetch user stores" });
     }
   });
@@ -223,7 +224,7 @@ export function createStoreRoutes(): Router {
           .status(400)
           .json({ error: "Invalid data", details: error.errors });
       }
-      console.error("Error assigning user to store:", error);
+      logError("Failed to assign user to store", { endpoint: "POST /api/stores/:storeId/users", storeId: req.params.storeId }, error);
       res.status(500).json({ error: "Failed to assign user to store" });
     }
   });
@@ -246,7 +247,7 @@ export function createStoreRoutes(): Router {
       }
       res.status(204).send();
     } catch (error) {
-      console.error("Error removing user from store:", error);
+      logError("Failed to remove user from store", { endpoint: "DELETE /api/stores/:storeId/users/:assignmentId", storeId: req.params.storeId }, error);
       res.status(500).json({ error: "Failed to remove user from store" });
     }
   });

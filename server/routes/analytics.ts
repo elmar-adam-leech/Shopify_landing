@@ -4,6 +4,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { validatePageAccess } from "./helpers";
 import { analyticsLimiter } from "../middleware/rate-limit";
+import { logError } from "../lib/logger";
 
 export function createAnalyticsRoutes(): Router {
   const router = Router();
@@ -31,7 +32,7 @@ export function createAnalyticsRoutes(): Router {
           .status(400)
           .json({ error: "Invalid data", details: error.errors });
       }
-      console.error("Error recording analytics event:", error);
+      logError("Failed to record analytics event", { endpoint: "POST /api/analytics", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to record event" });
     }
   });
@@ -62,7 +63,7 @@ export function createAnalyticsRoutes(): Router {
       const events = await storage.getPageAnalytics(pageId, start, end);
       res.json(events);
     } catch (error) {
-      console.error("Error fetching analytics:", error);
+      logError("Failed to fetch analytics", { endpoint: "GET /api/pages/:pageId/analytics", storeId: req.storeContext?.storeId, pageId: req.params.pageId }, error);
       res.status(500).json({ error: "Failed to fetch analytics" });
     }
   });
@@ -93,7 +94,7 @@ export function createAnalyticsRoutes(): Router {
       const summary = await storage.getPageAnalyticsSummary(pageId, start, end);
       res.json(summary);
     } catch (error) {
-      console.error("Error fetching analytics summary:", error);
+      logError("Failed to fetch analytics summary", { endpoint: "GET /api/pages/:pageId/analytics/summary", storeId: req.storeContext?.storeId, pageId: req.params.pageId }, error);
       res.status(500).json({ error: "Failed to fetch analytics summary" });
     }
   });

@@ -5,6 +5,7 @@ import { validateStoreOwnership } from "../lib/store-ownership";
 import { getShopifyConfigForStore } from "../lib/shopify";
 import { syncProductsForStore } from "../lib/sync-service";
 import { validateUserAccess } from "./helpers";
+import { logError } from "../lib/logger";
 
 const syncSettingsSchema = z.object({
   syncSchedule: z.enum(["manual", "hourly", "daily", "weekly"]),
@@ -47,7 +48,7 @@ export function createProductRoutes(): Router {
         hasMore: offset + products.length < total,
       });
     } catch (error) {
-      console.error("Error fetching products:", error);
+      logError("Failed to fetch products", { endpoint: "GET /api/stores/:storeId/products", storeId: req.params.storeId }, error);
       res.status(500).json({ error: "Failed to fetch products" });
     }
   });
@@ -70,7 +71,7 @@ export function createProductRoutes(): Router {
 
       res.json(product);
     } catch (error) {
-      console.error("Error fetching product:", error);
+      logError("Failed to fetch product", { endpoint: "GET /api/products/:id", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to fetch product" });
     }
   });
@@ -105,7 +106,7 @@ export function createProductRoutes(): Router {
       }
       res.json(product);
     } catch (error) {
-      console.error("Error looking up product:", error);
+      logError("Failed to lookup product", { endpoint: "GET /api/stores/:storeId/products/lookup", storeId: req.params.storeId }, error);
       res.status(500).json({ error: "Failed to lookup product" });
     }
   });
@@ -125,7 +126,7 @@ export function createProductRoutes(): Router {
       );
       res.json(favorites);
     } catch (error) {
-      console.error("Error fetching favorites:", error);
+      logError("Failed to fetch favorites", { endpoint: "GET /api/users/:userId/products/favorites", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to fetch favorites" });
     }
   });
@@ -142,7 +143,7 @@ export function createProductRoutes(): Router {
       const favorite = await storage.addUserProductFavorite(userId, productId);
       res.status(201).json(favorite);
     } catch (error) {
-      console.error("Error adding favorite:", error);
+      logError("Failed to add favorite", { endpoint: "POST /api/users/:userId/products/:productId/favorite", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to add favorite" });
     }
   });
@@ -162,7 +163,7 @@ export function createProductRoutes(): Router {
       }
       res.status(204).send();
     } catch (error) {
-      console.error("Error removing favorite:", error);
+      logError("Failed to remove favorite", { endpoint: "DELETE /api/users/:userId/products/:productId/favorite", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to remove favorite" });
     }
   });
@@ -179,7 +180,7 @@ export function createProductRoutes(): Router {
       const isFavorite = await storage.isProductFavorite(userId, productId);
       res.json({ isFavorite });
     } catch (error) {
-      console.error("Error checking favorite:", error);
+      logError("Failed to check favorite", { endpoint: "GET /api/users/:userId/products/:productId/favorite", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to check favorite" });
     }
   });
@@ -222,7 +223,7 @@ export function createProductRoutes(): Router {
         productsRemoved: result.productsRemoved,
       });
     } catch (error) {
-      console.error("Error syncing products:", error);
+      logError("Failed to sync products", { endpoint: "POST /api/stores/:storeId/sync", storeId: req.params.storeId }, error);
       res.status(500).json({ error: "Failed to sync products" });
     }
   });
@@ -251,7 +252,7 @@ export function createProductRoutes(): Router {
           .status(400)
           .json({ error: "Invalid data", details: error.errors });
       }
-      console.error("Error updating sync settings:", error);
+      logError("Failed to update sync settings", { endpoint: "PATCH /api/stores/:storeId/sync/settings", storeId: req.params.storeId }, error);
       res.status(500).json({ error: "Failed to update sync settings" });
     }
   });
@@ -275,7 +276,7 @@ export function createProductRoutes(): Router {
         productCount,
       });
     } catch (error) {
-      console.error("Error fetching sync status:", error);
+      logError("Failed to fetch sync status", { endpoint: "GET /api/stores/:storeId/sync/status", storeId: req.params.storeId }, error);
       res.status(500).json({ error: "Failed to fetch sync status" });
     }
   });

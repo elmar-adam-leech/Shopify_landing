@@ -1,6 +1,7 @@
 import { db } from "../db";
 import { stores } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { logError, logWarn, logInfo } from "./logger";
 
 const SHOPIFY_API_VERSION = "2025-01";
 
@@ -31,7 +32,7 @@ function getShopifyConfig(): ShopifyConfig | null {
   const storeUrl = process.env.SHOPIFY_STORE_URL;
   
   if (!apiKey || !apiSecret || !storeUrl) {
-    console.warn("Shopify credentials not configured");
+    logWarn("Shopify credentials not configured", { operation: "shopify_config" });
     return null;
   }
   
@@ -92,7 +93,7 @@ export async function createShopifyCustomer(data: {
   }
   
   if (!config) {
-    console.error("Cannot create Shopify customer: credentials not configured");
+    logError("Cannot create Shopify customer: credentials not configured", { operation: "shopify_customer_create", storeId: data.storeId });
     return null;
   }
   
@@ -142,7 +143,7 @@ export async function createShopifyCustomer(data: {
     
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error("Shopify API error:", response.status, errorBody);
+      logError("Shopify customer API error", { operation: "shopify_customer_create", storeId: data.storeId, httpStatus: String(response.status) });
       
       if (response.status === 422) {
         const errorData = JSON.parse(errorBody);
@@ -155,11 +156,11 @@ export async function createShopifyCustomer(data: {
     }
     
     const result: CreateCustomerResponse = await response.json();
-    console.log("Created Shopify customer:", result.customer.id);
+    logInfo("Created Shopify customer", { operation: "shopify_customer_create", storeId: data.storeId, customerId: String(result.customer.id) });
     
     return result.customer;
   } catch (error) {
-    console.error("Failed to create Shopify customer:", error);
+    logError("Failed to create Shopify customer", { operation: "shopify_customer_create", storeId: data.storeId }, error);
     return null;
   }
 }
@@ -186,7 +187,7 @@ async function findExistingCustomerByPhone(
     const result = await response.json();
     return result.customers?.[0] || null;
   } catch (error) {
-    console.error("Failed to search for existing customer:", error);
+    logError("Failed to search for existing customer", { operation: "shopify_customer_search", shopDomain: config.storeUrl }, error);
     return null;
   }
 }
@@ -388,7 +389,7 @@ export async function fetchAllShopifyProducts(
   onProgress?: (count: number) => void
 ): Promise<ProductSyncResult> {
   if (!config.accessToken) {
-    console.error("No access token configured for product sync");
+    logError("No access token configured for product sync", { operation: "shopify_product_sync", shopDomain: config.storeUrl });
     return { success: false, products: [], error: "No access token configured" };
   }
 
@@ -421,7 +422,7 @@ export async function fetchAllShopifyProducts(
       if (response.status === 429) {
         retryCount++;
         if (retryCount > maxRetries) {
-          console.error("Max retries exceeded for rate limiting");
+          logError("Max retries exceeded for Shopify rate limiting", { operation: "shopify_product_sync", shopDomain: config.storeUrl });
           return { 
             success: false, 
             products: allProducts, 
@@ -429,13 +430,13 @@ export async function fetchAllShopifyProducts(
           };
         }
         const waitMs = Math.pow(2, retryCount) * 1000; // Exponential backoff: 2s, 4s, 8s
-        console.warn(`Rate limited (429), waiting ${waitMs}ms before retry ${retryCount}/${maxRetries}`);
+        logWarn(`Rate limited (429), waiting ${waitMs}ms before retry ${retryCount}/${maxRetries}`, { operation: "shopify_product_sync", shopDomain: config.storeUrl });
         await new Promise((resolve) => setTimeout(resolve, waitMs));
         continue; // Retry the same request
       }
 
       if (!response.ok) {
-        console.error("GraphQL products fetch error:", response.status);
+        logError("GraphQL products fetch error", { operation: "shopify_product_sync", shopDomain: config.storeUrl, httpStatus: String(response.status) });
         return { 
           success: false, 
           products: allProducts, 
@@ -447,7 +448,7 @@ export async function fetchAllShopifyProducts(
       lastExtensions = data.extensions;
 
       if (data.errors && data.errors.length > 0) {
-        console.error("GraphQL errors:", data.errors);
+        logError("GraphQL errors during product sync", { operation: "shopify_product_sync", shopDomain: config.storeUrl, graphqlError: data.errors[0].message });
         return { 
           success: false, 
           products: allProducts, 
@@ -457,7 +458,7 @@ export async function fetchAllShopifyProducts(
 
       const products = data.data?.products;
       if (!products) {
-        console.error("No products data in response");
+        logError("No products data in Shopify response", { operation: "shopify_product_sync", shopDomain: config.storeUrl });
         return { 
           success: false, 
           products: allProducts, 
@@ -485,7 +486,7 @@ export async function fetchAllShopifyProducts(
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     } catch (error) {
-      console.error("Error fetching products batch:", error);
+      logError("Error fetching products batch from Shopify", { operation: "shopify_product_sync", shopDomain: config.storeUrl }, error);
       return { 
         success: false, 
         products: allProducts, 
@@ -494,7 +495,7 @@ export async function fetchAllShopifyProducts(
     }
   }
 
-  console.log(`Successfully fetched ${allProducts.length} products from Shopify`);
+  logInfo(`Successfully fetched ${allProducts.length} products from Shopify`, { operation: "shopify_product_sync", shopDomain: config.storeUrl });
   return { success: true, products: allProducts };
 }
 
@@ -612,7 +613,7 @@ export async function searchCustomerByEmailOrPhone(
     });
 
     if (!response.ok) {
-      console.error("GraphQL search error:", response.status);
+      logError("GraphQL customer search error", { operation: "shopify_customer_search", shopDomain: config.storeUrl, httpStatus: String(response.status) });
       return null;
     }
 
@@ -620,7 +621,7 @@ export async function searchCustomerByEmailOrPhone(
     const customer = data.data?.customers?.edges?.[0]?.node;
     return customer ? { id: customer.id, tags: customer.tags || [] } : null;
   } catch (error) {
-    console.error("Failed to search customer:", error);
+    logError("Failed to search customer via GraphQL", { operation: "shopify_customer_search", shopDomain: config.storeUrl }, error);
     return null;
   }
 }
@@ -655,7 +656,7 @@ export async function updateCustomerTagsGraphQL(
     });
 
     if (!fetchRes.ok) {
-      console.error("Failed to fetch customer tags:", fetchRes.status);
+      logError("Failed to fetch customer tags", { operation: "shopify_customer_tag_update", shopDomain: config.storeUrl, customerId, httpStatus: String(fetchRes.status) });
       return false;
     }
 
@@ -686,20 +687,20 @@ export async function updateCustomerTagsGraphQL(
     });
 
     if (!updateRes.ok) {
-      console.error("Failed to update customer tags:", updateRes.status);
+      logError("Failed to update customer tags", { operation: "shopify_customer_tag_update", shopDomain: config.storeUrl, customerId, httpStatus: String(updateRes.status) });
       return false;
     }
 
     const updateData = await updateRes.json();
     const userErrors = updateData.data?.customerUpdate?.userErrors;
     if (userErrors?.length) {
-      console.error("Customer update errors:", userErrors);
+      logError("Customer tag update returned user errors", { operation: "shopify_customer_tag_update", shopDomain: config.storeUrl, customerId, userError: userErrors[0]?.message });
       return false;
     }
 
     return true;
   } catch (error) {
-    console.error("Failed to update customer tags:", error);
+    logError("Failed to update customer tags", { operation: "shopify_customer_tag_update", shopDomain: config.storeUrl, customerId }, error);
     return false;
   }
 }
@@ -764,7 +765,7 @@ export async function createShopifyCustomerGraphQL(
 
     // Handle rate limiting with exponential backoff
     if (res.status === 429 && attempt < 3) {
-      console.warn(`Rate limited, retrying in ${attempt}s...`);
+      logWarn(`Rate limited creating customer, retrying in ${attempt}s`, { operation: "shopify_customer_create_graphql", shopDomain: config.storeUrl });
       await new Promise((r) => setTimeout(r, 1000 * attempt));
       return executeWithRetry(attempt + 1);
     }
@@ -780,19 +781,19 @@ export async function createShopifyCustomerGraphQL(
     const data = await response.json();
     const userErrors = data.data?.customerCreate?.userErrors;
     if (userErrors?.length) {
-      console.error("Customer create errors:", userErrors);
-      return { error: userErrors[0].message };
+      logError("Customer create returned user errors", { operation: "shopify_customer_create_graphql", shopDomain: config.storeUrl, userError: userErrors[0].message });
+      return { error: "customer_create_failed" };
     }
 
     const customerId = data.data?.customerCreate?.customer?.id;
     if (!customerId) {
-      return { error: "No customer ID returned" };
+      return { error: "customer_create_failed" };
     }
 
-    console.log("Created Shopify customer via GraphQL:", customerId);
+    logInfo("Created Shopify customer via GraphQL", { operation: "shopify_customer_create_graphql", shopDomain: config.storeUrl, customerId });
     return { id: customerId };
   } catch (err: any) {
-    console.error("Failed to create customer:", err);
-    return { error: err.message || "Unknown error" };
+    logError("Failed to create customer via GraphQL", { operation: "shopify_customer_create_graphql", shopDomain: config.storeUrl }, err);
+    return { error: "customer_create_failed" };
   }
 }

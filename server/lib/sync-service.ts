@@ -3,6 +3,7 @@ import { stores, storeSyncLogs, shopifyProducts as shopifyProductsTable } from "
 import { eq, and, notInArray, sql } from "drizzle-orm";
 import { fetchAllShopifyProducts, convertShopifyProduct, type ShopifyConfig } from "./shopify";
 import { storage } from "../storage";
+import { logError, logInfo } from "./logger";
 
 export interface SyncResult {
   success: boolean;
@@ -17,7 +18,7 @@ export async function syncProductsForStore(
   shopifyConfig: ShopifyConfig,
   syncType: "manual" | "scheduled" | "install" = "manual"
 ): Promise<SyncResult> {
-  console.log(`[Sync] Starting ${syncType} product sync for store ${storeId}...`);
+  logInfo(`Starting ${syncType} product sync`, { operation: "shopify_product_sync", storeId, syncType });
   
   const syncLog = await storage.createStoreSyncLog({
     storeId,
@@ -27,7 +28,7 @@ export async function syncProductsForStore(
   
   try {
     const syncResult = await fetchAllShopifyProducts(shopifyConfig, (count) => {
-      console.log(`[Sync] Fetched ${count} products so far...`);
+      logInfo(`Fetched ${count} products so far`, { operation: "shopify_product_sync", storeId });
     });
     
     if (!syncResult.success) {
@@ -40,7 +41,7 @@ export async function syncProductsForStore(
         productsRemoved: 0,
       });
       
-      console.error(`[Sync] Product sync failed: ${syncResult.error}`);
+      logError("Product sync failed", { operation: "shopify_product_sync", storeId, syncType, reason: syncResult.error });
       return {
         success: false,
         productsAdded: 0,
@@ -63,7 +64,7 @@ export async function syncProductsForStore(
       
       await updateLastSyncAt(storeId);
       
-      console.log(`[Sync] Completed - no products found in store`);
+      logInfo("Sync completed - no products found", { operation: "shopify_product_sync", storeId, syncType });
       return {
         success: true,
         productsAdded: 0,
@@ -155,7 +156,7 @@ export async function syncProductsForStore(
     
     await updateLastSyncAt(storeId);
     
-    console.log(`[Sync] Completed - added: ${productsAdded}, updated: ${productsUpdated}, removed: ${productsRemoved}`);
+    logInfo(`Sync completed - added: ${productsAdded}, updated: ${productsUpdated}, removed: ${productsRemoved}`, { operation: "shopify_product_sync", storeId, syncType });
     
     return {
       success: true,
@@ -175,7 +176,7 @@ export async function syncProductsForStore(
       productsRemoved: 0,
     });
     
-    console.error(`[Sync] Error during sync:`, error);
+    logError("Sync error during product sync", { operation: "shopify_product_sync", storeId, syncType }, error);
     
     return {
       success: false,
@@ -193,7 +194,7 @@ async function updateLastSyncAt(storeId: string): Promise<void> {
       .set({ lastSyncAt: new Date(), updatedAt: new Date() })
       .where(eq(stores.id, storeId));
   } catch (error) {
-    console.error(`[Sync] Failed to update lastSyncAt for store ${storeId}:`, error);
+    logError("Failed to update lastSyncAt", { operation: "shopify_product_sync", storeId }, error);
   }
 }
 
@@ -204,7 +205,7 @@ export async function triggerInitialSync(shop: string): Promise<void> {
       .limit(1);
     
     if (!store || !store.shopifyAccessToken) {
-      console.log(`[Sync] Cannot trigger initial sync - store not found or no access token for ${shop}`);
+      logInfo("Cannot trigger initial sync - store not found or no access token", { operation: "shopify_initial_sync", shop });
       return;
     }
     
@@ -215,20 +216,20 @@ export async function triggerInitialSync(shop: string): Promise<void> {
       accessToken: store.shopifyAccessToken,
     };
     
-    console.log(`[Sync] Triggering initial product sync for ${shop} (async)`);
+    logInfo("Triggering initial product sync (async)", { operation: "shopify_initial_sync", storeId: store.id, shop });
     
     syncProductsForStore(store.id, shopifyConfig, "install")
       .then(result => {
         if (result.success) {
-          console.log(`[Sync] Initial sync completed for ${shop}: ${result.productsAdded} added, ${result.productsUpdated} updated`);
+          logInfo(`Initial sync completed: ${result.productsAdded} added, ${result.productsUpdated} updated`, { operation: "shopify_initial_sync", storeId: store.id, shop });
         } else {
-          console.error(`[Sync] Initial sync failed for ${shop}: ${result.error}`);
+          logError("Initial sync failed", { operation: "shopify_initial_sync", storeId: store.id, shop, reason: result.error });
         }
       })
       .catch(error => {
-        console.error(`[Sync] Initial sync error for ${shop}:`, error);
+        logError("Initial sync error", { operation: "shopify_initial_sync", storeId: store.id, shop }, error);
       });
   } catch (error) {
-    console.error(`[Sync] Failed to trigger initial sync for ${shop}:`, error);
+    logError("Failed to trigger initial sync", { operation: "shopify_initial_sync", shop }, error);
   }
 }

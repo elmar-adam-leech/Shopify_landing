@@ -3,6 +3,7 @@ import { db } from "../db";
 import { trackingNumbers, callLogs, stores } from "@shared/schema";
 import { eq, and, lt, gt, isNull, or, sql } from "drizzle-orm";
 import { encryptPII, decryptPII } from "./crypto";
+import { logWarn } from "./logger";
 
 const ASSIGNMENT_DURATION_MINUTES = 60;
 
@@ -35,7 +36,7 @@ function getTwilioClient(credentials?: TwilioCredentials) {
   const authToken = process.env.TWILIO_AUTH_TOKEN;
   
   if (!accountSid || !authToken) {
-    console.warn("Twilio credentials not configured");
+    logWarn("Twilio credentials not configured", { operation: "twilio_client_init" });
     return null;
   }
   
@@ -112,7 +113,7 @@ export async function getOrAssignTrackingNumber(
     ) as { id: string; phone_number: string }[];
 
     if (!available || available.length === 0) {
-      console.warn("No tracking numbers available in pool for store:", storeId);
+      logWarn("No tracking numbers available in pool", { operation: "tracking_number_assign", storeId });
       return null;
     }
 

@@ -3,6 +3,7 @@ import { db } from "./db";
 import { stores } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { verifySessionToken } from "./shopify-auth";
+import { logError, logWarn } from "./lib/logger";
 
 declare global {
   namespace Express {
@@ -121,7 +122,7 @@ export async function resolveStoreContext(req: Request, res: Response, next: Nex
     }
 
     if (verifiedShop && shop && verifiedShop !== shop) {
-      console.warn(`[StoreContext] Token shop ${verifiedShop} does not match query shop ${shop}`);
+      logWarn("Token shop does not match query shop", { operation: "store_context" });
       return next();
     }
   }
@@ -136,7 +137,7 @@ export async function resolveStoreContext(req: Request, res: Response, next: Nex
 
     if (cached) {
       if (cached.shop !== verifiedShop && !isAdmin) {
-        console.warn(`[StoreContext] Cached store ${cached.shop} does not match verified shop ${verifiedShop}`);
+        logWarn("Cached store does not match verified shop", { operation: "store_context" });
         return next();
       }
       req.storeContext = {
@@ -168,7 +169,7 @@ export async function resolveStoreContext(req: Request, res: Response, next: Nex
 
     if (store && store.installState === "installed" && store.isActive) {
       if (store.shopifyDomain !== verifiedShop && !isAdmin) {
-        console.warn(`[StoreContext] Store ${store.shopifyDomain} does not match verified shop ${verifiedShop}`);
+        logWarn("Store domain does not match verified shop", { operation: "store_context" });
         return next();
       }
 
@@ -183,7 +184,7 @@ export async function resolveStoreContext(req: Request, res: Response, next: Nex
       setCachedStore(`shop:${store.shopifyDomain}`, context);
     }
   } catch (error) {
-    console.error("Error resolving store context:", error);
+    logError("Error resolving store context", { operation: "store_context" }, error);
   }
 
   next();

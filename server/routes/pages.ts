@@ -7,6 +7,7 @@ import { storage } from "../storage";
 import { renderPage, render404Page, renderErrorPage } from "../lib/page-renderer";
 import { validatePageAccess, requireStoreContext, processFormSubmissionCustomer } from "./helpers";
 import { formSubmissionLimiter } from "../middleware/rate-limit";
+import { logError, logWarn, logInfo } from "../lib/logger";
 
 function isPrivateIp(ip: string): boolean {
   if (net.isIPv4(ip)) {
@@ -99,7 +100,7 @@ export function createPageRoutes(): Router {
 
       res.json({ data: lightweightPages, total, limit, offset });
     } catch (error) {
-      console.error("Error fetching page list:", error);
+      logError("Failed to fetch page list", { endpoint: "GET /api/pages/list", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to fetch pages" });
     }
   });
@@ -114,7 +115,7 @@ export function createPageRoutes(): Router {
       const allPages = await storage.getAllPages(storeId, { limit: 1000, offset: 0 });
       res.json(allPages);
     } catch (error) {
-      console.error("Error fetching pages:", error);
+      logError("Failed to fetch pages", { endpoint: "GET /api/pages", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to fetch pages" });
     }
   });
@@ -140,7 +141,7 @@ export function createPageRoutes(): Router {
 
       res.json(page);
     } catch (error) {
-      console.error("Error fetching page:", error);
+      logError("Failed to fetch page", { endpoint: "GET /api/pages/:id", storeId: req.storeContext?.storeId, pageId: req.params.id }, error);
       res.status(500).json({ error: "Failed to fetch page" });
     }
   });
@@ -171,7 +172,7 @@ export function createPageRoutes(): Router {
 
       res.json({ ...page, storeInfo });
     } catch (error) {
-      console.error("Error fetching public page:", error);
+      logError("Failed to fetch public page", { endpoint: "GET /api/public/pages/:id", pageId: req.params.id }, error);
       res.status(500).json({ error: "Failed to fetch page" });
     }
   });
@@ -230,7 +231,7 @@ export function createPageRoutes(): Router {
         ...(shopifyCustomerError && { shopifyCustomerError }),
       });
     } catch (error) {
-      console.error("Public form submission error:", error);
+      logError("Public form submission failed", { endpoint: "POST /api/public/submit-form", storeId: req.body?.storeId, pageId: req.body?.pageId }, error);
       res.status(500).json({ error: "Failed to submit form" });
     }
   });
@@ -267,7 +268,7 @@ export function createPageRoutes(): Router {
           .status(400)
           .json({ error: "Invalid data", details: error.errors });
       }
-      console.error("Error creating page:", error);
+      logError("Failed to create page", { endpoint: "POST /api/pages", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to create page" });
     }
   });
@@ -309,7 +310,7 @@ export function createPageRoutes(): Router {
           .status(400)
           .json({ error: "Invalid data", details: error.errors });
       }
-      console.error("Error updating page:", error);
+      logError("Failed to update page", { endpoint: "PATCH /api/pages/:id", storeId: req.storeContext?.storeId, pageId: req.params.id }, error);
       res.status(500).json({ error: "Failed to update page" });
     }
   });
@@ -333,7 +334,7 @@ export function createPageRoutes(): Router {
       }
       res.status(204).send();
     } catch (error) {
-      console.error("Error deleting page:", error);
+      logError("Failed to delete page", { endpoint: "DELETE /api/pages/:id", storeId: req.storeContext?.storeId, pageId: req.params.id }, error);
       res.status(500).json({ error: "Failed to delete page" });
     }
   });
@@ -393,7 +394,7 @@ export function createPageRoutes(): Router {
 
               const allowed = await isAllowedWebhookUrl(webhookUrl);
               if (!allowed) {
-                console.warn(`Blocked webhook to disallowed URL: ${webhookUrl}`);
+                logWarn("Blocked webhook to disallowed URL", { endpoint: "POST /api/pages/:pageId/submissions", storeId: page.storeId, webhookUrl });
                 return { status: 0, ok: false, blocked: true };
               }
 
@@ -425,44 +426,18 @@ export function createPageRoutes(): Router {
             for (let i = 0; i < results.length; i++) {
               const result = results[i];
               const webhook = enabledWebhooks[i];
-              const webhookUrl = webhook.url as string;
               const webhookLabel =
-                (webhook.name as string) || webhookUrl;
+                (webhook.name as string) || (webhook.url as string);
               if (result.status === "fulfilled" && result.value.ok) {
-                console.log(JSON.stringify({
-                  level: "info",
-                  event: "webhook_delivery_success",
-                  webhook: webhookLabel,
-                  url: webhookUrl,
-                  status: result.value.status,
-                  pageId,
-                  blockId,
-                }));
+                logInfo("Webhook delivered", { endpoint: "POST /api/pages/:pageId/submissions", storeId: page.storeId, webhook: webhookLabel });
               } else if (result.status === "fulfilled") {
-                console.error(JSON.stringify({
-                  level: "error",
-                  event: "webhook_delivery_failed",
-                  webhook: webhookLabel,
-                  url: webhookUrl,
-                  status: result.value.status,
-                  error: `HTTP ${result.value.status}`,
-                  pageId,
-                  blockId,
-                }));
+                logWarn("Webhook returned non-OK status", { endpoint: "POST /api/pages/:pageId/submissions", storeId: page.storeId, webhook: webhookLabel, httpStatus: String(result.value.status) });
               } else {
-                const errorMsg =
+                const errMsg =
                   result.reason instanceof Error
                     ? result.reason.message
                     : String(result.reason);
-                console.error(JSON.stringify({
-                  level: "error",
-                  event: "webhook_delivery_error",
-                  webhook: webhookLabel,
-                  url: webhookUrl,
-                  error: errorMsg,
-                  pageId,
-                  blockId,
-                }));
+                logError("Webhook delivery failed", { endpoint: "POST /api/pages/:pageId/submissions", storeId: page.storeId, webhook: webhookLabel }, result.reason);
               }
             }
           });
@@ -481,7 +456,7 @@ export function createPageRoutes(): Router {
           .status(400)
           .json({ error: "Invalid data", details: error.errors });
       }
-      console.error("Error creating submission:", error);
+      logError("Failed to create submission", { endpoint: "POST /api/pages/:pageId/submissions", storeId: req.storeContext?.storeId, pageId: req.params.pageId }, error);
       res.status(500).json({ error: "Failed to submit form" });
     }
   });
@@ -509,7 +484,7 @@ export function createPageRoutes(): Router {
       ]);
       res.json({ data: submissions, total, limit, offset });
     } catch (error) {
-      console.error("Error fetching submissions:", error);
+      logError("Failed to fetch submissions", { endpoint: "GET /api/pages/:pageId/submissions", storeId: req.storeContext?.storeId, pageId: req.params.pageId }, error);
       res.status(500).json({ error: "Failed to fetch submissions" });
     }
   });
@@ -551,7 +526,7 @@ export function createPageRoutes(): Router {
       const { html } = await renderPage(req, page, storeInfo);
       res.json({ html });
     } catch (error) {
-      console.error("Error generating HTML:", error);
+      logError("Failed to generate HTML", { endpoint: "POST /api/pages/:id/generate", storeId: req.storeContext?.storeId, pageId: req.params.id }, error);
       res.status(500).json({ error: "Failed to generate HTML" });
     }
   });
@@ -571,7 +546,7 @@ export function createPageRoutes(): Router {
       const versions = await storage.getPageVersions(pageId);
       res.json(versions);
     } catch (error) {
-      console.error("Error fetching versions:", error);
+      logError("Failed to fetch versions", { endpoint: "GET /api/pages/:pageId/versions", storeId: req.storeContext?.storeId, pageId: req.params.pageId }, error);
       res.status(500).json({ error: "Failed to fetch versions" });
     }
   });
@@ -601,7 +576,7 @@ export function createPageRoutes(): Router {
 
       res.status(201).json(version);
     } catch (error) {
-      console.error("Error creating version:", error);
+      logError("Failed to create version", { endpoint: "POST /api/pages/:pageId/versions", storeId: req.storeContext?.storeId, pageId: req.params.pageId }, error);
       res.status(500).json({ error: "Failed to create version" });
     }
   });
@@ -642,7 +617,7 @@ export function createPageRoutes(): Router {
 
       res.json(updatedPage);
     } catch (error) {
-      console.error("Error restoring version:", error);
+      logError("Failed to restore version", { endpoint: "POST /api/pages/:pageId/versions/:versionId/restore", storeId: req.storeContext?.storeId, pageId: req.params.pageId, versionId: req.params.versionId }, error);
       res.status(500).json({ error: "Failed to restore version" });
     }
   });

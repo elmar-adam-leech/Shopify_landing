@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { storage } from "../storage";
 import { requireAdmin } from "../admin-auth";
 import { authenticatedApiLimiter } from "../middleware/rate-limit";
+import { logError } from "../lib/logger";
 
 export function createAdminRoutes(): Router {
   const router = Router();
@@ -17,7 +18,7 @@ export function createAdminRoutes(): Router {
       ]);
       res.json({ data: allStores, total, limit, offset });
     } catch (error) {
-      console.error("Admin stores error:", error);
+      logError("Admin stores error", { endpoint: "GET /api/admin/stores" }, error);
       res.status(500).json({ error: "Failed to fetch stores" });
     }
   });
@@ -34,7 +35,7 @@ export function createAdminRoutes(): Router {
       ]);
       res.json({ data: storePages, total, limit, offset });
     } catch (error) {
-      console.error("Admin pages error:", error);
+      logError("Admin pages error", { endpoint: "GET /api/admin/stores/:storeId/pages", storeId: req.params.storeId }, error);
       res.status(500).json({ error: "Failed to fetch pages" });
     }
   });

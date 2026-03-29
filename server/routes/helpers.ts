@@ -5,6 +5,7 @@ import { db } from "../db";
 import { eq, and } from "drizzle-orm";
 import { storage } from "../storage";
 import { logSecurityEvent } from "../lib/audit";
+import { logError, logInfo } from "../lib/logger";
 import {
   getShopifyConfigForStore,
   searchCustomerByEmailOrPhone,
@@ -215,7 +216,7 @@ export async function processFormSubmissionCustomer(
             alreadyExisted = true;
             shopifyCustomerId = existing.id;
             await updateCustomerTagsGraphQL(config, existing.id, tags);
-            console.log(`Updated existing Shopify customer: ${existing.id}`);
+            logInfo("Updated existing Shopify customer", { operation: "shopify_customer_update", storeId: page.storeId, customerId: existing.id });
           } else if (email || phone) {
             const result = await createShopifyCustomerGraphQL(config, {
               firstName,
@@ -228,12 +229,9 @@ export async function processFormSubmissionCustomer(
 
             if ("id" in result) {
               shopifyCustomerId = result.id;
-              console.log(`Created Shopify customer from form: ${result.id}`);
+              logInfo("Created Shopify customer from form", { operation: "shopify_customer_create", storeId: page.storeId, customerId: result.id });
             } else {
-              console.error(
-                "Failed to create Shopify customer:",
-                result.error
-              );
+              logError("Failed to create Shopify customer", { operation: "shopify_customer_create", storeId: page.storeId, reason: result.error });
               shopifyCustomerError = result.error || "Failed to create Shopify customer";
             }
           }
@@ -245,7 +243,7 @@ export async function processFormSubmissionCustomer(
               .where(eq(formSubmissions.id, submission.id));
           }
         } catch (customerError) {
-          console.error("Shopify customer error:", customerError);
+          logError("Shopify customer operation failed", { operation: "shopify_customer", storeId: page.storeId, pageId: page.id, blockId }, customerError);
           shopifyCustomerError = customerError instanceof Error ? customerError.message : String(customerError);
         }
       }
@@ -269,7 +267,7 @@ export async function processFormSubmissionCustomer(
       referrer,
     });
   } catch (analyticsError) {
-    console.error("Failed to log analytics event:", analyticsError);
+    logError("Failed to log form_submission analytics event", { operation: "analytics_insert", storeId: page.storeId, pageId: page.id }, analyticsError);
   }
 
   return { shopifyCustomerId, alreadyExisted, shopifyCustomerError };

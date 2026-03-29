@@ -3,6 +3,8 @@ import { insertAbTestSchema, insertAbTestVariantSchema, type InsertAbTest, type 
 import { z } from "zod";
 import { storage } from "../storage";
 import { validatePageAccess, validateAbTestOwnership } from "./helpers";
+import { logError } from "../lib/logger";
+import { apiRateLimiter } from "../middleware/rate-limit";
 
 const updateAbTestBodySchema = z.object({
   name: z.string().min(1).optional(),
@@ -24,6 +26,8 @@ const updateAbTestVariantBodySchema = z.object({
 
 export function createAbTestRoutes(): Router {
   const router = Router();
+
+  router.use(apiRateLimiter);
 
   router.get("/api/ab-tests", async (req, res) => {
     try {
@@ -47,7 +51,7 @@ export function createAbTestRoutes(): Router {
       ]);
       res.json({ data: tests, total, limit, offset });
     } catch (error) {
-      console.error("Error fetching A/B tests:", error);
+      logError("Failed to fetch A/B tests", { endpoint: "GET /api/ab-tests", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to fetch A/B tests" });
     }
   });
@@ -78,7 +82,7 @@ export function createAbTestRoutes(): Router {
       const variants = await storage.getAbTestVariants(test.id);
       res.json({ test, variants });
     } catch (error) {
-      console.error("Error fetching active A/B test for page:", error);
+      logError("Failed to fetch active A/B test for page", { endpoint: "GET /api/ab-tests/for-page/:pageId", pageId: req.params.pageId }, error);
       res.status(500).json({ error: "Failed to fetch A/B test" });
     }
   });
@@ -100,7 +104,7 @@ export function createAbTestRoutes(): Router {
 
       res.json(test);
     } catch (error) {
-      console.error("Error fetching A/B test:", error);
+      logError("Failed to fetch A/B test", { endpoint: "GET /api/ab-tests/:id", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to fetch A/B test" });
     }
   });
@@ -136,7 +140,7 @@ export function createAbTestRoutes(): Router {
           .status(400)
           .json({ error: "Invalid data", details: error.errors });
       }
-      console.error("Error creating A/B test:", error);
+      logError("Failed to create A/B test", { endpoint: "POST /api/ab-tests", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to create A/B test" });
     }
   });
@@ -168,7 +172,7 @@ export function createAbTestRoutes(): Router {
           .status(400)
           .json({ error: "Invalid data", details: error.errors });
       }
-      console.error("Error updating A/B test:", error);
+      logError("Failed to update A/B test", { endpoint: "PATCH /api/ab-tests/:id", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to update A/B test" });
     }
   });
@@ -192,7 +196,7 @@ export function createAbTestRoutes(): Router {
       await storage.deleteAbTest(id);
       res.status(204).send();
     } catch (error) {
-      console.error("Error deleting A/B test:", error);
+      logError("Failed to delete A/B test", { endpoint: "DELETE /api/ab-tests/:id", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to delete A/B test" });
     }
   });
@@ -216,7 +220,7 @@ export function createAbTestRoutes(): Router {
       const variants = await storage.getAbTestVariants(abTestId);
       res.json(variants);
     } catch (error) {
-      console.error("Error fetching variants:", error);
+      logError("Failed to fetch variants", { endpoint: "GET /api/ab-tests/:abTestId/variants", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to fetch variants" });
     }
   });
@@ -266,7 +270,7 @@ export function createAbTestRoutes(): Router {
           .status(400)
           .json({ error: "Invalid data", details: error.errors });
       }
-      console.error("Error creating variant:", error);
+      logError("Failed to create variant", { endpoint: "POST /api/ab-tests/:abTestId/variants", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to create variant" });
     }
   });
@@ -323,7 +327,7 @@ export function createAbTestRoutes(): Router {
           .status(400)
           .json({ error: "Invalid data", details: error.errors });
       }
-      console.error("Error updating variant:", error);
+      logError("Failed to update variant", { endpoint: "PATCH /api/ab-tests/:abTestId/variants/:variantId", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to update variant" });
     }
   });
@@ -360,7 +364,7 @@ export function createAbTestRoutes(): Router {
       }
       res.status(204).send();
     } catch (error) {
-      console.error("Error deleting variant:", error);
+      logError("Failed to delete variant", { endpoint: "DELETE /api/ab-tests/:abTestId/variants/:variantId", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to delete variant" });
     }
   });
@@ -411,7 +415,7 @@ export function createAbTestRoutes(): Router {
         results,
       });
     } catch (error) {
-      console.error("Error fetching A/B test results:", error);
+      logError("Failed to fetch A/B test results", { endpoint: "GET /api/ab-tests/:id/results", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to fetch A/B test results" });
     }
   });

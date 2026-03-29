@@ -19,15 +19,16 @@ import { isShopifyConfigured } from "./shopify";
 import { storage } from "./storage";
 import { validateStoreOwnership } from "./lib/store-ownership";
 import { trackingLimiter, strictRateLimiter } from "./middleware/rate-limit";
+import { logError, logWarn, logInfo } from "./lib/logger";
 
 async function validateTwilioWebhook(req: Request, res: Response, next: NextFunction) {
   const twilioSignature = req.headers["x-twilio-signature"] as string;
   if (!twilioSignature) {
     if (process.env.NODE_ENV !== "production") {
-      console.warn("[Twilio] Missing X-Twilio-Signature header - skipping validation in dev mode");
+      logWarn("Missing X-Twilio-Signature header - skipping validation in dev mode", { operation: "twilio_webhook" });
       return next();
     }
-    console.warn("[Twilio] Missing X-Twilio-Signature header");
+    logWarn("Missing X-Twilio-Signature header", { operation: "twilio_webhook" });
     return res.status(403).type("text/xml").send(
       '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Forbidden.</Say></Response>'
     );
@@ -52,10 +53,10 @@ async function validateTwilioWebhook(req: Request, res: Response, next: NextFunc
 
   if (!authToken) {
     if (process.env.NODE_ENV !== "production") {
-      console.warn("[Twilio] No auth token available - skipping webhook validation in dev mode");
+      logWarn("No auth token available - skipping webhook validation in dev mode", { operation: "twilio_webhook" });
       return next();
     }
-    console.error("[Twilio] No auth token available for webhook validation");
+    logError("No auth token available for webhook validation", { operation: "twilio_webhook" });
     return res.status(500).type("text/xml").send(
       '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Server configuration error.</Say></Response>'
     );
@@ -67,7 +68,7 @@ async function validateTwilioWebhook(req: Request, res: Response, next: NextFunc
 
   const isValid = twilio.validateRequest(authToken, twilioSignature, url, req.body || {});
   if (!isValid) {
-    console.warn("[Twilio] Invalid webhook signature");
+    logWarn("Invalid webhook signature", { operation: "twilio_webhook" });
     return res.status(403).type("text/xml").send(
       '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Forbidden.</Say></Response>'
     );
@@ -105,7 +106,7 @@ export function registerTwilioRoutes(app: Express) {
         expiresIn: "60 minutes",
       });
     } catch (error) {
-      console.error("Error getting tracking number:", error);
+      logError("Failed to get tracking number", { endpoint: "GET /api/get-tracking-number", storeId: req.query.storeId as string }, error);
       res.status(500).json({ error: "Failed to get tracking number" });
     }
   });
@@ -115,14 +116,12 @@ export function registerTwilioRoutes(app: Express) {
     try {
       const { From, To, CallSid, CallStatus } = req.body;
 
-      console.log(`Incoming call: ${From} -> ${To} (CallSid: ${CallSid})`);
+      logInfo("Incoming call received", { endpoint: "POST /api/incoming-call", operation: "twilio_call", toNumber: To });
 
-      // Look up the tracking number to get GCLID and storeId
       const trackingNumber = await getTrackingNumberByPhone(To);
       const gclid = trackingNumber?.gclid || null;
       const storeId = trackingNumber?.storeId || undefined;
 
-      // Log the call with storeId
       await logCall({
         twilioCallSid: CallSid,
         trackingNumberId: trackingNumber?.id,
@@ -133,7 +132,6 @@ export function registerTwilioRoutes(app: Express) {
         storeId,
       });
 
-      // Build customer tags including source information
       const customerTags: string[] = ["phone-call", "twilio-lead"];
       
       if (storeId) {
@@ -145,7 +143,6 @@ export function registerTwilioRoutes(app: Express) {
         }
       }
 
-      // Create Shopify customer with GCLID tag using store-specific credentials
       const customer = await createShopifyCustomer({
         phone: From,
         gclid: gclid || undefined,
@@ -154,10 +151,9 @@ export function registerTwilioRoutes(app: Express) {
       });
 
       if (customer) {
-        console.log(`Created/found Shopify customer: ${customer.id}`);
+        logInfo("Created/found Shopify customer from call", { operation: "twilio_call", storeId });
       }
 
-      // Respond with TwiML
       res.type("text/xml");
 
       if (trackingNumber?.forwardTo) {
@@ -170,7 +166,7 @@ export function registerTwilioRoutes(app: Express) {
         );
       }
     } catch (error) {
-      console.error("Error handling incoming call:", error);
+      logError("Error handling incoming call", { endpoint: "POST /api/incoming-call", operation: "twilio_call" }, error);
       res.type("text/xml");
       res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -191,24 +187,21 @@ export function registerTwilioRoutes(app: Express) {
 
       res.status(200).send("OK");
     } catch (error) {
-      console.error("Error updating call status:", error);
+      logError("Failed to update call status", { endpoint: "POST /api/call-status", operation: "twilio_call" }, error);
       res.status(500).json({ error: "Failed to update call status" });
     }
   });
 
-  // Manage tracking numbers pool (requires ownership via storeContext)
   app.get("/api/tracking-numbers", async (req: Request, res: Response) => {
     try {
       const storeId = req.query.storeId as string | undefined;
       
-      // Require store context if storeId is specified
       if (storeId) {
         const ownership = validateStoreOwnership(req, storeId);
         if (!ownership.valid) {
           return res.status(ownership.statusCode || 403).json({ error: ownership.error });
         }
       } else if (!req.storeContext?.storeId) {
-        // Require store context for listing tracking numbers
         return res.status(401).json({ error: "Store context required - provide shop or storeId parameter" });
       }
       
@@ -216,7 +209,7 @@ export function registerTwilioRoutes(app: Express) {
       const numbers = await getAllTrackingNumbers(effectiveStoreId);
       res.json(numbers);
     } catch (error) {
-      console.error("Error fetching tracking numbers:", error);
+      logError("Failed to fetch tracking numbers", { endpoint: "GET /api/tracking-numbers", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to fetch tracking numbers" });
     }
   });
@@ -232,7 +225,6 @@ export function registerTwilioRoutes(app: Express) {
         return res.status(400).json({ error: "phoneNumber is required" });
       }
       
-      // Validate store ownership
       const ownership = validateStoreOwnership(req, storeId);
       if (!ownership.valid) {
         return res.status(ownership.statusCode || 403).json({ error: ownership.error });
@@ -241,17 +233,15 @@ export function registerTwilioRoutes(app: Express) {
       const number = await addTrackingNumber(storeId, phoneNumber, forwardTo);
       res.status(201).json(number);
     } catch (error) {
-      console.error("Error adding tracking number:", error);
+      logError("Failed to add tracking number", { endpoint: "POST /api/tracking-numbers", storeId: req.body?.storeId }, error);
       res.status(500).json({ error: "Failed to add tracking number" });
     }
   });
 
-  // Get call logs (requires store context, filters by store)
   app.get("/api/call-logs", async (req: Request, res: Response) => {
     try {
       const storeId = req.storeContext?.storeId;
       
-      // Require store context for call logs
       if (!storeId) {
         return res.status(401).json({ error: "Store context required - provide shop or storeId parameter" });
       }
@@ -260,15 +250,13 @@ export function registerTwilioRoutes(app: Express) {
       const logs = await getCallLogs(limit, storeId);
       res.json(logs);
     } catch (error) {
-      console.error("Error fetching call logs:", error);
+      logError("Failed to fetch call logs", { endpoint: "GET /api/call-logs", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to fetch call logs" });
     }
   });
 
-  // Test endpoints - disabled in production
   const isProduction = process.env.NODE_ENV === "production";
   
-  // Test endpoint for simulating number assignment (development only)
   app.post("/api/test/assign-number", async (req: Request, res: Response) => {
     const devSecret = process.env.DEV_TEST_SECRET;
     if (isProduction || !devSecret || req.headers["x-dev-secret"] !== devSecret) {
@@ -287,12 +275,11 @@ export function registerTwilioRoutes(app: Express) {
         data: result,
       });
     } catch (error) {
-      console.error("Error in test assign:", error);
+      logError("Test assign-number failed", { endpoint: "POST /api/test/assign-number" }, error);
       res.status(500).json({ error: "Test failed" });
     }
   });
 
-  // Test endpoint for simulating incoming call webhook (development only)
   app.post("/api/test/incoming-call", async (req: Request, res: Response) => {
     const devSecret = process.env.DEV_TEST_SECRET;
     if (isProduction || !devSecret || req.headers["x-dev-secret"] !== devSecret) {
@@ -337,7 +324,7 @@ export function registerTwilioRoutes(app: Express) {
         shopifyConfigured: isShopifyConfigured(),
       });
     } catch (error) {
-      console.error("Error in test incoming call:", error);
+      logError("Test incoming-call failed", { endpoint: "POST /api/test/incoming-call" }, error);
       res.status(500).json({ error: "Test failed" });
     }
   });
@@ -351,7 +338,7 @@ export function registerTwilioRoutes(app: Express) {
       await expireOldAssignments(storeId);
       res.json({ success: true, message: "Expired old assignments" });
     } catch (error) {
-      console.error("Error expiring assignments:", error);
+      logError("Failed to expire assignments", { endpoint: "POST /api/tracking-numbers/expire", storeId }, error);
       res.status(500).json({ error: "Failed to expire assignments" });
     }
   });
@@ -471,7 +458,6 @@ export function registerTwilioRoutes(app: Express) {
     res.type("text/plain").send(snippet);
   });
 
-  // Search available Twilio phone numbers
   app.get("/api/twilio/available-numbers", async (req: Request, res: Response) => {
     try {
       const storeId = req.storeContext?.storeId;
@@ -508,8 +494,8 @@ export function registerTwilioRoutes(app: Express) {
         },
       })));
     } catch (error: any) {
-      console.error("Error searching available numbers:", error);
-      res.status(500).json({ error: error.message || "Failed to search numbers" });
+      logError("Failed to search available Twilio numbers", { endpoint: "GET /api/twilio/available-numbers", storeId: req.storeContext?.storeId, operation: "twilio_api" }, error);
+      res.status(500).json({ error: "Failed to search numbers" });
     }
   });
 
@@ -526,7 +512,6 @@ export function registerTwilioRoutes(app: Express) {
         return res.status(400).json({ error: "phoneNumber and forwardTo are required" });
       }
 
-      // Try store-specific credentials first, fall back to app-level
       const storeCredentials = await getStoreCredentials(storeId);
       const client = getTwilioClient(storeCredentials || undefined);
 
@@ -555,10 +540,10 @@ export function registerTwilioRoutes(app: Express) {
         }
       });
     } catch (error: any) {
-      console.error("Error purchasing number:", error);
-      res.status(500).json({ error: error.message || "Failed to purchase number" });
+      logError("Failed to purchase Twilio number", { endpoint: "POST /api/twilio/purchase-number", storeId: req.storeContext?.storeId, operation: "twilio_api" }, error);
+      res.status(500).json({ error: "Failed to purchase number" });
     }
   });
 
-  console.log("Twilio call tracking routes registered");
+  logInfo("Twilio call tracking routes registered", { operation: "startup" });
 }

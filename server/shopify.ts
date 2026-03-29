@@ -3,11 +3,12 @@ import { shopifyApi, Session, ApiVersion, Shopify } from "@shopify/shopify-api";
 import { db } from "./db";
 import { shopifySessions, stores } from "@shared/schema";
 import { eq, inArray } from "drizzle-orm";
+import { logError, logWarn, logInfo } from "./lib/logger";
 
 function getEnvVar(name: string, required = false): string {
   const value = process.env[name];
   if (!value && required) {
-    console.warn(`Warning: ${name} environment variable is not set`);
+    logWarn(`Environment variable ${name} is not set`, { operation: "shopify_config" });
   }
   return value || "";
 }
@@ -39,7 +40,7 @@ let shopifyInstance: Shopify | null = null;
 
 function initShopify(): Shopify | null {
   if (!isShopifyConfigured()) {
-    console.log("Shopify OAuth not configured - set SHOPIFY_API_KEY and SHOPIFY_API_SECRET to enable");
+    logInfo("Shopify OAuth not configured - set SHOPIFY_API_KEY and SHOPIFY_API_SECRET to enable", { operation: "shopify_config" });
     return null;
   }
   
@@ -83,7 +84,7 @@ export class PostgresSessionStorage {
 
       return true;
     } catch (error) {
-      console.error("Failed to store session:", error);
+      logError("Failed to store session", { operation: "shopify_session" }, error);
       return false;
     }
   }
@@ -109,7 +110,7 @@ export class PostgresSessionStorage {
         onlineAccessInfo: row.onlineAccessInfo as any || undefined,
       });
     } catch (error) {
-      console.error("Failed to load session:", error);
+      logError("Failed to load session", { operation: "shopify_session" }, error);
       return undefined;
     }
   }
@@ -119,7 +120,7 @@ export class PostgresSessionStorage {
       await db.delete(shopifySessions).where(eq(shopifySessions.id, id));
       return true;
     } catch (error) {
-      console.error("Failed to delete session:", error);
+      logError("Failed to delete session", { operation: "shopify_session" }, error);
       return false;
     }
   }
@@ -130,7 +131,7 @@ export class PostgresSessionStorage {
       await db.delete(shopifySessions).where(inArray(shopifySessions.id, ids));
       return true;
     } catch (error) {
-      console.error("Failed to delete sessions:", error);
+      logError("Failed to delete sessions", { operation: "shopify_session" }, error);
       return false;
     }
   }
@@ -156,7 +157,7 @@ export class PostgresSessionStorage {
           })
       );
     } catch (error) {
-      console.error("Failed to find sessions:", error);
+      logError("Failed to find sessions", { operation: "shopify_session" }, error);
       return [];
     }
   }

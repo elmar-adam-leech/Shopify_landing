@@ -12,6 +12,7 @@ import { triggerInitialSync } from "./lib/sync-service";
 import { db } from "./db";
 import { shopifySessions } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
+import { logError, logWarn, logInfo } from "./lib/logger";
 
 declare global {
   namespace Express {
@@ -144,7 +145,7 @@ export function verifySessionToken(
     
     return { valid: true, payload };
   } catch (error) {
-    console.error("[Auth] Token verification error:", error);
+    logError("Token verification error", { operation: "shopify_auth" }, error);
     return { valid: false, error: "Token verification failed" };
   }
 }
@@ -165,14 +166,14 @@ export function validateShopMiddleware(req: Request, res: Response, next: NextFu
   
   // Validate shop domain
   if (!validateShop(shop)) {
-    console.warn(`[Auth] Invalid shop domain: ${shop}`);
+    logWarn("Invalid shop domain", { operation: "shopify_auth", shop: shop || "undefined" });
     return res.status(400).json({ error: "Invalid shop parameter" });
   }
   
   // Check single-tenant SHOP env var if set
   const enforcedShop = process.env.SHOP;
   if (enforcedShop && shop !== enforcedShop) {
-    console.warn(`[Auth] Shop mismatch: ${shop} != ${enforcedShop}`);
+    logWarn("Shop mismatch with enforced shop", { operation: "shopify_auth" });
     return res.status(403).json({ error: "Unauthorized shop" });
   }
   
@@ -182,28 +183,28 @@ export function validateShopMiddleware(req: Request, res: Response, next: NextFu
   if (hmac) {
     // Verify HMAC from Shopify redirect
     if (!apiSecret) {
-      console.error("[Auth] SHOPIFY_API_SECRET not configured for HMAC validation");
+      logError("SHOPIFY_API_SECRET not configured for HMAC validation", { operation: "shopify_auth" });
       return res.status(500).json({ error: "Server configuration error" });
     }
     
     if (!verifyHmac(req.query as Record<string, string>, hmac, apiSecret)) {
-      console.warn(`[Auth] HMAC validation failed for ${shop}`);
+      logWarn("HMAC validation failed", { operation: "shopify_auth", shop });
       return res.status(403).json({ error: "HMAC validation failed" });
     }
     
     req.authMethod = "hmac";
-    console.log(`[Auth] HMAC verified for ${shop}`);
+    logInfo("HMAC verified", { operation: "shopify_auth", shop });
   } else if (sessionToken) {
     // Verify session token (JWT) from App Bridge
     if (!apiSecret) {
-      console.error("[Auth] SHOPIFY_API_SECRET not configured for token validation");
+      logError("SHOPIFY_API_SECRET not configured for token validation", { operation: "shopify_auth" });
       return res.status(500).json({ error: "Server configuration error" });
     }
     
     // Full JWT validation including aud, iss, dest, and shop match
     const tokenResult = verifySessionToken(sessionToken, apiSecret, shop);
     if (!tokenResult.valid) {
-      console.warn(`[Auth] Session token validation failed for ${shop}: ${tokenResult.error}`);
+      logWarn("Session token validation failed", { operation: "shopify_auth", shop, reason: tokenResult.error });
       return res.status(401).json({ 
         error: "Invalid session token",
         details: tokenResult.error,
@@ -213,15 +214,15 @@ export function validateShopMiddleware(req: Request, res: Response, next: NextFu
     
     req.authMethod = "session_token";
     req.sessionPayload = tokenResult.payload;
-    console.log(`[Auth] Session token verified for ${shop}`);
+    logInfo("Session token verified", { operation: "shopify_auth", shop });
   } else {
     // In development, allow shop-only auth for testing
     const isDev = process.env.NODE_ENV !== "production";
     if (isDev) {
-      console.warn(`[Auth] Dev mode: allowing request without HMAC/session for ${shop}`);
+      logWarn("Dev mode: allowing request without HMAC/session", { operation: "shopify_auth", shop });
       req.authMethod = "dev_bypass";
     } else {
-      console.warn(`[Auth] Missing HMAC or session token for ${shop}`);
+      logWarn("Missing HMAC or session token", { operation: "shopify_auth", shop });
       return res.status(401).json({ 
         error: "Authentication required",
         redirect: `/api/auth/shopify?shop=${shop}`
@@ -247,7 +248,7 @@ export async function ensureInstalledOnShop(req: Request, res: Response, next: N
     const store = await getStoreByDomain(shop);
     
     if (!store || store.installState !== "installed" || !store.shopifyAccessToken) {
-      console.log(`[Auth] Shop not installed, redirecting to OAuth: ${shop}`);
+      logInfo("Shop not installed, redirecting to OAuth", { operation: "shopify_auth", shop });
       const hostUrl = process.env.HOST_URL || "http://localhost:5000";
       return res.redirect(`${hostUrl}/api/auth/shopify?shop=${shop}`);
     }
@@ -255,7 +256,7 @@ export async function ensureInstalledOnShop(req: Request, res: Response, next: N
     req.store = store;
     next();
   } catch (error) {
-    console.error("[Auth] Error checking shop installation:", error);
+    logError("Error checking shop installation", { operation: "shopify_auth", shop: req.shopDomain || (req.query.shop as string) }, error);
     res.status(500).json({ error: "Failed to verify shop installation" });
   }
 }
@@ -290,7 +291,7 @@ async function getOnlineSession(shop: string) {
   
   // Clean up expired session
   if (session && isSessionExpired(session)) {
-    console.log(`[Session] Cleaning up expired online session for ${shop}`);
+    logInfo("Cleaning up expired online session", { operation: "shopify_session", shop });
     await db.delete(shopifySessions)
       .where(eq(shopifySessions.id, session.id));
   }
@@ -321,14 +322,14 @@ export async function getSessionForShop(shop: string, preferOnline = true) {
   if (preferOnline) {
     const online = await getOnlineSession(shop);
     if (online?.accessToken) {
-      console.log(`[Session] Using valid online session for ${shop}`);
+      logInfo("Using valid online session", { operation: "shopify_session", shop });
       return online;
     }
   }
   
   const offline = await getOfflineSession(shop);
   if (offline?.accessToken) {
-    console.log(`[Session] Using offline session for ${shop}`);
+    logInfo("Using offline session", { operation: "shopify_session", shop });
   }
   return offline;
 }
@@ -381,7 +382,7 @@ router.get("/api/auth/shopify", async (req: Request, res: Response) => {
     state: state,
   }).toString();
 
-  console.log(`[Auth] Starting offline OAuth for ${shop}${host ? ' (embedded context)' : ''}`);
+  logInfo("Starting offline OAuth", { operation: "shopify_oauth", shop });
   res.redirect(authUrl);
 });
 
@@ -406,7 +407,7 @@ router.get("/api/auth/callback", async (req: Request, res: Response) => {
   }
   
   if (!verifyHmac(req.query as Record<string, string>, hmac, apiSecret)) {
-    console.warn(`HMAC validation failed for ${shop}`);
+    logWarn("HMAC validation failed in OAuth callback", { operation: "shopify_oauth", shop });
     return res.status(403).json({ error: "HMAC validation failed - request may be tampered" });
   }
 
@@ -417,7 +418,7 @@ router.get("/api/auth/callback", async (req: Request, res: Response) => {
     .limit(1);
 
   if (!storedSession || storedSession.state !== state || storedSession.shop !== shop) {
-    console.warn(`OAuth state mismatch for ${shop} - possible CSRF attack`);
+    logWarn("OAuth state mismatch - possible CSRF attack", { operation: "shopify_oauth", shop });
     return res.status(403).json({ error: "State validation failed - possible CSRF attack" });
   }
   
@@ -438,8 +439,7 @@ router.get("/api/auth/callback", async (req: Request, res: Response) => {
     });
 
     if (!tokenResponse.ok) {
-      const error = await tokenResponse.text();
-      console.error("Token exchange failed:", error);
+      logError("OAuth token exchange failed", { operation: "shopify_oauth", shop, httpStatus: String(tokenResponse.status) });
       return res.status(500).json({ error: "Failed to exchange code for token" });
     }
 
@@ -449,7 +449,7 @@ router.get("/api/auth/callback", async (req: Request, res: Response) => {
     };
     
     const { access_token, scope } = tokenData;
-    console.log(`Successfully authenticated store: ${shop}`);
+    logInfo("Successfully authenticated store", { operation: "shopify_oauth", shop });
 
     await createOrUpdateStore(shop, access_token, scope);
 
@@ -473,7 +473,7 @@ router.get("/api/auth/callback", async (req: Request, res: Response) => {
       }
     });
     
-    console.log(`[Auth] Offline token stored for ${shop}, redirecting to online auth`);
+    logInfo("Offline token stored, redirecting to online auth", { operation: "shopify_oauth", shop });
     
     // Trigger initial product sync asynchronously (don't wait for it)
     triggerInitialSync(shop);
@@ -488,7 +488,7 @@ router.get("/api/auth/callback", async (req: Request, res: Response) => {
     }
     res.redirect(onlineAuthUrl.toString());
   } catch (error) {
-    console.error("[Auth] OAuth callback error:", error);
+    logError("OAuth callback error", { operation: "shopify_oauth", shop }, error);
     res.status(500).json({ error: "Authentication failed" });
   }
 });
@@ -548,7 +548,7 @@ router.get("/api/auth/online", async (req: Request, res: Response) => {
     "grant_options[]": "per-user",
   }).toString();
 
-  console.log(`[Auth] Redirecting to Shopify online OAuth: ${shop}`);
+  logInfo("Redirecting to Shopify online OAuth", { operation: "shopify_oauth", shop });
   res.redirect(authUrl);
 });
 
@@ -563,7 +563,7 @@ router.get("/api/auth/online/callback", async (req: Request, res: Response) => {
   const { shop, code, state, hmac } = req.query as Record<string, string>;
 
   if (!shop || !code || !state || !hmac) {
-    console.error("[Auth] Missing required parameters in online callback");
+    logError("Missing required parameters in online callback", { operation: "shopify_oauth" });
     return res.status(400).json({ error: "Missing required parameters (shop, code, state, hmac)" });
   }
 
@@ -577,7 +577,7 @@ router.get("/api/auth/online/callback", async (req: Request, res: Response) => {
   }
   
   if (!verifyHmac(req.query as Record<string, string>, hmac, apiSecret)) {
-    console.warn(`[Auth] HMAC validation failed for online auth: ${shop}`);
+    logWarn("HMAC validation failed for online auth", { operation: "shopify_oauth", shop });
     return res.status(403).json({ error: "HMAC validation failed" });
   }
 
@@ -588,7 +588,7 @@ router.get("/api/auth/online/callback", async (req: Request, res: Response) => {
     .limit(1);
 
   if (!storedSession || storedSession.state !== state || storedSession.shop !== shop) {
-    console.warn(`[Auth] Online OAuth state mismatch for ${shop}`);
+    logWarn("Online OAuth state mismatch", { operation: "shopify_oauth", shop });
     return res.status(403).json({ error: "State validation failed" });
   }
 
@@ -609,8 +609,7 @@ router.get("/api/auth/online/callback", async (req: Request, res: Response) => {
     });
 
     if (!tokenResponse.ok) {
-      const error = await tokenResponse.text();
-      console.error("[Auth] Online token exchange failed:", error);
+      logError("Online token exchange failed", { operation: "shopify_oauth", shop, httpStatus: String(tokenResponse.status) });
       return res.status(500).json({ error: "Failed to exchange code for token" });
     }
 
@@ -632,7 +631,7 @@ router.get("/api/auth/online/callback", async (req: Request, res: Response) => {
     };
     
     const { access_token, scope, expires_in, associated_user } = tokenData;
-    console.log(`[Auth] Online token obtained for ${shop}, user ID: ${associated_user?.id || 'unknown'}`);
+    logInfo("Online token obtained", { operation: "shopify_oauth", shop });
 
     // Store online session with user info and expiry
     const expiresAt = expires_in ? new Date(Date.now() + expires_in * 1000) : undefined;
@@ -674,28 +673,28 @@ router.get("/api/auth/online/callback", async (req: Request, res: Response) => {
         const decodedHost = Buffer.from(storedHost, "base64").toString("utf8");
         // decodedHost is like "admin.shopify.com/store/test-1-111111111111111420"
         redirectUrl = `https://${decodedHost}/apps/${appHandle}`;
-        console.log(`[Auth] Redirecting to Shopify admin: ${redirectUrl}`);
+        logInfo("Redirecting to Shopify admin", { operation: "shopify_oauth", shop });
       } catch (e) {
         // Fallback to app URL with host param for App Bridge to handle
         const hostUrl = process.env.HOST_URL || "http://localhost:5000";
         redirectUrl = `${hostUrl}/?shop=${encodeURIComponent(shop)}&host=${encodeURIComponent(host)}`;
-        console.log(`[Auth] Host decode failed, fallback redirect: ${redirectUrl}`);
+        logInfo("Host decode failed, using fallback redirect", { operation: "shopify_oauth", shop });
       }
     } else if (storedHost) {
       // No app handle configured - redirect to app with host param for App Bridge redirect
       const hostUrl = process.env.HOST_URL || "http://localhost:5000";
       redirectUrl = `${hostUrl}/?shop=${encodeURIComponent(shop)}&host=${encodeURIComponent(storedHost)}`;
-      console.log(`[Auth] No app handle configured, redirect with host param: ${redirectUrl}`);
+      logInfo("No app handle configured, redirect with host param", { operation: "shopify_oauth", shop });
     } else {
       // No host stored, redirect to app with shop/host params
       const hostUrl = process.env.HOST_URL || "http://localhost:5000";
       redirectUrl = `${hostUrl}/?shop=${encodeURIComponent(shop)}&host=${encodeURIComponent(host)}`;
-      console.log(`[Auth] No stored host, redirect to: ${redirectUrl}`);
+      logInfo("No stored host, redirect with generated host", { operation: "shopify_oauth", shop });
     }
     
     res.redirect(redirectUrl);
   } catch (error) {
-    console.error("[Auth] Online OAuth callback error:", error);
+    logError("Online OAuth callback error", { operation: "shopify_oauth", shop }, error);
     res.status(500).json({ error: "Authentication failed" });
   }
 });
@@ -724,17 +723,17 @@ router.post("/api/webhooks/app-uninstalled", async (req: Request, res: Response)
     .digest("base64");
 
   if (!safeCompare(generatedHmac, hmac)) {
-    console.warn(`Invalid webhook HMAC from ${shop}`);
+    logWarn("Invalid webhook HMAC", { operation: "shopify_webhook", shop });
     return res.status(401).json({ error: "Invalid HMAC" });
   }
 
-  console.log(`App uninstalled from: ${shop}`);
+  logInfo("App uninstalled", { operation: "shopify_webhook", shop });
   
   try {
     await markStoreUninstalled(shop);
     res.status(200).json({ success: true });
   } catch (error) {
-    console.error("Error handling uninstall webhook:", error);
+    logError("Error handling uninstall webhook", { operation: "shopify_webhook", shop }, error);
     res.status(500).json({ error: "Failed to process uninstall" });
   }
 });
@@ -777,7 +776,7 @@ router.get("/api/auth/status", async (req: Request, res: Response) => {
       configured: isShopifyConfigured() 
     });
   } catch (error) {
-    console.error("Auth status error:", error);
+    logError("Auth status error", { operation: "shopify_auth", shop }, error);
     return res.json({ 
       authenticated: false, 
       configured: isShopifyConfigured() 
@@ -803,7 +802,7 @@ router.get("/api/stores/current", validateShopMiddleware, async (req: Request, r
       isActive: store.isActive,
     });
   } catch (error) {
-    console.error("Get current store error:", error);
+    logError("Get current store error", { operation: "shopify_auth", shop }, error);
     return res.status(500).json({ error: "Failed to get store" });
   }
 });
@@ -822,14 +821,14 @@ router.get("/api/products", validateShopMiddleware, async (req: Request, res: Re
     const session = await getSessionForShop(shop, true);
     
     if (!session?.accessToken) {
-      console.warn(`[API] No valid session for ${shop}`);
+      logWarn("No valid session for shop", { endpoint: "GET /api/products", operation: "shopify_api", shop });
       return res.status(401).json({ 
         error: "Authentication required",
         redirect: `/api/auth/shopify?shop=${shop}`
       });
     }
     
-    console.log(`[API] Fetching products for ${shop} (session: ${session.isOnline ? 'online' : 'offline'})`);
+    logInfo("Fetching products", { endpoint: "GET /api/products", operation: "shopify_api", shop, sessionType: session.isOnline ? "online" : "offline" });
     
     // GraphQL query for products
     const query = `
@@ -882,8 +881,7 @@ router.get("/api/products", validateShopMiddleware, async (req: Request, res: Re
     });
     
     if (!response.ok) {
-      const error = await response.text();
-      console.error(`[API] GraphQL request failed: ${response.status}`, error);
+      logError("GraphQL products request failed", { endpoint: "GET /api/products", operation: "shopify_api", shop, httpStatus: String(response.status) });
       
       if (response.status === 401) {
         return res.status(401).json({ 
@@ -898,8 +896,8 @@ router.get("/api/products", validateShopMiddleware, async (req: Request, res: Re
     const data = await response.json();
     
     if (data.errors) {
-      console.error("[API] GraphQL errors:", data.errors);
-      return res.status(400).json({ error: "GraphQL query error", details: data.errors });
+      logError("GraphQL query errors", { endpoint: "GET /api/products", operation: "shopify_api", shop, graphqlError: data.errors[0]?.message });
+      return res.status(400).json({ error: "GraphQL query error" });
     }
     
     // Transform response for cleaner output
@@ -916,14 +914,14 @@ router.get("/api/products", validateShopMiddleware, async (req: Request, res: Re
       sku: edge.node.variants.edges[0]?.node?.sku,
     }));
     
-    console.log(`[API] Fetched ${products.length} products for ${shop}`);
+    logInfo(`Fetched ${products.length} products`, { endpoint: "GET /api/products", operation: "shopify_api", shop });
     
     res.json({
       products,
       pageInfo: data.data.products.pageInfo,
     });
   } catch (error) {
-    console.error("[API] Products endpoint error:", error);
+    logError("Products endpoint error", { endpoint: "GET /api/products", operation: "shopify_api", shop }, error);
     res.status(500).json({ error: "Failed to fetch products" });
   }
 });

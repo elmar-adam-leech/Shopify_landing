@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { storage } from "../storage";
 import { logSecurityEvent } from "../lib/audit";
+import { logError } from "../lib/logger";
 import { appProxyMiddleware } from "../lib/proxy-signature";
 import {
   renderPage,
@@ -72,7 +73,7 @@ export function createProxyRoutes(): Router {
 
       res.send(html);
     } catch (error) {
-      console.error("App Proxy render error:", error);
+      logError("App Proxy render error", { endpoint: "GET /proxy/lp/:slug", storeId: req.shopDomain }, error);
       res.status(500).send(renderErrorPage("Failed to load page"));
     }
   });
@@ -122,7 +123,7 @@ export function createProxyRoutes(): Router {
 
       res.send(html);
     } catch (error) {
-      console.error("Public page render error:", error);
+      logError("Public page render error", { endpoint: "GET /p/:slug", slug: req.params.slug }, error);
       res.status(500).send(renderErrorPage("Failed to load page"));
     }
   });
@@ -194,7 +195,7 @@ export function createProxyRoutes(): Router {
 
       res.send(html);
     } catch (error) {
-      console.error("Preview render error:", error);
+      logError("Preview render error", { endpoint: "GET /preview/:id", storeId: req.storeContext?.storeId }, error);
       res.status(500).send(renderErrorPage("Failed to load preview"));
     }
   });
@@ -250,7 +251,7 @@ export function createProxyRoutes(): Router {
         ...(shopifyCustomerError && { shopifyCustomerError }),
       });
     } catch (error) {
-      console.error("Form submission error:", error);
+      logError("Proxy form submission error", { endpoint: "POST /proxy/api/submit-form", storeId: req.shopDomain }, error);
       res.status(500).json({ error: "Failed to submit form" });
     }
   });
