@@ -2,7 +2,70 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
-import { startSyncScheduler } from "./lib/sync-scheduler";
+import { startSyncScheduler, stopSyncScheduler } from "./lib/sync-scheduler";
+import { closeDatabase, db } from "./db";
+import { stopPruneTimer } from "./admin-auth";
+import { sql } from "drizzle-orm";
+
+const REQUIRED_ENV_VARS = [
+  "SESSION_SECRET",
+] as const;
+
+const CONDITIONAL_ENV_VARS: Array<{ name: string; condition: () => boolean; message: string }> = [
+  {
+    name: "ENCRYPTION_SALT",
+    condition: () => process.env.NODE_ENV === "production",
+    message: "ENCRYPTION_SALT is required in production for PII encryption",
+  },
+  {
+    name: "HOST_URL",
+    condition: () => process.env.NODE_ENV === "production",
+    message: "HOST_URL must be set in production to avoid localhost fallbacks in OAuth redirects",
+  },
+  {
+    name: "SHOPIFY_API_SECRET",
+    condition: () => process.env.NODE_ENV === "production" && !!process.env.ENCRYPTION_SALT,
+    message: "SHOPIFY_API_SECRET is required when PII encryption is active (used for key derivation)",
+  },
+];
+
+function validateEnvironment(): void {
+  const missing: string[] = [];
+
+  if (!process.env.DATABASE_URL && !process.env.NEON_SECRET) {
+    missing.push("DATABASE_URL or NEON_SECRET (at least one database connection is required)");
+  }
+
+  for (const name of REQUIRED_ENV_VARS) {
+    if (!process.env[name]) {
+      missing.push(name);
+    }
+  }
+
+  for (const { name, condition, message } of CONDITIONAL_ENV_VARS) {
+    if (condition() && !process.env[name]) {
+      missing.push(`${name} (${message})`);
+    }
+  }
+
+  if (missing.length > 0) {
+    const list = missing.map((m) => `  - ${m}`).join("\n");
+    console.error(`\nFATAL: Missing required environment variables:\n${list}\n`);
+    process.exit(1);
+  }
+
+  if (!process.env.SHOPIFY_API_KEY || !process.env.SHOPIFY_API_SECRET) {
+    console.warn("[startup] SHOPIFY_API_KEY / SHOPIFY_API_SECRET not set — Shopify integration disabled");
+  }
+
+  if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) {
+    console.warn("[startup] TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN not set — global Twilio fallback disabled");
+  }
+
+  console.log("[startup] Environment validation passed");
+}
+
+validateEnvironment();
 
 const app = express();
 app.set("trust proxy", 1);
@@ -50,6 +113,59 @@ app.use((req, res, next) => {
   next();
 });
 
+app.get("/health", async (_req: Request, res: Response) => {
+  const status: { status: string; database: string; uptime: number; timestamp: string } = {
+    status: "ok",
+    database: "unknown",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  };
+
+  try {
+    await db.execute(sql`SELECT 1`);
+    status.database = "connected";
+  } catch (error) {
+    status.status = "degraded";
+    status.database = "disconnected";
+    return res.status(503).json(status);
+  }
+
+  res.json(status);
+});
+
+let isShuttingDown = false;
+
+function gracefulShutdown(signal: string): void {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  log(`Received ${signal}. Starting graceful shutdown...`, "shutdown");
+
+  stopSyncScheduler();
+  stopPruneTimer();
+
+  httpServer.close(async () => {
+    log("HTTP server closed", "shutdown");
+
+    try {
+      await closeDatabase();
+    } catch (err) {
+      console.error("[shutdown] Error closing database:", err);
+    }
+
+    log("Shutdown complete", "shutdown");
+    process.exit(0);
+  });
+
+  setTimeout(() => {
+    console.error("[shutdown] Forceful shutdown after timeout");
+    process.exit(1);
+  }, 15_000).unref();
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
 (async () => {
   await registerRoutes(httpServer, app);
 
@@ -61,9 +177,6 @@ app.use((req, res, next) => {
     res.status(status).json({ message });
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
   } else {
@@ -71,10 +184,6 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen(
     {
@@ -85,7 +194,6 @@ app.use((req, res, next) => {
     () => {
       log(`serving on port ${port}`);
       
-      // Start the background sync scheduler
       startSyncScheduler();
     },
   );

@@ -33,6 +33,11 @@ const pruneTimer = setInterval(() => {
 }, PRUNE_INTERVAL_MS);
 pruneTimer.unref();
 
+export function stopPruneTimer(): void {
+  clearInterval(pruneTimer);
+  console.log("[Admin] Login attempt prune timer stopped");
+}
+
 function checkRateLimit(key: string): { allowed: boolean; retryAfter?: number } {
   const now = Date.now();
   const attempts = loginAttempts.get(key);

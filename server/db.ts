@@ -26,4 +26,11 @@ if (useNeon) {
   );
 }
 
-export { db, pool };
+async function closeDatabase(): Promise<void> {
+  if (pool) {
+    await pool.end();
+    console.log("[db] Database pool closed");
+  }
+}
+
+export { db, pool, closeDatabase };

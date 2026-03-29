@@ -26,7 +26,10 @@ const ENCRYPTION_SALT = ENCRYPTION_SALT_ENV || crypto.randomBytes(16).toString("
  * - Each store's data requires its specific storeId to decrypt
  */
 function deriveKey(storeId: string): Buffer {
-  const secret = process.env.SHOPIFY_API_SECRET || "fallback-dev-secret";
+  const secret = process.env.SHOPIFY_API_SECRET;
+  if (!secret) {
+    throw new Error("SHOPIFY_API_SECRET is required for encryption key derivation");
+  }
   const keyMaterial = `${secret}:${storeId}`;
   
   // Use secure scrypt parameters: N=16384, r=8, p=1

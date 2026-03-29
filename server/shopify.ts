@@ -23,7 +23,13 @@ const shopifyConfig = {
   apiKey: getEnvVar("SHOPIFY_API_KEY"),
   apiSecretKey: getEnvVar("SHOPIFY_API_SECRET"),
   scopes: (getEnvVar("SHOPIFY_SCOPES") || "read_products,read_content,write_content,write_customers,read_customers").split(","),
-  hostName: (getEnvVar("HOST_URL") || "localhost:5000").replace(/https?:\/\//, ""),
+  hostName: (() => {
+    const url = getEnvVar("HOST_URL");
+    if (!url && process.env.NODE_ENV === "production") {
+      throw new Error("HOST_URL is required in production for Shopify OAuth");
+    }
+    return (url || "localhost:5000").replace(/https?:\/\//, "");
+  })(),
   apiVersion: ApiVersion.January25,
   isEmbeddedApp: true,
   hostScheme: process.env.NODE_ENV === "production" ? "https" : "http",
