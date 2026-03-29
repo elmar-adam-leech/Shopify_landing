@@ -348,6 +348,15 @@ export function createPageRoutes(): Router {
         return res.status(404).json({ error: "Page not found" });
       }
 
+      if (page.status !== "published") {
+        const isAdmin = req.session?.adminRole === "admin";
+        if (!isAdmin) {
+          if (!page.storeId || !req.storeContext?.storeId || page.storeId !== req.storeContext.storeId) {
+            return res.status(403).json({ error: "Page is not published" });
+          }
+        }
+      }
+
       const validatedData = insertFormSubmissionSchema.parse({
         ...formData,
         blockId,

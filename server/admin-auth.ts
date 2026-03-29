@@ -218,6 +218,30 @@ export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);
 }
 
+export function adminCsrfProtection(req: Request, res: Response, next: NextFunction) {
+  const isStateChanging = ["POST", "PUT", "PATCH", "DELETE"].includes(req.method);
+  if (!isStateChanging) {
+    return next();
+  }
+
+  const isAdminSession = !!req.session?.adminUserId && req.session?.adminRole === "admin";
+  if (!isAdminSession) {
+    return next();
+  }
+
+  const authHeader = req.headers["authorization"];
+  if (authHeader?.startsWith("Bearer ")) {
+    return next();
+  }
+
+  const token = req.headers["x-csrf-token"] as string | undefined;
+  if (!token || !req.session.csrfToken || token !== req.session.csrfToken) {
+    return res.status(403).json({ error: "Forbidden: invalid CSRF token" });
+  }
+
+  next();
+}
+
 export async function seedAdminUser(email: string, password: string, username?: string): Promise<void> {
   const existingUser = await db.select().from(users)
     .where(or(eq(users.email, email), eq(users.username, username || email)))

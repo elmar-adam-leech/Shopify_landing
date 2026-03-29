@@ -55,6 +55,22 @@ export function createAbTestRoutes(): Router {
   router.get("/api/ab-tests/for-page/:pageId", async (req, res) => {
     try {
       const { pageId } = req.params;
+
+      const page = await storage.getPage(pageId);
+      if (!page) {
+        return res.status(404).json({ error: "Page not found" });
+      }
+
+      const isAdmin = req.session?.adminRole === "admin";
+      const hasStoreContext = !!req.storeContext?.storeId;
+      if (page.status !== "published" && !isAdmin && !hasStoreContext) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      if (hasStoreContext && !isAdmin && page.storeId && page.storeId !== req.storeContext?.storeId) {
+        return res.status(403).json({ error: "Access denied - page belongs to different store" });
+      }
+
       const test = await storage.getActiveAbTestForPage(pageId);
       if (!test) {
         return res.json(null);

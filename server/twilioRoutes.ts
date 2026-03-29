@@ -356,11 +356,15 @@ export function registerTwilioRoutes(app: Express) {
     }
   });
 
-  // Get JavaScript snippet for website integration (requires storeId)
   app.get("/api/dni-snippet", (req: Request, res: Response) => {
     const storeId = req.query.storeId as string | undefined;
     if (!storeId) {
       return res.status(400).json({ error: "storeId query parameter is required" });
+    }
+
+    const ownership = validateStoreOwnership(req, storeId);
+    if (!ownership.valid) {
+      return res.status(ownership.statusCode || 403).json({ error: ownership.error });
     }
 
     const appUrl =

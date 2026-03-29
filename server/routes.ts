@@ -4,7 +4,7 @@ import { registerTwilioRoutes } from "./twilioRoutes";
 import shopifyAuthRouter from "./shopify-auth";
 import { resolveStoreContext } from "./store-middleware";
 import { apiRateLimiter, authenticatedApiLimiter } from "./middleware/rate-limit";
-import { createSessionMiddleware, createAdminRouter } from "./admin-auth";
+import { createSessionMiddleware, createAdminRouter, adminCsrfProtection } from "./admin-auth";
 
 import { createAdminRoutes } from "./routes/admin";
 import { createProxyRoutes } from "./routes/proxy";
@@ -20,6 +20,8 @@ export async function registerRoutes(
 ): Promise<Server> {
   const sessionMiddleware = createSessionMiddleware();
   app.use(sessionMiddleware);
+
+  app.use(adminCsrfProtection);
 
   app.use("/api/admin", authenticatedApiLimiter, createAdminRouter());
 

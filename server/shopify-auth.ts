@@ -785,16 +785,8 @@ router.get("/api/auth/status", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/api/stores/current", async (req: Request, res: Response) => {
-  const shop = req.query.shop as string;
-  
-  if (!shop) {
-    return res.status(401).json({ error: "No store context - provide shop parameter" });
-  }
-
-  if (!validateShop(shop)) {
-    return res.status(400).json({ error: "Invalid shop parameter" });
-  }
+router.get("/api/stores/current", validateShopMiddleware, async (req: Request, res: Response) => {
+  const shop = req.shopDomain as string;
 
   try {
     const store = await getStoreByDomain(shop);
