@@ -3,7 +3,7 @@ import { type Server } from "http";
 import { registerTwilioRoutes } from "./twilioRoutes";
 import shopifyAuthRouter from "./shopify-auth";
 import { resolveStoreContext } from "./store-middleware";
-import { apiRateLimiter } from "./middleware/rate-limit";
+import { apiRateLimiter, authenticatedApiLimiter } from "./middleware/rate-limit";
 import { createSessionMiddleware, createAdminRouter } from "./admin-auth";
 
 import { createAdminRoutes } from "./routes/admin";
@@ -21,7 +21,7 @@ export async function registerRoutes(
   const sessionMiddleware = createSessionMiddleware();
   app.use(sessionMiddleware);
 
-  app.use("/api/admin", createAdminRouter());
+  app.use("/api/admin", authenticatedApiLimiter, createAdminRouter());
 
   app.use(createAdminRoutes());
 

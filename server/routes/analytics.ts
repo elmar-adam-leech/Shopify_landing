@@ -3,11 +3,12 @@ import { insertAnalyticsEventSchema } from "@shared/schema";
 import { z } from "zod";
 import { storage } from "../storage";
 import { validatePageAccess } from "./helpers";
+import { analyticsLimiter } from "../middleware/rate-limit";
 
 export function createAnalyticsRoutes(): Router {
   const router = Router();
 
-  router.post("/api/analytics", async (req, res) => {
+  router.post("/api/analytics", analyticsLimiter, async (req, res) => {
     try {
       let storeId: string | undefined | null = req.storeContext?.storeId;
 

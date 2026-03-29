@@ -1,104 +1,110 @@
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import type { Request, Response } from "express";
 
-/**
- * Per-store rate limiter for /api/* endpoints.
- * 
- * - 100 requests per minute per store (or per IP if no store context)
- * - Logs rate limit events to audit log
- * - Only applies to /api/* routes (not static files or proxy routes)
- */
+function getClientKey(req: Request, suffix?: string): string {
+  const normalizedIp = ipKeyGenerator(req.ip || "unknown");
+  const base = req.storeContext?.storeId
+    ? `store:${req.storeContext.storeId}`
+    : `ip:${normalizedIp}`;
+  return suffix ? `${base}:${suffix}` : base;
+}
+
+async function logAndRespond(
+  req: Request,
+  res: Response,
+  limit: number,
+  windowSeconds: number,
+  severity: string
+) {
+  const { logSecurityEvent } = await import("../lib/audit");
+
+  await logSecurityEvent({
+    eventType: "rate_limited",
+    req,
+    details: {
+      limit,
+      window: `${windowSeconds} seconds`,
+      key: getClientKey(req, severity),
+      severity,
+      endpoint: req.path,
+    },
+  });
+
+  res.set("Retry-After", String(windowSeconds));
+  res.status(429).json({
+    error: "Too many requests",
+    message: "Please try again later.",
+    retryAfter: windowSeconds,
+  });
+}
+
 export const apiRateLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute window
-  max: 100, // 100 requests per minute per store/IP
-  
-  // Key by storeId if available, otherwise by normalized IP (IPv6 compatible)
-  keyGenerator: (req: Request): string => {
-    // Use storeId for per-store rate limiting if available
-    if (req.storeContext?.storeId) {
-      return `store:${req.storeContext.storeId}`;
-    }
-    // Fall back to IP-based rate limiting using ipKeyGenerator for IPv6 normalization
-    return `ip:${ipKeyGenerator(req.ip || "unknown")}`;
-  },
-  
-  // Custom handler for rate limit exceeded
-  handler: async (req: Request, res: Response) => {
-    // Dynamic import to avoid circular dependency
-    const { logSecurityEvent } = await import("../lib/audit");
-    
-    const key = req.storeContext?.storeId 
-      ? `store:${req.storeContext.storeId}` 
-      : `ip:${ipKeyGenerator(req.ip || "unknown")}`;
-    
-    await logSecurityEvent({
-      eventType: "rate_limited",
-      req,
-      details: {
-        limit: 100,
-        window: "1 minute",
-        key,
-      },
-    });
-    
-    res.status(429).json({
-      error: "Too many requests",
-      message: "Please try again later",
-      retryAfter: 60,
-    });
-  },
-  
-  // Use standard headers
+  windowMs: 60 * 1000,
+  max: 100,
+  keyGenerator: (req: Request) => getClientKey(req),
+  handler: (req: Request, res: Response) => logAndRespond(req, res, 100, 60, "api"),
   standardHeaders: true,
   legacyHeaders: false,
-  
-  // Skip rate limiting for certain requests if needed
-  skip: (req: Request): boolean => {
-    // Skip rate limiting for health checks
-    if (req.path === "/api/health" || req.path === "/health") {
-      return true;
-    }
-    return false;
-  },
+  skip: (req: Request) =>
+    req.path === "/api/health" || req.path === "/health",
 });
 
-/**
- * Stricter rate limiter for sensitive endpoints (auth, webhooks).
- * 10 requests per minute.
- */
 export const strictRateLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
-  
-  keyGenerator: (req: Request): string => {
-    // Use storeId if available, otherwise use IP-based limiting
-    if (req.storeContext?.storeId) {
-      return `store:${req.storeContext.storeId}:strict`;
+  keyGenerator: (req: Request) => getClientKey(req, "strict"),
+  handler: (req: Request, res: Response) => logAndRespond(req, res, 10, 60, "strict"),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+export const formSubmissionLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  keyGenerator: (req: Request) => getClientKey(req, "form"),
+  handler: (req: Request, res: Response) => logAndRespond(req, res, 10, 60, "form"),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+export const trackingLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  keyGenerator: (req: Request) => getClientKey(req, "tracking"),
+  handler: (req: Request, res: Response) => logAndRespond(req, res, 60, 60, "tracking"),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+export const pageViewLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  keyGenerator: (req: Request) => getClientKey(req, "pageview"),
+  handler: (req: Request, res: Response) => logAndRespond(req, res, 120, 60, "pageview"),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+export const analyticsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  keyGenerator: (req: Request) => getClientKey(req, "analytics"),
+  handler: (req: Request, res: Response) => logAndRespond(req, res, 60, 60, "analytics"),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+export const authenticatedApiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  keyGenerator: (req: Request) => {
+    const userId = req.session?.adminUserId;
+    if (userId) {
+      return `user:${userId}:auth`;
     }
-    return `ip:${ipKeyGenerator(req.ip || "unknown")}:strict`;
+    return getClientKey(req, "auth");
   },
-  
-  handler: async (req: Request, res: Response) => {
-    const { logSecurityEvent } = await import("../lib/audit");
-    
-    await logSecurityEvent({
-      eventType: "rate_limited",
-      req,
-      details: {
-        limit: 10,
-        window: "1 minute",
-        endpoint: req.path,
-        severity: "strict",
-      },
-    });
-    
-    res.status(429).json({
-      error: "Too many requests",
-      message: "This endpoint has stricter rate limits. Please try again later.",
-      retryAfter: 60,
-    });
-  },
-  
+  handler: (req: Request, res: Response) => logAndRespond(req, res, 200, 60, "authenticated"),
   standardHeaders: true,
   legacyHeaders: false,
 });

@@ -6,6 +6,7 @@ import net from "net";
 import { storage } from "../storage";
 import { renderPage, render404Page, renderErrorPage } from "../lib/page-renderer";
 import { validatePageAccess, requireStoreContext, processFormSubmissionCustomer } from "./helpers";
+import { formSubmissionLimiter } from "../middleware/rate-limit";
 
 function isPrivateIp(ip: string): boolean {
   if (net.isIPv4(ip)) {
@@ -184,7 +185,7 @@ export function createPageRoutes(): Router {
     }
   });
 
-  router.post("/api/public/submit-form", async (req: Request, res: Response) => {
+  router.post("/api/public/submit-form", formSubmissionLimiter, async (req: Request, res: Response) => {
     try {
       const { pageId, blockId, visitorId, sessionId, ...formData } = req.body;
 
@@ -346,7 +347,7 @@ export function createPageRoutes(): Router {
     }
   });
 
-  router.post("/api/pages/:pageId/submissions", async (req, res) => {
+  router.post("/api/pages/:pageId/submissions", formSubmissionLimiter, async (req, res) => {
     try {
       const { pageId } = req.params;
       const { blockId, visitorId, sessionId, ...formData } = req.body;

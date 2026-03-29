@@ -18,6 +18,7 @@ import { createShopifyCustomer } from "./lib/shopify";
 import { isShopifyConfigured } from "./shopify";
 import { storage } from "./storage";
 import { validateStoreOwnership } from "./lib/store-ownership";
+import { trackingLimiter, strictRateLimiter } from "./middleware/rate-limit";
 
 async function validateTwilioWebhook(req: Request, res: Response, next: NextFunction) {
   const twilioSignature = req.headers["x-twilio-signature"] as string;
@@ -76,8 +77,7 @@ async function validateTwilioWebhook(req: Request, res: Response, next: NextFunc
 }
 
 export function registerTwilioRoutes(app: Express) {
-  // DNI (Dynamic Number Insertion) - Public endpoint called from merchant website snippet
-  app.get("/api/get-tracking-number", async (req: Request, res: Response) => {
+  app.get("/api/get-tracking-number", trackingLimiter, async (req: Request, res: Response) => {
     try {
       const { gclid, sessionId, visitorId, storeId } = req.query;
 
@@ -111,7 +111,7 @@ export function registerTwilioRoutes(app: Express) {
   });
 
   // Twilio webhook for incoming calls
-  app.post("/api/incoming-call", validateTwilioWebhook, async (req: Request, res: Response) => {
+  app.post("/api/incoming-call", strictRateLimiter, validateTwilioWebhook, async (req: Request, res: Response) => {
     try {
       const { From, To, CallSid, CallStatus } = req.body;
 
@@ -180,7 +180,7 @@ export function registerTwilioRoutes(app: Express) {
   });
 
   // Twilio call status callback
-  app.post("/api/call-status", validateTwilioWebhook, async (req: Request, res: Response) => {
+  app.post("/api/call-status", strictRateLimiter, validateTwilioWebhook, async (req: Request, res: Response) => {
     try {
       const { CallSid, CallStatus, CallDuration } = req.body;
 
@@ -500,7 +500,7 @@ export function registerTwilioRoutes(app: Express) {
   });
 
   // Purchase a Twilio phone number
-  app.post("/api/twilio/purchase-number", async (req: Request, res: Response) => {
+  app.post("/api/twilio/purchase-number", strictRateLimiter, async (req: Request, res: Response) => {
     try {
       const storeId = req.storeContext?.storeId;
       if (!storeId) {

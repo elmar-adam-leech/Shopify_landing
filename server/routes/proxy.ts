@@ -8,13 +8,14 @@ import {
   renderErrorPage,
 } from "../lib/page-renderer";
 import { processFormSubmissionCustomer } from "./helpers";
+import { pageViewLimiter, formSubmissionLimiter } from "../middleware/rate-limit";
 
 export function createProxyRoutes(): Router {
   const router = Router();
   const proxySecret = process.env.SHOPIFY_API_SECRET || "";
   const proxyMiddleware = appProxyMiddleware(proxySecret);
 
-  router.get("/proxy/lp/:slug", proxyMiddleware, async (req: Request, res: Response) => {
+  router.get("/proxy/lp/:slug", pageViewLimiter, proxyMiddleware, async (req: Request, res: Response) => {
     try {
       const { slug } = req.params;
       const shopDomain = req.shopDomain || (req.query.shop as string);
@@ -76,7 +77,7 @@ export function createProxyRoutes(): Router {
     }
   });
 
-  router.get("/p/:slug", async (req: Request, res: Response) => {
+  router.get("/p/:slug", pageViewLimiter, async (req: Request, res: Response) => {
     try {
       const { slug } = req.params;
 
@@ -126,7 +127,7 @@ export function createProxyRoutes(): Router {
     }
   });
 
-  router.get("/preview/:id", async (req: Request, res: Response) => {
+  router.get("/preview/:id", pageViewLimiter, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const shopParam = req.query.shop as string | undefined;
@@ -198,7 +199,7 @@ export function createProxyRoutes(): Router {
     }
   });
 
-  router.post("/proxy/api/submit-form", proxyMiddleware, async (req: Request, res: Response) => {
+  router.post("/proxy/api/submit-form", formSubmissionLimiter, proxyMiddleware, async (req: Request, res: Response) => {
     try {
       const shopDomain = req.shopDomain || (req.query.shop as string);
 
