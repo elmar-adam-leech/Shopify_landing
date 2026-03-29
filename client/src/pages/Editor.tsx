@@ -141,6 +141,16 @@ export default function Editor() {
   const [hasChanges, setHasChanges] = useState(false);
   const [viewportSize, setViewportSize] = useState<"desktop" | "tablet" | "mobile">("desktop");
 
+  useEffect(() => {
+    if (!hasChanges) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [hasChanges]);
+
   // Load template blocks from sessionStorage if this is a new page
   useEffect(() => {
     if (isNewPage) {
@@ -169,7 +179,7 @@ export default function Editor() {
     })
   );
 
-  const { isLoading, data: pageData } = useQuery<Page>({
+  const { isLoading, data: pageData, error: pageError } = useQuery<Page>({
     queryKey: ["/api/pages", pageId],
     enabled: !isNewPage && !!pageId,
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes - improves navigation speed
@@ -366,6 +376,19 @@ export default function Editor() {
     );
   }
 
+  if (!isNewPage && pageError) {
+    return (
+      <div className="h-screen flex items-center justify-center" data-testid="editor-error-state">
+        <div className="text-center space-y-4">
+          <p className="text-muted-foreground">Failed to load page. Please try again.</p>
+          <Link href={buildHref("/")}>
+            <Button variant="outline" data-testid="button-back-to-pages">Back to Pages</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <DndContext
       sensors={sensors}
@@ -382,7 +405,9 @@ export default function Editor() {
                 Pages
               </Button>
             </Link>
+            <label htmlFor="page-title" className="sr-only">Page title</label>
             <Input
+              id="page-title"
               value={title}
               onChange={(e) => {
                 setTitle(e.target.value);
@@ -497,6 +522,7 @@ export default function Editor() {
                   variant={viewportSize === "desktop" ? "secondary" : "ghost"}
                   size="icon"
                   onClick={() => setViewportSize("desktop")}
+                  aria-label="Desktop view"
                   data-testid="button-viewport-desktop"
                 >
                   <Monitor className="h-4 w-4" />
@@ -505,6 +531,7 @@ export default function Editor() {
                   variant={viewportSize === "tablet" ? "secondary" : "ghost"}
                   size="icon"
                   onClick={() => setViewportSize("tablet")}
+                  aria-label="Tablet view"
                   data-testid="button-viewport-tablet"
                 >
                   <Tablet className="h-4 w-4" />
@@ -513,6 +540,7 @@ export default function Editor() {
                   variant={viewportSize === "mobile" ? "secondary" : "ghost"}
                   size="icon"
                   onClick={() => setViewportSize("mobile")}
+                  aria-label="Mobile view"
                   data-testid="button-viewport-mobile"
                 >
                   <Smartphone className="h-4 w-4" />

@@ -480,11 +480,13 @@ function DynamicProductBlock({
                   <button 
                     className="px-3 py-1 hover:bg-gray-100 dark:hover:bg-gray-800"
                     onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                    aria-label="Decrease quantity"
                   >-</button>
                   <span className="px-4">{quantity}</span>
                   <button 
                     className="px-3 py-1 hover:bg-gray-100 dark:hover:bg-gray-800"
                     onClick={() => setQuantity(quantity + 1)}
+                    aria-label="Increase quantity"
                   >+</button>
                 </div>
               </div>

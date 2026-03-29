@@ -107,7 +107,7 @@ export default function Analytics() {
       <header className="h-16 border-b bg-background sticky top-0 z-50 flex items-center justify-between gap-4 px-6">
         <div className="flex items-center gap-4">
           <Link href="/">
-            <Button variant="ghost" size="icon" data-testid="button-back">
+            <Button variant="ghost" size="icon" aria-label="Back to pages" data-testid="button-back">
               <ArrowLeft className="w-4 h-4" />
             </Button>
           </Link>

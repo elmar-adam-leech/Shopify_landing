@@ -74,7 +74,7 @@ export function ShopifyProviders({ children }: ShopifyProvidersProps) {
   
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen" data-testid="app-bridge-loading">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     );
@@ -85,6 +85,43 @@ export function ShopifyProviders({ children }: ShopifyProvidersProps) {
   // - Embedded and app is initialized
   // - Embedded but init failed (allow fallback to window navigation)
   const isAppReady = !isEmbedded || (isEmbedded && (app !== null || initFailed));
+
+  if (isEmbedded && initFailed && !app) {
+    return (
+      <AppBridgeContext.Provider value={{ app, isEmbedded, isAppReady, shop, host }}>
+        <PolarisProvider i18n={enTranslations}>
+          <div className="flex items-center justify-center min-h-screen bg-background p-8" data-testid="app-bridge-error">
+            <div className="max-w-md text-center space-y-4">
+              <h1 className="text-xl font-bold text-foreground">Unable to connect to Shopify</h1>
+              <p className="text-muted-foreground">
+                The app could not initialize the Shopify connection. This may happen if the app is opened outside of the Shopify admin.
+              </p>
+              <div className="flex gap-3 justify-center">
+                <button
+                  onClick={() => window.location.reload()}
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                  data-testid="button-retry-app-bridge"
+                >
+                  Try Again
+                </button>
+                <button
+                  onClick={() => {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete("host");
+                    window.location.href = url.toString();
+                  }}
+                  className="px-4 py-2 border rounded-md hover:bg-muted"
+                  data-testid="button-standalone-mode"
+                >
+                  Continue Without Shopify
+                </button>
+              </div>
+            </div>
+          </div>
+        </PolarisProvider>
+      </AppBridgeContext.Provider>
+    );
+  }
   
   return (
     <AppBridgeContext.Provider value={{ app, isEmbedded, isAppReady, shop, host }}>

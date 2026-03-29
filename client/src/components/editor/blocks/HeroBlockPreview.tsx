@@ -29,7 +29,7 @@ export const HeroBlockPreview = memo(function HeroBlockPreview({ config }: HeroB
         <>
           <img
             src={settings.backgroundImage}
-            alt=""
+            alt="Hero background"
             className="absolute inset-0 w-full h-full object-cover"
           />
           <div

@@ -24,7 +24,7 @@ export default function ABTests() {
   const [trafficSplitType, setTrafficSplitType] = useState<"random" | "source_based">("random");
   const [goalType, setGoalType] = useState<"form_submission" | "button_click" | "page_view">("form_submission");
 
-  const { data: testsResponse, isLoading: testsLoading } = useQuery<{ data: AbTest[]; total: number }>({
+  const { data: testsResponse, isLoading: testsLoading, error: testsError } = useQuery<{ data: AbTest[]; total: number }>({
     queryKey: ["/api/ab-tests", selectedStoreId],
     queryFn: async () => {
       const params = new URLSearchParams({ limit: "100" });
@@ -37,7 +37,7 @@ export default function ABTests() {
   });
   const tests = testsResponse?.data ?? [];
 
-  const { data: pagesResponse } = useQuery<{ data: Page[]; total: number }>({
+  const { data: pagesResponse, isLoading: pagesLoading } = useQuery<{ data: Page[]; total: number }>({
     queryKey: ["/api/pages/list", selectedStoreId],
     staleTime: 2 * 60 * 1000,
     queryFn: async () => {
@@ -123,12 +123,25 @@ export default function ABTests() {
     );
   }
 
+  if (testsError) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center" data-testid="error-state">
+        <div className="text-center space-y-4">
+          <p className="text-muted-foreground">Failed to load A/B tests. Please try again.</p>
+          <Link href="/">
+            <Button variant="outline" data-testid="button-back-to-pages">Back to Pages</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <header className="h-16 border-b bg-background sticky top-0 z-50 flex items-center justify-between gap-4 px-6">
         <div className="flex items-center gap-4">
           <Link href="/">
-            <Button variant="ghost" size="icon" data-testid="button-back">
+            <Button variant="ghost" size="icon" aria-label="Back to pages" data-testid="button-back">
               <ArrowLeft className="w-4 h-4" />
             </Button>
           </Link>
@@ -172,16 +185,20 @@ export default function ABTests() {
               </div>
               <div className="space-y-2">
                 <Label>Original Page</Label>
-                <Select value={selectedPageId} onValueChange={setSelectedPageId}>
+                <Select value={selectedPageId} onValueChange={setSelectedPageId} disabled={pagesLoading}>
                   <SelectTrigger data-testid="select-original-page">
-                    <SelectValue placeholder="Select a page" />
+                    <SelectValue placeholder={pagesLoading ? "Loading pages..." : (pages.length === 0 ? "No pages available" : "Select a page")} />
                   </SelectTrigger>
                   <SelectContent>
-                    {pages.map((page) => (
-                      <SelectItem key={page.id} value={page.id}>
-                        {page.title}
-                      </SelectItem>
-                    ))}
+                    {pages.length === 0 ? (
+                      <SelectItem value="_empty" disabled>No pages available</SelectItem>
+                    ) : (
+                      pages.map((page) => (
+                        <SelectItem key={page.id} value={page.id}>
+                          {page.title}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -284,6 +301,7 @@ export default function ABTests() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        aria-label={`Delete test ${test.name}`}
                         onClick={() => deleteTestMutation.mutate(test.id)}
                         data-testid={`button-delete-${test.id}`}
                       >

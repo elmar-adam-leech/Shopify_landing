@@ -72,7 +72,7 @@ export default function PagesList() {
     blockCount: number;
   };
 
-  const { data: pagesResponse, isLoading } = useQuery<{ data: PageListItem[]; total: number; limit: number; offset: number }>({
+  const { data: pagesResponse, isLoading, error: pagesError } = useQuery<{ data: PageListItem[]; total: number; limit: number; offset: number }>({
     queryKey: ["/api/pages/list", selectedStoreId, pageOffset],
     staleTime: 2 * 60 * 1000,
     queryFn: async () => {
@@ -181,7 +181,7 @@ export default function PagesList() {
             <StoreSelector />
             {!isEmbedded && (
               <Link href={buildHref("/stores")}>
-                <Button variant="ghost" size="icon" data-testid="button-stores">
+                <Button variant="ghost" size="icon" aria-label="Manage stores" data-testid="button-stores">
                   <Store className="h-4 w-4" />
                 </Button>
               </Link>
@@ -239,6 +239,7 @@ export default function PagesList() {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                          aria-label={`Page options for ${page.title}`}
                           data-testid={`button-menu-${page.id}`}
                         >
                           <MoreHorizontal className="h-4 w-4" />
@@ -363,6 +364,25 @@ export default function PagesList() {
               </Button>
             </div>
           </div>
+        )}
+
+        {!isLoading && pagesError && !needsAuth && (
+          <Card className="max-w-md mx-auto" data-testid="error-state">
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <FileText className="h-8 w-8 text-destructive" />
+                </div>
+                <h3 className="text-lg font-medium mb-2">Failed to load pages</h3>
+                <p className="text-sm text-muted-foreground mb-6">
+                  Something went wrong while loading your pages. Please try again.
+                </p>
+                <Button variant="outline" onClick={() => window.location.reload()} data-testid="button-retry">
+                  Retry
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {!isLoading && (!pages || pages.length === 0) && needsAuth && (

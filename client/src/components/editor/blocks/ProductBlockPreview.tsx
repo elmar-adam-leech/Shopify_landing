@@ -133,7 +133,7 @@ export const ProductBlockPreview = memo(function ProductBlockPreview({ config }:
                 <div className="flex gap-2 p-3 justify-center overflow-x-auto">
                   {images.slice(0, 4).map((img: any, i: number) => (
                     <div key={i} className="h-16 w-16 bg-muted rounded-md overflow-hidden flex-shrink-0">
-                      <img src={img.url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                      <img src={img.url} alt={`Product thumbnail ${i + 1}`} className="w-full h-full object-cover" loading="lazy" />
                     </div>
                   ))}
                 </div>

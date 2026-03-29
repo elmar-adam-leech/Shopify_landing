@@ -42,7 +42,7 @@ export default function Stores() {
     twilioForwardTo: "",
   });
 
-  const { data: stores = [], isLoading } = useQuery<StoreType[]>({
+  const { data: stores = [], isLoading, error: storesError } = useQuery<StoreType[]>({
     queryKey: ["/api/stores"],
   });
 
@@ -130,7 +130,7 @@ export default function Stores() {
         <div className="container mx-auto px-4 py-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <Link href="/">
-              <Button variant="ghost" size="icon" data-testid="button-back">
+              <Button variant="ghost" size="icon" aria-label="Back to pages" data-testid="button-back">
                 <ArrowLeft className="h-4 w-4" />
               </Button>
             </Link>
@@ -304,7 +304,16 @@ export default function Stores() {
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        {isLoading ? (
+        {!isLoading && storesError ? (
+          <div className="text-center py-12" data-testid="error-state">
+            <Store className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Failed to load stores</h2>
+            <p className="text-muted-foreground mb-4">Something went wrong. Please try again.</p>
+            <Button variant="outline" onClick={() => window.location.reload()} data-testid="button-retry">
+              Retry
+            </Button>
+          </div>
+        ) : isLoading ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {[1, 2, 3].map((i) => (
               <Card key={i} className="animate-pulse">
@@ -341,7 +350,8 @@ export default function Stores() {
                     <div className="flex gap-1">
                       <Button 
                         variant="ghost" 
-                        size="icon" 
+                        size="icon"
+                        aria-label={`Edit ${store.name}`}
                         onClick={() => openEditDialog(store)}
                         data-testid={`button-edit-store-${store.id}`}
                       >
@@ -350,6 +360,7 @@ export default function Stores() {
                       <Button 
                         variant="ghost" 
                         size="icon"
+                        aria-label={`Delete ${store.name}`}
                         onClick={() => {
                           if (confirm("Are you sure you want to delete this store? All associated pages and data will be removed.")) {
                             deleteMutation.mutate(store.id);
