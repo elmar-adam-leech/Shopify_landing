@@ -367,15 +367,25 @@ export function registerTwilioRoutes(app: Express) {
       process.env.REPLIT_URL ||
       `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
 
-    const escapedStoreId = storeId.replace(/[\\'"<>&]/g, function(c: string) {
-      const map: Record<string, string> = { '\\': '\\\\', "'": "\\'", '"': '\\"', '<': '\\x3C', '>': '\\x3E', '&': '\\x26' };
-      return map[c] || c;
-    });
+    function escapeJsString(str: string): string {
+      return str
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '\\"')
+        .replace(/</g, '\\x3C')
+        .replace(/>/g, '\\x3E')
+        .replace(/&/g, '\\x26')
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r');
+    }
+
+    const escapedStoreId = escapeJsString(storeId);
+    const escapedAppUrl = escapeJsString(appUrl);
 
     const snippet = `<!-- Dynamic Number Insertion Script -->
 <script>
 (function() {
-  var API_URL = '${appUrl}/api/get-tracking-number';
+  var API_URL = '${escapedAppUrl}/api/get-tracking-number';
   var STORE_ID = '${escapedStoreId}';
   
   function getQueryParam(name) {

@@ -115,7 +115,15 @@ export function decryptPII(ciphertext: string | null | undefined, storeId: strin
     const iv = Buffer.from(ivHex, "hex");
     const authTag = Buffer.from(authTagHex, "hex");
     
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+    if (iv.length !== IV_LENGTH) {
+      throw new Error(`Invalid IV length: expected ${IV_LENGTH} bytes, got ${iv.length}`);
+    }
+    
+    if (authTag.length !== AUTH_TAG_LENGTH) {
+      throw new Error(`Invalid auth tag length: expected ${AUTH_TAG_LENGTH} bytes, got ${authTag.length}`);
+    }
+    
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH });
     decipher.setAuthTag(authTag);
     
     let decrypted = decipher.update(encrypted, "hex", "utf8");

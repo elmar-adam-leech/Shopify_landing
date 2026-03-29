@@ -228,7 +228,7 @@ export async function seedAdminUser(email: string, password: string, username?: 
     await db.update(users)
       .set({ password: hashedPassword, role: "admin", email })
       .where(eq(users.id, existingUser[0].id));
-    console.log(`[Admin] Updated existing user "${email}" to admin role`);
+    console.log(`[Admin] Updated existing user (id: ${existingUser[0].id}) to admin role`);
     return;
   }
 
@@ -239,5 +239,5 @@ export async function seedAdminUser(email: string, password: string, username?: 
     password: hashedPassword,
     role: "admin",
   });
-  console.log(`[Admin] Created admin user "${email}"`);
+  console.log(`[Admin] Created admin user with username "${username || 'admin'}"`);
 }

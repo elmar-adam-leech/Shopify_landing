@@ -632,7 +632,7 @@ router.get("/api/auth/online/callback", async (req: Request, res: Response) => {
     };
     
     const { access_token, scope, expires_in, associated_user } = tokenData;
-    console.log(`[Auth] Online token obtained for ${shop}, user: ${associated_user?.email || 'unknown'}`);
+    console.log(`[Auth] Online token obtained for ${shop}, user ID: ${associated_user?.id || 'unknown'}`);
 
     // Store online session with user info and expiry
     const expiresAt = expires_in ? new Date(Date.now() + expires_in * 1000) : undefined;
