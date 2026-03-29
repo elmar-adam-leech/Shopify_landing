@@ -181,6 +181,13 @@ function generateHydrationScript(store: Store, page: Page): string {
     }
   }
 
+  function escapeHtml(str) {
+    if (!str) return '';
+    var div = document.createElement('div');
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+  }
+
   function updateDynamicBlocks(product, sku) {
     const dynamicElements = document.querySelectorAll('[data-dynamic-sku]');
     
@@ -200,20 +207,40 @@ function generateHydrationScript(store: Store, page: Page): string {
 
       const formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: currency });
 
+      var safeTitle = escapeHtml(product.title);
+      var safeVendor = escapeHtml(product.vendor);
+      var safeImage = escapeHtml(image);
+      var safeVariantId = escapeHtml(variant?.id || '');
+      var safeProductId = escapeHtml(product.id);
+
+      var descDiv = document.createElement('div');
+      descDiv.className = 'lp-product-description';
+      if (product.descriptionHtml) {
+        descDiv.innerHTML = product.descriptionHtml;
+        descDiv.querySelectorAll('script,iframe,object,embed,form,base,meta,link,style').forEach(function(el) { el.remove(); });
+        descDiv.querySelectorAll('*').forEach(function(el) {
+          Array.from(el.attributes).forEach(function(attr) {
+            if (attr.name.startsWith('on') || attr.name === 'formaction' || (attr.name === 'href' && attr.value.trim().toLowerCase().startsWith('javascript:'))) {
+              el.removeAttribute(attr.name);
+            }
+          });
+        });
+      }
+
       el.innerHTML = \`
         <div class="lp-product-dynamic">
-          \${image ? '<img src="' + image + '" alt="' + product.title + '" class="lp-product-image" loading="lazy">' : ''}
-          <h2 class="lp-product-title">\${product.title}</h2>
-          \${product.vendor ? '<p class="lp-product-vendor">' + product.vendor + '</p>' : ''}
+          \${safeImage ? '<img src="' + safeImage + '" alt="' + safeTitle + '" class="lp-product-image" loading="lazy">' : ''}
+          <h2 class="lp-product-title">\${safeTitle}</h2>
+          \${safeVendor ? '<p class="lp-product-vendor">' + safeVendor + '</p>' : ''}
           <div class="lp-product-price">
             <span class="lp-price-current">\${formatter.format(price)}</span>
           </div>
-          <div class="lp-product-description">\${product.descriptionHtml || ''}</div>
-          <button class="lp-add-to-cart" data-variant-id="\${variant?.id || ''}" data-product-id="\${product.id}">
+          <button class="lp-add-to-cart" data-variant-id="\${safeVariantId}" data-product-id="\${safeProductId}">
             Add to Cart
           </button>
         </div>
       \`;
+      el.querySelector('.lp-product-dynamic').insertBefore(descDiv, el.querySelector('.lp-add-to-cart'));
     });
 
     window.dispatchEvent(new CustomEvent('lp:product-loaded', { detail: { product, sku } }));

@@ -58,16 +58,19 @@ export default function ABTestResults() {
     queryKey: ["/api/ab-tests", testId, "variants"],
   });
 
-  const { data: pages = [] } = useQuery<Page[]>({
+  const { data: pagesResponse } = useQuery<{ data: Page[]; total: number }>({
     queryKey: ["/api/pages/list", selectedStoreId],
-    staleTime: 2 * 60 * 1000, // Cache for 2 minutes
+    staleTime: 2 * 60 * 1000,
     queryFn: async () => {
-      const url = selectedStoreId ? `/api/pages/list?storeId=${selectedStoreId}` : "/api/pages/list";
+      const params = new URLSearchParams({ limit: "100" });
+      if (selectedStoreId) params.set("storeId", selectedStoreId);
+      const url = `/api/pages/list?${params.toString()}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch pages");
       return res.json();
     },
   });
+  const pages = pagesResponse?.data ?? [];
 
   const addVariantMutation = useMutation({
     mutationFn: async () => {

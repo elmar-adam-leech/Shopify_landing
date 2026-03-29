@@ -24,26 +24,32 @@ export default function ABTests() {
   const [trafficSplitType, setTrafficSplitType] = useState<"random" | "source_based">("random");
   const [goalType, setGoalType] = useState<"form_submission" | "button_click" | "page_view">("form_submission");
 
-  const { data: tests = [], isLoading: testsLoading } = useQuery<AbTest[]>({
+  const { data: testsResponse, isLoading: testsLoading } = useQuery<{ data: AbTest[]; total: number }>({
     queryKey: ["/api/ab-tests", selectedStoreId],
     queryFn: async () => {
-      const url = selectedStoreId ? `/api/ab-tests?storeId=${selectedStoreId}` : "/api/ab-tests";
+      const params = new URLSearchParams({ limit: "100" });
+      if (selectedStoreId) params.set("storeId", selectedStoreId);
+      const url = `/api/ab-tests?${params.toString()}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch tests");
       return res.json();
     },
   });
+  const tests = testsResponse?.data ?? [];
 
-  const { data: pages = [] } = useQuery<Page[]>({
+  const { data: pagesResponse } = useQuery<{ data: Page[]; total: number }>({
     queryKey: ["/api/pages/list", selectedStoreId],
-    staleTime: 2 * 60 * 1000, // Cache for 2 minutes
+    staleTime: 2 * 60 * 1000,
     queryFn: async () => {
-      const url = selectedStoreId ? `/api/pages/list?storeId=${selectedStoreId}` : "/api/pages/list";
+      const params = new URLSearchParams({ limit: "100" });
+      if (selectedStoreId) params.set("storeId", selectedStoreId);
+      const url = `/api/pages/list?${params.toString()}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch pages");
       return res.json();
     },
   });
+  const pages = pagesResponse?.data ?? [];
 
   const createTestMutation = useMutation({
     mutationFn: async () => {

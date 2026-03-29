@@ -85,6 +85,8 @@ const SortableBlock = memo(function SortableBlock({
     transition,
   };
 
+  const blockPreview = useMemo(() => getBlockPreview(block), [block]);
+
   return (
     <div
       ref={setNodeRef}
@@ -152,7 +154,7 @@ const SortableBlock = memo(function SortableBlock({
         </div>
       </div>
       <div className="overflow-hidden rounded-lg">
-        {getBlockPreview(block)}
+        {blockPreview}
       </div>
     </div>
   );

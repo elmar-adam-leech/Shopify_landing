@@ -18,8 +18,14 @@ export function createAbTestRoutes(): Router {
           });
       }
 
-      const tests = await storage.getAllAbTests(storeId);
-      res.json(tests);
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+
+      const [tests, total] = await Promise.all([
+        storage.getAllAbTests(storeId, { limit, offset }),
+        storage.countAbTests(storeId),
+      ]);
+      res.json({ data: tests, total, limit, offset });
     } catch (error) {
       console.error("Error fetching A/B tests:", error);
       res.status(500).json({ error: "Failed to fetch A/B tests" });

@@ -19,26 +19,27 @@ import { useState } from "react";
 
 interface AdminDashboardProps {
   onLogout: () => void;
+  csrfToken?: string;
 }
 
-export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
+export default function AdminDashboard({ onLogout, csrfToken }: AdminDashboardProps) {
   const { toast } = useToast();
   const [expandedStore, setExpandedStore] = useState<string | null>(null);
 
-  const storesQuery = useQuery<any[]>({
+  const storesQuery = useQuery<{ data: any[]; total: number }>({
     queryKey: ["/api/admin/stores"],
     queryFn: async () => {
-      const res = await fetch("/api/admin/stores", { credentials: "include" });
+      const res = await fetch("/api/admin/stores?limit=100", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch stores");
       return res.json();
     },
   });
 
-  const pagesQuery = useQuery<any[]>({
+  const pagesQuery = useQuery<{ data: any[]; total: number }>({
     queryKey: ["/api/admin/stores", expandedStore, "pages"],
     queryFn: async () => {
-      if (!expandedStore) return [];
-      const res = await fetch(`/api/admin/stores/${expandedStore}/pages`, { credentials: "include" });
+      if (!expandedStore) return { data: [], total: 0 };
+      const res = await fetch(`/api/admin/stores/${expandedStore}/pages?limit=100`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch pages");
       return res.json();
     },
@@ -47,8 +48,11 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
+      const headers: Record<string, string> = {};
+      if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
       const res = await fetch("/api/admin/logout", {
         method: "POST",
+        headers,
         credentials: "include",
       });
       if (!res.ok) throw new Error("Logout failed");
@@ -116,7 +120,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
           </Card>
         )}
 
-        {storesQuery.data && storesQuery.data.length === 0 && (
+        {storesQuery.data && storesQuery.data.data.length === 0 && (
           <Card>
             <CardContent className="py-8 text-center text-muted-foreground">
               <Store className="h-8 w-8 mx-auto mb-2 opacity-50" />
@@ -125,7 +129,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
           </Card>
         )}
 
-        {storesQuery.data?.map((store: any) => (
+        {storesQuery.data?.data.map((store: any) => (
           <Card key={store.id} data-testid={`card-store-${store.id}`}>
             <CardHeader
               className="cursor-pointer flex flex-row items-center justify-between gap-4"
@@ -170,15 +174,15 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                     </div>
                   )}
 
-                  {pagesQuery.data && pagesQuery.data.length === 0 && (
+                  {pagesQuery.data && pagesQuery.data.data.length === 0 && (
                     <p className="text-sm text-muted-foreground py-2">
                       No pages created for this store yet.
                     </p>
                   )}
 
-                  {pagesQuery.data && pagesQuery.data.length > 0 && (
+                  {pagesQuery.data && pagesQuery.data.data.length > 0 && (
                     <div className="space-y-2">
-                      {pagesQuery.data.map((page: any) => (
+                      {pagesQuery.data.data.map((page: any) => (
                         <div
                           key={page.id}
                           className="flex items-center justify-between gap-3 rounded-md border p-3 flex-wrap"

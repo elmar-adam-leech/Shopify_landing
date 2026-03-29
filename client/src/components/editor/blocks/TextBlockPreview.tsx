@@ -1,4 +1,5 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
+import DOMPurify from "dompurify";
 import type { TextBlockConfig } from "@shared/schema";
 
 interface TextBlockPreviewProps {
@@ -24,6 +25,11 @@ export const TextBlockPreview = memo(function TextBlockPreview({ config }: TextB
     xlarge: "text-xl",
   }[fontSize];
 
+  const sanitizedHtml = useMemo(
+    () => DOMPurify.sanitize(content.replace(/\n/g, "<br />")),
+    [content]
+  );
+
   return (
     <div
       className={`p-6 bg-background ${alignmentClass}`}
@@ -31,7 +37,7 @@ export const TextBlockPreview = memo(function TextBlockPreview({ config }: TextB
     >
       <div
         className={`${sizeClass} text-foreground prose dark:prose-invert max-w-none`}
-        dangerouslySetInnerHTML={{ __html: content.replace(/\n/g, "<br />") }}
+        dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
       />
     </div>
   );

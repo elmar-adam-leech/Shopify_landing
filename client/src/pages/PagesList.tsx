@@ -57,16 +57,25 @@ export default function PagesList() {
     }
   }, [needsAuth, currentShop, storeLoading, redirectToAuth, isAppReady]);
 
-  const { data: pages, isLoading } = useQuery<Page[]>({
-    queryKey: ["/api/pages/list", selectedStoreId],
-    staleTime: 2 * 60 * 1000, // Cache for 2 minutes
+  const PAGE_SIZE = 50;
+  const [pageOffset, setPageOffset] = useState(0);
+
+  const { data: pagesResponse, isLoading } = useQuery<{ data: Page[]; total: number; limit: number; offset: number }>({
+    queryKey: ["/api/pages/list", selectedStoreId, pageOffset],
+    staleTime: 2 * 60 * 1000,
     queryFn: async () => {
-      const url = selectedStoreId ? `/api/pages/list?storeId=${selectedStoreId}` : '/api/pages/list';
+      const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(pageOffset) });
+      if (selectedStoreId) params.set("storeId", selectedStoreId);
+      const url = `/api/pages/list?${params.toString()}`;
       const response = await fetch(url, { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch pages');
       return response.json();
     },
   });
+  const pages = pagesResponse?.data;
+  const totalPages = pagesResponse?.total ?? 0;
+  const hasNextPage = pageOffset + PAGE_SIZE < totalPages;
+  const hasPrevPage = pageOffset > 0;
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -92,7 +101,9 @@ export default function PagesList() {
   const duplicateMutation = useMutation({
     mutationFn: async (pageId: string) => {
       // Fetch full page data first (needed for blocks and pixelSettings)
-      const fullPage = await fetch(`/api/pages/${pageId}`).then(r => r.json());
+      const res = await fetch(`/api/pages/${pageId}`);
+      if (!res.ok) throw new Error("Failed to fetch page for duplication");
+      const fullPage = await res.json();
       return apiRequest("POST", "/api/pages", {
         title: `${fullPage.title} (Copy)`,
         slug: `${fullPage.slug}-copy-${Date.now()}`,
@@ -312,7 +323,37 @@ export default function PagesList() {
               </Card>
             ))}
           </div>
-        ) : needsAuth ? (
+        ) : null}
+
+        {!isLoading && pages && pages.length > 0 && (hasNextPage || hasPrevPage) && (
+          <div className="flex items-center justify-between mt-4">
+            <p className="text-sm text-muted-foreground">
+              Showing {pageOffset + 1}–{Math.min(pageOffset + PAGE_SIZE, totalPages)} of {totalPages}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!hasPrevPage}
+                onClick={() => setPageOffset(Math.max(0, pageOffset - PAGE_SIZE))}
+                data-testid="button-prev-page"
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!hasNextPage}
+                onClick={() => setPageOffset(pageOffset + PAGE_SIZE)}
+                data-testid="button-next-page"
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {!isLoading && (!pages || pages.length === 0) && needsAuth && (
           <Card className="max-w-md mx-auto">
             <CardContent className="pt-6">
               <div className="text-center">
@@ -332,7 +373,9 @@ export default function PagesList() {
               </div>
             </CardContent>
           </Card>
-        ) : (
+        )}
+
+        {!isLoading && (!pages || pages.length === 0) && !needsAuth && (
           <Card className="max-w-md mx-auto">
             <CardContent className="pt-6">
               <div className="text-center">

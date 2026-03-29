@@ -17,7 +17,15 @@ export function createPageRoutes(): Router {
       if (!storeCheck.valid) {
         return res.status(401).json({ error: storeCheck.error });
       }
-      const allPages = await storage.getAllPages(storeId);
+
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+
+      const [allPages, total] = await Promise.all([
+        storage.getAllPages(storeId, { limit, offset }),
+        storage.countPages(storeId),
+      ]);
+
       const lightweightPages = allPages.map((page) => ({
         id: page.id,
         storeId: page.storeId,
@@ -29,7 +37,7 @@ export function createPageRoutes(): Router {
         updatedAt: page.updatedAt,
         blockCount: page.blocks?.length || 0,
       }));
-      res.json(lightweightPages);
+      res.json({ data: lightweightPages, total, limit, offset });
     } catch (error) {
       console.error("Error fetching page list:", error);
       res.status(500).json({ error: "Failed to fetch pages" });
@@ -43,7 +51,7 @@ export function createPageRoutes(): Router {
       if (!storeCheck.valid) {
         return res.status(401).json({ error: storeCheck.error });
       }
-      const allPages = await storage.getAllPages(storeId);
+      const allPages = await storage.getAllPages(storeId, { limit: 1000, offset: 0 });
       res.json(allPages);
     } catch (error) {
       console.error("Error fetching pages:", error);
@@ -397,11 +405,14 @@ export function createPageRoutes(): Router {
           .json({ error: access.error });
       }
 
-      const submissions = await storage.getFormSubmissions(
-        pageId,
-        req.storeContext?.storeId
-      );
-      res.json(submissions);
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+
+      const [submissions, total] = await Promise.all([
+        storage.getFormSubmissions(pageId, req.storeContext?.storeId, { limit, offset }),
+        storage.countFormSubmissions(pageId, req.storeContext?.storeId),
+      ]);
+      res.json({ data: submissions, total, limit, offset });
     } catch (error) {
       console.error("Error fetching submissions:", error);
       res.status(500).json({ error: "Failed to fetch submissions" });

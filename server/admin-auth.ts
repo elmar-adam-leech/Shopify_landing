@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { db } from "./db";
 import { users } from "@shared/schema";
 import { eq, or } from "drizzle-orm";
@@ -11,6 +12,7 @@ declare module "express-session" {
   interface SessionData {
     adminUserId?: string;
     adminRole?: string;
+    csrfToken?: string;
   }
 }
 
@@ -102,21 +104,40 @@ const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+function getOrCreateCsrfToken(req: Request): string {
+  if (!req.session.csrfToken) {
+    req.session.csrfToken = crypto.randomBytes(32).toString("hex");
+  }
+  return req.session.csrfToken;
+}
+
+function validateCsrfToken(req: Request, res: Response): boolean {
+  const token = req.headers["x-csrf-token"] as string | undefined;
+  if (!token || !req.session.csrfToken || token !== req.session.csrfToken) {
+    res.status(403).json({ error: "Forbidden: invalid CSRF token" });
+    return false;
+  }
+  return true;
+}
+
 export function createAdminRouter(): Router {
   const router = Router();
 
   router.get("/session", (req: Request, res: Response) => {
+    const csrfToken = getOrCreateCsrfToken(req);
     if (req.session?.adminUserId && req.session?.adminRole === "admin") {
       return res.json({
         authenticated: true,
         userId: req.session.adminUserId,
+        csrfToken,
         role: req.session.adminRole,
       });
     }
-    return res.json({ authenticated: false });
+    return res.json({ authenticated: false, csrfToken });
   });
 
   router.post("/login", async (req: Request, res: Response) => {
+    if (!validateCsrfToken(req, res)) return;
     try {
       const parsed = loginSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -179,6 +200,7 @@ export function createAdminRouter(): Router {
   });
 
   router.post("/logout", (req: Request, res: Response) => {
+    if (!validateCsrfToken(req, res)) return;
     req.session.destroy((err) => {
       if (err) {
         console.error("Logout error:", err);

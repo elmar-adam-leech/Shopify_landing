@@ -35,28 +35,31 @@ import {
   type InsertStoreSyncLog,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, max, and, gte, lte, sql, count, ilike, or, notInArray } from "drizzle-orm";
+import { eq, desc, max, and, gte, lte, sql, count, ilike, or } from "drizzle-orm";
 import { encryptPIIFields, decryptPIIFields } from "./lib/crypto";
 
 // PII fields to encrypt/decrypt in form submission data
 const FORM_PII_FIELDS = ["phone", "email", "first_name", "last_name", "firstName", "lastName", "name", "Phone", "Email", "Name"];
 
+/** Storage interface defining all CRUD operations for the application. */
 export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
 
-  // Pages
-  getAllPages(storeId?: string): Promise<Page[]>;
+  // Pages — supports server-side pagination via limit/offset
+  getAllPages(storeId?: string, options?: { limit?: number; offset?: number }): Promise<Page[]>;
+  countPages(storeId?: string): Promise<number>;
   getPage(id: string): Promise<Page | undefined>;
   getPageBySlug(slug: string, storeId?: string): Promise<Page | undefined>;
   createPage(page: InsertPage): Promise<Page>;
   updatePage(id: string, page: UpdatePage): Promise<Page | undefined>;
   deletePage(id: string): Promise<boolean>;
 
-  // Form Submissions
-  getFormSubmissions(pageId: string, storeId?: string): Promise<FormSubmission[]>;
+  // Form Submissions — PII fields are auto-encrypted at rest and decrypted on read
+  getFormSubmissions(pageId: string, storeId?: string, options?: { limit?: number; offset?: number }): Promise<FormSubmission[]>;
+  countFormSubmissions(pageId: string, storeId?: string): Promise<number>;
   createFormSubmission(submission: InsertFormSubmission): Promise<FormSubmission>;
 
   // Page Versions
@@ -78,7 +81,8 @@ export interface IStorage {
   }>;
 
   // A/B Tests
-  getAllAbTests(storeId?: string): Promise<AbTest[]>;
+  getAllAbTests(storeId?: string, options?: { limit?: number; offset?: number }): Promise<AbTest[]>;
+  countAbTests(storeId?: string): Promise<number>;
   getAbTest(id: string): Promise<AbTest | undefined>;
   getAbTestByPageId(pageId: string): Promise<AbTest | undefined>;
   getActiveAbTestForPage(pageId: string): Promise<AbTest | undefined>;
@@ -144,11 +148,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Pages
-  async getAllPages(storeId?: string): Promise<Page[]> {
+  async getAllPages(storeId?: string, options?: { limit?: number; offset?: number }): Promise<Page[]> {
+    const limit = options?.limit || 50;
+    const offset = options?.offset || 0;
+
+    let query = db.select().from(pages);
     if (storeId) {
-      return db.select().from(pages).where(eq(pages.storeId, storeId)).orderBy(desc(pages.updatedAt));
+      query = query.where(eq(pages.storeId, storeId)) as typeof query;
     }
-    return db.select().from(pages).orderBy(desc(pages.updatedAt));
+    return query.orderBy(desc(pages.updatedAt)).limit(limit).offset(offset);
+  }
+
+  async countPages(storeId?: string): Promise<number> {
+    const conditions = storeId ? [eq(pages.storeId, storeId)] : [];
+    const [result] = await db
+      .select({ count: count() })
+      .from(pages)
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
+    return result?.count || 0;
   }
 
   async getPage(id: string): Promise<Page | undefined> {
@@ -188,12 +205,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Form Submissions
-  async getFormSubmissions(pageId: string, storeId?: string): Promise<FormSubmission[]> {
+  async getFormSubmissions(pageId: string, storeId?: string, options?: { limit?: number; offset?: number }): Promise<FormSubmission[]> {
+    const limit = options?.limit || 50;
+    const offset = options?.offset || 0;
+
     const results = await db
       .select()
       .from(formSubmissions)
       .where(eq(formSubmissions.pageId, pageId))
-      .orderBy(desc(formSubmissions.submittedAt));
+      .orderBy(desc(formSubmissions.submittedAt))
+      .limit(limit)
+      .offset(offset);
     
     // Decrypt PII fields in submission data
     // Use storeId from each submission for decryption
@@ -206,6 +228,14 @@ export class DatabaseStorage implements IStorage {
       }
       return submission;
     });
+  }
+
+  async countFormSubmissions(pageId: string, storeId?: string): Promise<number> {
+    const [result] = await db
+      .select({ count: count() })
+      .from(formSubmissions)
+      .where(eq(formSubmissions.pageId, pageId));
+    return result?.count || 0;
   }
 
   async createFormSubmission(submission: InsertFormSubmission): Promise<FormSubmission> {
@@ -346,11 +376,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   // A/B Tests
-  async getAllAbTests(storeId?: string): Promise<AbTest[]> {
+  async getAllAbTests(storeId?: string, options?: { limit?: number; offset?: number }): Promise<AbTest[]> {
+    const limit = options?.limit ?? 1000;
+    const offset = options?.offset ?? 0;
+    let query = db.select().from(abTests).orderBy(desc(abTests.createdAt)).limit(limit).offset(offset);
     if (storeId) {
-      return db.select().from(abTests).where(eq(abTests.storeId, storeId)).orderBy(desc(abTests.createdAt));
+      query = query.where(eq(abTests.storeId, storeId)) as typeof query;
     }
-    return db.select().from(abTests).orderBy(desc(abTests.createdAt));
+    return query;
+  }
+
+  async countAbTests(storeId?: string): Promise<number> {
+    const condition = storeId ? eq(abTests.storeId, storeId) : undefined;
+    const [result] = condition
+      ? await db.select({ count: count() }).from(abTests).where(condition)
+      : await db.select({ count: count() }).from(abTests);
+    return result?.count || 0;
   }
 
   async getAbTest(id: string): Promise<AbTest | undefined> {

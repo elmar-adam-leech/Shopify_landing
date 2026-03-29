@@ -165,6 +165,18 @@ export function createProxyRoutes(): Router {
         return res.status(404).send(render404Page());
       }
 
+      const isAdmin = req.session?.adminRole === "admin";
+      const hasStoreContext = !!req.storeContext?.storeId;
+      const isPublished = page.status === "published";
+
+      if (!isPublished && !isAdmin && !hasStoreContext) {
+        return res.status(401).send(renderErrorPage("Authentication required to preview draft pages"));
+      }
+
+      if (!isAdmin && hasStoreContext && page.storeId !== req.storeContext?.storeId) {
+        return res.status(403).send(renderErrorPage("Access denied"));
+      }
+
       let store = null;
       if (page.storeId) {
         const [foundStore] = await db
@@ -176,9 +188,12 @@ export function createProxyRoutes(): Router {
       }
 
       if (shopParam && store && store.shopifyDomain !== shopParam) {
-        console.warn(
-          `Preview access denied: shop param ${shopParam} doesn't match page store ${store.shopifyDomain}`
-        );
+        logSecurityEvent({
+          eventType: "access_denied",
+          req,
+          storeId: store?.id || null,
+          details: { reason: "preview_shop_mismatch", shop: shopParam, pageStore: store.shopifyDomain },
+        });
         return res
           .status(403)
           .send(renderErrorPage("Access denied - store mismatch"));

@@ -13,7 +13,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Plus, Trash2, GripVertical, FlaskConical, Copy, Eye, ChevronDown, ChevronUp, EyeOff } from "lucide-react";
-import type { Block, BlockType, BlockVariant, VisibilityCondition, VisibilityRules, BlockPosition, ShopifyProduct } from "@shared/schema";
+import type { Block, BlockType, BlockVariant, VisibilityCondition, VisibilityRules, ShopifyProduct } from "@shared/schema";
 import { v4 as uuidv4 } from "uuid";
 import { ProductPicker } from "./ProductPicker";
 import {

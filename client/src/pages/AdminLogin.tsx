@@ -10,18 +10,21 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface AdminLoginProps {
   onLoginSuccess: () => void;
+  csrfToken?: string;
 }
 
-export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
+export default function AdminLogin({ onLoginSuccess, csrfToken }: AdminLoginProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const { toast } = useToast();
 
   const loginMutation = useMutation({
     mutationFn: async () => {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
       const res = await fetch("/api/admin/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ email, password }),
         credentials: "include",
       });

@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/lib/theme";
 import { StoreProvider } from "@/lib/store-context";
 import { ShopifyProviders } from "@/components/providers/AppBridgeProvider";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { lazy, Suspense, useState, useCallback } from "react";
 
 const PagesList = lazy(() => import("@/pages/PagesList"));
@@ -63,6 +64,7 @@ function AdminApp() {
   });
 
   const authenticated = sessionQuery.data?.authenticated === true;
+  const csrfToken = sessionQuery.data?.csrfToken as string | undefined;
   const isLoading = sessionQuery.isLoading;
 
   const handleLoginSuccess = useCallback(() => {
@@ -85,14 +87,14 @@ function AdminApp() {
   if (!authenticated) {
     return (
       <Suspense fallback={<PageFallback />}>
-        <AdminLogin onLoginSuccess={handleLoginSuccess} />
+        <AdminLogin onLoginSuccess={handleLoginSuccess} csrfToken={csrfToken} />
       </Suspense>
     );
   }
 
   return (
     <Suspense fallback={<PageFallback />}>
-      <AdminDashboard onLogout={handleLogout} />
+      <AdminDashboard onLogout={handleLogout} csrfToken={csrfToken} />
     </Suspense>
   );
 }
@@ -102,30 +104,34 @@ function App() {
 
   if (embedded) {
     return (
-      <QueryClientProvider client={queryClient}>
-        <ShopifyProviders>
-          <ThemeProvider>
-            <StoreProvider>
-              <TooltipProvider>
-                <Toaster />
-                <ShopifyRouter />
-              </TooltipProvider>
-            </StoreProvider>
-          </ThemeProvider>
-        </ShopifyProviders>
-      </QueryClientProvider>
+      <ErrorBoundary>
+        <QueryClientProvider client={queryClient}>
+          <ShopifyProviders>
+            <ThemeProvider>
+              <StoreProvider>
+                <TooltipProvider>
+                  <Toaster />
+                  <ShopifyRouter />
+                </TooltipProvider>
+              </StoreProvider>
+            </ThemeProvider>
+          </ShopifyProviders>
+        </QueryClientProvider>
+      </ErrorBoundary>
     );
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <TooltipProvider>
-          <Toaster />
-          <AdminApp />
-        </TooltipProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <TooltipProvider>
+            <Toaster />
+            <AdminApp />
+          </TooltipProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

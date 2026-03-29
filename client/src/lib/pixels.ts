@@ -172,6 +172,7 @@ export function firePinterestEvent(
   }
 }
 
+/** Fires a tracking event across all configured pixel platforms. */
 export function firePixelEvent(
   eventName: PixelEventName,
   data: PixelEventData = {},
@@ -277,12 +278,29 @@ export function fireViewContentEvent(
   firePixelEvent("ViewContent", eventData, pixelSettings);
 }
 
+/** Escapes HTML special characters to prevent XSS in template literals. */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+/** Strips non-alphanumeric characters (except dashes, underscores, slashes) and escapes the result for safe embedding in HTML script tags. */
+function sanitizePixelId(id: string): string {
+  return escapeHtml(id.replace(/[^a-zA-Z0-9\-_/]/g, ""));
+}
+
+/** Generates HTML script tags for initializing all configured tracking pixels (Meta, Google, TikTok, Pinterest). Pixel IDs are sanitized before embedding. */
 export function generatePixelInitScripts(pixelSettings?: PixelSettings | null): string {
   if (!pixelSettings) return "";
 
   const scripts: string[] = [];
 
   if (pixelSettings.metaPixelEnabled && pixelSettings.metaPixelId) {
+    const safeId = sanitizePixelId(pixelSettings.metaPixelId);
     scripts.push(`
 <!-- Meta Pixel Code -->
 <script>
@@ -294,17 +312,18 @@ n.queue=[];t=b.createElement(e);t.async=!0;
 t.src=v;s=b.getElementsByTagName(e)[0];
 s.parentNode.insertBefore(t,s)}(window, document,'script',
 'https://connect.facebook.net/en_US/fbevents.js');
-fbq('init', '${pixelSettings.metaPixelId}');
+fbq('init', '${safeId}');
 fbq('track', 'PageView');
 </script>
 <noscript><img height="1" width="1" style="display:none"
-src="https://www.facebook.com/tr?id=${pixelSettings.metaPixelId}&ev=PageView&noscript=1"
+src="https://www.facebook.com/tr?id=${safeId}&ev=PageView&noscript=1"
 /></noscript>
 <!-- End Meta Pixel Code -->`);
   }
 
   if (pixelSettings.googleAdsEnabled && pixelSettings.googleAdsId) {
-    const tagId = pixelSettings.googleAdsId.split("/")[0];
+    const safeId = sanitizePixelId(pixelSettings.googleAdsId);
+    const tagId = safeId.split("/")[0];
     scripts.push(`
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=${tagId}"></script>
@@ -318,12 +337,13 @@ src="https://www.facebook.com/tr?id=${pixelSettings.metaPixelId}&ev=PageView&nos
   }
 
   if (pixelSettings.tiktokPixelEnabled && pixelSettings.tiktokPixelId) {
+    const safeId = sanitizePixelId(pixelSettings.tiktokPixelId);
     scripts.push(`
 <!-- TikTok Pixel Code -->
 <script>
 !function (w, d, t) {
   w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie"],ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e},ttq.load=function(e,n){var i="https://analytics.tiktok.com/i18n/pixel/events.js";ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=i,ttq._t=ttq._t||{},ttq._t[e]=+new Date,ttq._o=ttq._o||{},ttq._o[e]=n||{};var o=document.createElement("script");o.type="text/javascript",o.async=!0,o.src=i+"?sdkid="+e+"&lib="+t;var a=document.getElementsByTagName("script")[0];a.parentNode.insertBefore(o,a)};
-  ttq.load('${pixelSettings.tiktokPixelId}');
+  ttq.load('${safeId}');
   ttq.page();
 }(window, document, 'ttq');
 </script>
@@ -331,6 +351,7 @@ src="https://www.facebook.com/tr?id=${pixelSettings.metaPixelId}&ev=PageView&nos
   }
 
   if (pixelSettings.pinterestTagEnabled && pixelSettings.pinterestTagId) {
+    const safeId = sanitizePixelId(pixelSettings.pinterestTagId);
     scripts.push(`
 <!-- Pinterest Tag -->
 <script>
@@ -340,12 +361,12 @@ window.pintrk.queue.push(Array.prototype.slice.call(arguments))};var
   t=document.createElement("script");t.async=!0,t.src=e;var
   r=document.getElementsByTagName("script")[0];
   r.parentNode.insertBefore(t,r)}}("https://s.pinimg.com/ct/core.js");
-pintrk('load', '${pixelSettings.pinterestTagId}');
+pintrk('load', '${safeId}');
 pintrk('page');
 </script>
 <noscript>
 <img height="1" width="1" style="display:none;" alt=""
-  src="https://ct.pinterest.com/v3/?event=init&tid=${pixelSettings.pinterestTagId}&noscript=1" />
+  src="https://ct.pinterest.com/v3/?event=init&tid=${safeId}&noscript=1" />
 </noscript>
 <!-- End Pinterest Tag -->`);
   }

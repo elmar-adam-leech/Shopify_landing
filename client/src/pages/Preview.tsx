@@ -2,6 +2,7 @@ import { useEffect, useCallback, useRef, useState, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
+import DOMPurify from "dompurify";
 import { captureUTMParams, getStoredUTMParams, parseUTMParams } from "@/lib/utm";
 import { firePixelEvent, type PixelEventName } from "@/lib/pixels";
 import { getProductBySku, formatPrice, type StorefrontProduct } from "@/lib/shopify";
@@ -437,7 +438,7 @@ function DynamicProductBlock({
             {config.showDescription !== false && product.descriptionHtml && (
               <div 
                 className="text-gray-600 dark:text-gray-300 prose prose-sm max-w-none"
-                dangerouslySetInnerHTML={{ __html: product.descriptionHtml }}
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(product.descriptionHtml) }}
               />
             )}
 

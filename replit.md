@@ -36,8 +36,9 @@ Preferred communication style: Simple, everyday language.
 - **Page Builder**: Visual editor with drag-and-drop, responsive preview, and block-level A/B testing.
 - **Block Types**: Hero Banner, Product Grid, Text, Image, Button, Form, Phone, Chat.
 - **Data Model**: Stores, Pages, Blocks, Form Submissions, Users.
-- **Performance**: SQL aggregation, upsert for products, database indexing, caching, code splitting, memoization.
-- **Security**: Store ownership validation, audit logging, typed request properties.
+- **Performance**: SQL aggregation, upsert for products, database indexing, caching, code splitting, memoization, DOMPurify sanitization for user HTML content.
+- **Security**: Store ownership validation, audit logging, typed request properties, pixel ID sanitization, preview route auth gating, ErrorBoundary for graceful error recovery.
+- **Pagination**: Server-side pagination on pages list (`/api/pages/list`) and form submissions (`/api/pages/:id/submissions`) endpoints — responses are `{ data, total, limit, offset }`.
 
 ### Backend Architecture
 - **Modular Routers**: API routes organized by domain (`admin`, `proxy`, `stores`, `products`, `pages`, `analytics`, `ab-tests`).

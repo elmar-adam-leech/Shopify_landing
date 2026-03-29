@@ -29,7 +29,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { useStore } from "@/lib/store-context";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Page, Block, BlockType, PixelSettings, Section, BlockPosition } from "@shared/schema";
+import type { Page, Block, BlockType, PixelSettings, Section } from "@shared/schema";
 
 const defaultBlockConfigs: Record<BlockType, Record<string, any>> = {
   "hero-banner": {
