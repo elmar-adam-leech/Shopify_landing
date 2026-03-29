@@ -90,22 +90,11 @@ export function createPageRoutes(): Router {
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
       const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
 
-      const [allPages, total] = await Promise.all([
-        storage.getAllPages(storeId, { limit, offset }),
+      const [lightweightPages, total] = await Promise.all([
+        storage.getAllPagesLightweight(storeId, { limit, offset }),
         storage.countPages(storeId),
       ]);
 
-      const lightweightPages = allPages.map((page) => ({
-        id: page.id,
-        storeId: page.storeId,
-        title: page.title,
-        slug: page.slug,
-        status: page.status,
-        allowIndexing: page.allowIndexing,
-        createdAt: page.createdAt,
-        updatedAt: page.updatedAt,
-        blockCount: page.blocks?.length || 0,
-      }));
       res.json({ data: lightweightPages, total, limit, offset });
     } catch (error) {
       console.error("Error fetching page list:", error);

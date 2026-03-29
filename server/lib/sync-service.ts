@@ -1,6 +1,6 @@
 import { db } from "../db";
 import { stores, storeSyncLogs, shopifyProducts as shopifyProductsTable } from "@shared/schema";
-import { eq, and, notInArray } from "drizzle-orm";
+import { eq, and, notInArray, sql } from "drizzle-orm";
 import { fetchAllShopifyProducts, convertShopifyProduct, type ShopifyConfig } from "./shopify";
 import { storage } from "../storage";
 
@@ -74,15 +74,52 @@ export async function syncProductsForStore(
     
     let productsAdded = 0;
     let productsUpdated = 0;
-    
-    for (const product of shopifyProducts) {
-      const productData = convertShopifyProduct(product, storeId);
-      const { storeId: pStoreId, shopifyProductId, ...restProductData } = productData;
-      const result = await storage.upsertShopifyProduct(pStoreId, shopifyProductId, restProductData);
-      if (result.created) {
-        productsAdded++;
-      } else {
-        productsUpdated++;
+
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < shopifyProducts.length; i += BATCH_SIZE) {
+      const batch = shopifyProducts.slice(i, i + BATCH_SIZE);
+      const now = new Date();
+      const batchValues = batch.map((product) => {
+        const productData = convertShopifyProduct(product, storeId);
+        const { storeId: pStoreId, shopifyProductId, ...restProductData } = productData;
+        return {
+          storeId: pStoreId,
+          shopifyProductId,
+          ...restProductData,
+          syncedAt: now,
+          createdAt: now,
+        } as typeof shopifyProductsTable.$inferInsert;
+      });
+
+      const results = await db
+        .insert(shopifyProductsTable)
+        .values(batchValues)
+        .onConflictDoUpdate({
+          target: [shopifyProductsTable.storeId, shopifyProductsTable.shopifyProductId],
+          set: {
+            handle: sql`excluded.handle`,
+            title: sql`excluded.title`,
+            vendor: sql`excluded.vendor`,
+            productType: sql`excluded.product_type`,
+            status: sql`excluded.status`,
+            tags: sql`excluded.tags`,
+            featuredImageUrl: sql`excluded.featured_image_url`,
+            price: sql`excluded.price`,
+            compareAtPrice: sql`excluded.compare_at_price`,
+            description: sql`excluded.description`,
+            productData: sql`excluded.product_data`,
+            shopifyUpdatedAt: sql`excluded.shopify_updated_at`,
+            syncedAt: sql`excluded.synced_at`,
+          } as Partial<typeof shopifyProductsTable.$inferInsert>,
+        })
+        .returning({ id: shopifyProductsTable.id, wasInserted: sql<boolean>`(xmax = 0)` });
+
+      for (const result of results) {
+        if (result.wasInserted) {
+          productsAdded++;
+        } else {
+          productsUpdated++;
+        }
       }
     }
     

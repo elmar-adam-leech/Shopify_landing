@@ -1,16 +1,10 @@
 import { db } from "../db";
 import { stores } from "@shared/schema";
-import { eq, and, lt, or, isNull, ne } from "drizzle-orm";
+import { eq, and, ne, sql } from "drizzle-orm";
 import { syncProductsForStore, type SyncResult } from "./sync-service";
 import type { ShopifyConfig } from "./shopify";
 
-const SCHEDULE_INTERVALS = {
-  hourly: 60 * 60 * 1000,       // 1 hour
-  daily: 24 * 60 * 60 * 1000,   // 24 hours  
-  weekly: 7 * 24 * 60 * 60 * 1000, // 7 days
-};
-
-const CHECK_INTERVAL = 5 * 60 * 1000; // Check every 5 minutes
+const CHECK_INTERVAL = 5 * 60 * 1000;
 
 let schedulerInterval: NodeJS.Timeout | null = null;
 let isRunning = false;
@@ -24,56 +18,53 @@ export async function checkAndRunScheduledSyncs(): Promise<void> {
   isRunning = true;
   
   try {
-    const now = new Date();
-    
-    const storesNeedingSync = await db.select().from(stores)
+    const storesDueForSync = await db.select().from(stores)
       .where(
         and(
           eq(stores.isActive, true),
           ne(stores.installState, "uninstalled"),
-          ne(stores.syncSchedule, "manual")
+          ne(stores.syncSchedule, "manual"),
+          sql`(
+            ${stores.lastSyncAt} IS NULL
+            OR (
+              ${stores.syncSchedule} = 'hourly' AND ${stores.lastSyncAt} < now() - interval '1 hour'
+            )
+            OR (
+              ${stores.syncSchedule} = 'daily' AND ${stores.lastSyncAt} < now() - interval '1 day'
+            )
+            OR (
+              ${stores.syncSchedule} = 'weekly' AND ${stores.lastSyncAt} < now() - interval '7 days'
+            )
+          )`
         )
       );
     
-    console.log(`[Scheduler] Checking ${storesNeedingSync.length} active stores for scheduled sync...`);
+    if (storesDueForSync.length > 0) {
+      console.log(`[Scheduler] Found ${storesDueForSync.length} stores due for sync`);
+    }
     
-    for (const store of storesNeedingSync) {
+    for (const store of storesDueForSync) {
       if (!store.shopifyAccessToken) {
         continue;
       }
       
-      const schedule = store.syncSchedule;
-      if (!schedule || schedule === "manual") {
-        continue;
+      console.log(`[Scheduler] Store ${store.shopifyDomain} is due for ${store.syncSchedule} sync`);
+      
+      const shopifyConfig: ShopifyConfig = {
+        apiKey: process.env.SHOPIFY_API_KEY || "",
+        apiSecret: process.env.SHOPIFY_API_SECRET || "",
+        storeUrl: store.shopifyDomain,
+        accessToken: store.shopifyAccessToken,
+      };
+      
+      try {
+        const result = await syncProductsForStore(store.id, shopifyConfig, "scheduled");
+        console.log(`[Scheduler] Sync for ${store.shopifyDomain}: added=${result.productsAdded}, updated=${result.productsUpdated}, removed=${result.productsRemoved}`);
+      } catch (error) {
+        console.error(`[Scheduler] Error syncing ${store.shopifyDomain}:`, error);
       }
       
-      const interval = SCHEDULE_INTERVALS[schedule as keyof typeof SCHEDULE_INTERVALS];
-      if (!interval) {
-        continue;
-      }
-      
-      const lastSync = store.lastSyncAt ? new Date(store.lastSyncAt).getTime() : 0;
-      const nextSyncDue = lastSync + interval;
-      
-      if (now.getTime() >= nextSyncDue) {
-        console.log(`[Scheduler] Store ${store.shopifyDomain} is due for ${schedule} sync`);
-        
-        const shopifyConfig: ShopifyConfig = {
-          apiKey: process.env.SHOPIFY_API_KEY || "",
-          apiSecret: process.env.SHOPIFY_API_SECRET || "",
-          storeUrl: store.shopifyDomain,
-          accessToken: store.shopifyAccessToken,
-        };
-        
-        try {
-          const result = await syncProductsForStore(store.id, shopifyConfig, "scheduled");
-          console.log(`[Scheduler] Sync for ${store.shopifyDomain}: added=${result.productsAdded}, updated=${result.productsUpdated}, removed=${result.productsRemoved}`);
-        } catch (error) {
-          console.error(`[Scheduler] Error syncing ${store.shopifyDomain}:`, error);
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
   } catch (error) {
     console.error("[Scheduler] Error checking scheduled syncs:", error);

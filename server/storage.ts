@@ -45,6 +45,18 @@ import { encryptPIIFields, decryptPIIFields } from "./lib/crypto";
 const FORM_PII_FIELDS = ["phone", "email", "first_name", "last_name", "firstName", "lastName", "name", "Phone", "Email", "Name"];
 
 /** Storage interface defining all CRUD operations for the application. */
+export type PageMetadata = {
+  id: string;
+  storeId: string | null;
+  title: string;
+  slug: string;
+  status: string;
+  allowIndexing: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  blockCount: number;
+};
+
 export interface IStorage {
   // Stores
   getAllStores(options?: { limit?: number; offset?: number }): Promise<Store[]>;
@@ -62,6 +74,7 @@ export interface IStorage {
 
   // Pages — supports server-side pagination via limit/offset
   getAllPages(storeId?: string, options?: { limit?: number; offset?: number }): Promise<Page[]>;
+  getAllPagesLightweight(storeId?: string, options?: { limit?: number; offset?: number }): Promise<PageMetadata[]>;
   countPages(storeId?: string): Promise<number>;
   getPage(id: string): Promise<Page | undefined>;
   getPageBySlug(slug: string, storeId?: string): Promise<Page | undefined>;
@@ -213,6 +226,30 @@ export class DatabaseStorage implements IStorage {
       query = query.where(eq(pages.storeId, storeId)) as typeof query;
     }
     return query.orderBy(desc(pages.updatedAt)).limit(limit).offset(offset);
+  }
+
+  async getAllPagesLightweight(storeId?: string, options?: { limit?: number; offset?: number }): Promise<PageMetadata[]> {
+    const limit = options?.limit || 50;
+    const offset = options?.offset || 0;
+
+    const conditions = storeId ? [eq(pages.storeId, storeId)] : [];
+    return db
+      .select({
+        id: pages.id,
+        storeId: pages.storeId,
+        title: pages.title,
+        slug: pages.slug,
+        status: pages.status,
+        allowIndexing: pages.allowIndexing,
+        createdAt: pages.createdAt,
+        updatedAt: pages.updatedAt,
+        blockCount: sql<number>`coalesce(jsonb_array_length(${pages.blocks}), 0)`,
+      })
+      .from(pages)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(pages.updatedAt))
+      .limit(limit)
+      .offset(offset);
   }
 
   async countPages(storeId?: string): Promise<number> {

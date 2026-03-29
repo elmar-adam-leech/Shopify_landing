@@ -30,7 +30,7 @@ import { useStore } from "@/lib/store-context";
 import { useToast } from "@/hooks/use-toast";
 import { useShopifyRedirect, useAppBridge } from "@/components/providers/AppBridgeProvider";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Page, Block } from "@shared/schema";
+import type { Block } from "@shared/schema";
 import { useState, useEffect, useRef } from "react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -60,7 +60,19 @@ export default function PagesList() {
   const PAGE_SIZE = 50;
   const [pageOffset, setPageOffset] = useState(0);
 
-  const { data: pagesResponse, isLoading } = useQuery<{ data: Page[]; total: number; limit: number; offset: number }>({
+  type PageListItem = {
+    id: string;
+    storeId: string | null;
+    title: string;
+    slug: string;
+    status: string;
+    allowIndexing: boolean;
+    createdAt: string;
+    updatedAt: string;
+    blockCount: number;
+  };
+
+  const { data: pagesResponse, isLoading } = useQuery<{ data: PageListItem[]; total: number; limit: number; offset: number }>({
     queryKey: ["/api/pages/list", selectedStoreId, pageOffset],
     staleTime: 2 * 60 * 1000,
     queryFn: async () => {
@@ -295,13 +307,13 @@ export default function PagesList() {
                 <CardContent>
                   <Link href={buildHref(`/editor/${page.id}`)}>
                     <div className="aspect-video bg-muted rounded-lg flex items-center justify-center mb-3 cursor-pointer hover:bg-muted/80 transition-colors">
-                      {page.blocks && page.blocks.length > 0 ? (
+                      {page.blockCount > 0 ? (
                         <div className="text-center p-4">
                           <p className="text-2xl font-bold text-muted-foreground">
-                            {page.blocks.length}
+                            {page.blockCount}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            block{page.blocks.length !== 1 ? "s" : ""}
+                            block{page.blockCount !== 1 ? "s" : ""}
                           </p>
                         </div>
                       ) : (

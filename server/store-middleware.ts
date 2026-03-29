@@ -25,8 +25,21 @@ interface CachedStore {
 }
 
 const CACHE_TTL_MS = 30_000;
+const CACHE_SWEEP_INTERVAL_MS = 60_000;
 const MAX_CACHE_SIZE = 500;
 const storeCache = new Map<string, CachedStore>();
+
+const cacheSweepInterval = setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of storeCache) {
+    if (now - entry.timestamp > CACHE_TTL_MS) {
+      storeCache.delete(key);
+    }
+  }
+}, CACHE_SWEEP_INTERVAL_MS);
+if (cacheSweepInterval.unref) {
+  cacheSweepInterval.unref();
+}
 
 function getCachedStore(key: string): CachedStore | null {
   const entry = storeCache.get(key);
