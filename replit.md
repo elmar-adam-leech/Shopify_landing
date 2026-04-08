@@ -22,7 +22,7 @@ Preferred communication style: Simple, everyday language.
 ### Backend
 - **Runtime**: Node.js with Express
 - **API Design**: RESTful endpoints
-- **Database ORM**: Drizzle ORM with PostgreSQL
+- **Database ORM**: Drizzle ORM v0.45.2 with PostgreSQL
 - **Schema Validation**: Zod
 
 ### Shopify Integration

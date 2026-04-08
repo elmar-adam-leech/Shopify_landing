@@ -92,7 +92,19 @@ export async function syncProductsForStore(
         } as typeof shopifyProductsTable.$inferInsert;
       });
 
-      const results = await db
+      const batchShopifyIds = batch.map((p) => p.id);
+      const existingProducts = await db
+        .select({ shopifyProductId: shopifyProductsTable.shopifyProductId })
+        .from(shopifyProductsTable)
+        .where(
+          and(
+            eq(shopifyProductsTable.storeId, storeId),
+            sql`${shopifyProductsTable.shopifyProductId} = ANY(${batchShopifyIds})`
+          )
+        );
+      const existingShopifyIds = new Set(existingProducts.map((r) => r.shopifyProductId));
+
+      await db
         .insert(shopifyProductsTable)
         .values(batchValues)
         .onConflictDoUpdate({
@@ -111,15 +123,14 @@ export async function syncProductsForStore(
             productData: sql`excluded.product_data`,
             shopifyUpdatedAt: sql`excluded.shopify_updated_at`,
             syncedAt: sql`excluded.synced_at`,
-          } as Partial<typeof shopifyProductsTable.$inferInsert>,
-        })
-        .returning({ id: shopifyProductsTable.id, wasInserted: sql<boolean>`(xmax = 0)` });
+          } as unknown as Partial<typeof shopifyProductsTable.$inferInsert>,
+        });
 
-      for (const result of results) {
-        if (result.wasInserted) {
-          productsAdded++;
-        } else {
+      for (const shopifyId of batchShopifyIds) {
+        if (existingShopifyIds.has(shopifyId)) {
           productsUpdated++;
+        } else {
+          productsAdded++;
         }
       }
     }
