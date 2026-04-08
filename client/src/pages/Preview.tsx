@@ -3,10 +3,9 @@ import { useRoute, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { captureUTMParams } from "@/lib/utm";
-import { firePixelEvent, type PixelEventName } from "@/lib/pixels";
+import { firePixelEvent, fireCustomEvents, generatePixelInitCode, type PixelEventName } from "@/lib/pixels";
 import { getOrAssignBlockVariant, getVariantAssignment, setVariantAssignment, selectVariant, evaluateBlockVisibility } from "@/lib/preview/ab-testing";
 import { trackEvent } from "@/lib/preview/analytics";
-import { generatePixelScripts } from "@/lib/preview/pixels";
 import { renderBlock } from "@/components/preview/BlockRenderer";
 import { FormBlockPreview } from "@/components/preview/FormBlockPreview";
 import type { Page, Block, AbTest, AbTestVariant } from "@shared/schema";
@@ -117,6 +116,13 @@ export default function Preview() {
           currency: "USD",
         }, page.pixelSettings);
       }
+
+      if (config.customEventIds?.length && page?.pixelSettings) {
+        fireCustomEvents(config.customEventIds, page.pixelSettings, {
+          content_name: config.text,
+          content_category: "Button Click",
+        });
+      }
     }
   }, [pageId, abTestInfo, page?.pixelSettings]);
 
@@ -152,6 +158,13 @@ export default function Preview() {
           value: config.conversionValue || 0,
           currency: "USD",
         }, page.pixelSettings);
+      }
+
+      if (config.customEventIds?.length && page?.pixelSettings) {
+        fireCustomEvents(config.customEventIds, page.pixelSettings, {
+          content_name: config.title || "Form Submission",
+          content_category: "Form",
+        });
       }
       
       try {
@@ -213,7 +226,7 @@ export default function Preview() {
   }
 
   const sortedBlocks = [...(page.blocks || [])].sort((a, b) => a.order - b.order);
-  const pixelScripts = generatePixelScripts(page.pixelSettings);
+  const pixelScripts = generatePixelInitCode(page.pixelSettings);
 
   const renderBlockWithTracking = (block: Block) => {
     if (block.type === "form-block") {

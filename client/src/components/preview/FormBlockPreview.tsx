@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getUrlParam } from "@/lib/preview/pixels";
+import { getUrlParam } from "@/lib/pixels";
 import type { Block } from "@shared/schema";
 
 export function FormBlockPreview({ 
