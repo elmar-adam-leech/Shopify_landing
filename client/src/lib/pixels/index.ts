@@ -2,13 +2,9 @@ import type { PixelSettings, CustomPixelEvent } from "@shared/schema";
 import type { PixelProvider, PixelEventName, PixelEventData } from "./types";
 import {
   generateMetaInitCode,
-  generateMetaInitScript,
   generateGoogleAdsInitCode,
-  generateGoogleAdsInitScript,
   generateTiktokInitCode,
-  generateTiktokInitScript,
   generatePinterestInitCode,
-  generatePinterestInitScript,
 } from "@shared/pixel-utils";
 
 export type { PixelEventName, PixelEventData } from "./types";
@@ -91,13 +87,6 @@ export async function firePixelEvent(
   }
 }
 
-const platformToProviderKey: Record<string, string> = {
-  meta: "meta",
-  google: "google",
-  tiktok: "tiktok",
-  pinterest: "pinterest",
-};
-
 export async function fireCustomEvents(
   customEventIds: string[],
   pixelSettings?: PixelSettings | null,
@@ -132,13 +121,6 @@ const initCodeGenerators: Record<string, (pixelId: string) => string> = {
   pinterest: generatePinterestInitCode,
 };
 
-const initScriptGenerators: Record<string, (pixelId: string) => string> = {
-  meta: generateMetaInitScript,
-  google: generateGoogleAdsInitScript,
-  tiktok: generateTiktokInitScript,
-  pinterest: generatePinterestInitScript,
-};
-
 export function generatePixelInitCode(pixelSettings?: PixelSettings | null): string {
   if (!pixelSettings) return "";
 
@@ -156,101 +138,4 @@ export function generatePixelInitCode(pixelSettings?: PixelSettings | null): str
   }
 
   return codes.join("\n");
-}
-
-export function generatePixelInitScripts(pixelSettings?: PixelSettings | null): string {
-  if (!pixelSettings) return "";
-
-  const scripts: string[] = [];
-
-  for (const check of providerChecks) {
-    if (!check.isEnabled(pixelSettings)) continue;
-    const pixelId = check.getPixelId(pixelSettings);
-    if (!pixelId) continue;
-
-    const generator = initScriptGenerators[check.key];
-    if (generator) {
-      scripts.push(generator(pixelId));
-    }
-  }
-
-  return scripts.join("\n");
-}
-
-export async function fireLeadEvent(
-  pixelSettings?: PixelSettings | null,
-  data?: {
-    formName?: string;
-    formId?: string;
-    value?: number;
-  }
-): Promise<void> {
-  const eventData: PixelEventData = {
-    content_name: data?.formName || "Form Submission",
-    content_category: "Lead",
-    value: data?.value || 0,
-    currency: "USD",
-  };
-
-  await firePixelEvent("Lead", eventData, pixelSettings);
-}
-
-export async function fireAddToCartEvent(
-  pixelSettings?: PixelSettings | null,
-  data?: {
-    productName?: string;
-    productId?: string;
-    price?: number;
-    currency?: string;
-  }
-): Promise<void> {
-  const eventData: PixelEventData = {
-    content_name: data?.productName,
-    content_ids: data?.productId ? [data.productId] : undefined,
-    content_type: "product",
-    value: data?.price || 0,
-    currency: data?.currency || "USD",
-    num_items: 1,
-  };
-
-  await firePixelEvent("AddToCart", eventData, pixelSettings);
-}
-
-export async function firePurchaseEvent(
-  pixelSettings?: PixelSettings | null,
-  data?: {
-    orderId?: string;
-    value: number;
-    currency?: string;
-    productIds?: string[];
-    numItems?: number;
-  }
-): Promise<void> {
-  const eventData: PixelEventData = {
-    content_ids: data?.productIds,
-    content_type: "product",
-    value: data?.value || 0,
-    currency: data?.currency || "USD",
-    num_items: data?.numItems || 1,
-  };
-
-  await firePixelEvent("Purchase", eventData, pixelSettings);
-}
-
-export async function fireViewContentEvent(
-  pixelSettings?: PixelSettings | null,
-  data?: {
-    contentName?: string;
-    contentId?: string;
-    contentCategory?: string;
-  }
-): Promise<void> {
-  const eventData: PixelEventData = {
-    content_name: data?.contentName,
-    content_ids: data?.contentId ? [data.contentId] : undefined,
-    content_category: data?.contentCategory,
-    content_type: "page",
-  };
-
-  await firePixelEvent("ViewContent", eventData, pixelSettings);
 }

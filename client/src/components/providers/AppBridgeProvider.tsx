@@ -132,11 +132,6 @@ export function ShopifyProviders({ children }: ShopifyProvidersProps) {
   );
 }
 
-export function useShopOrigin() {
-  const { shop, host, isEmbedded } = useAppBridge();
-  return { shop, host, isEmbedded };
-}
-
 export function useShopifyRedirect() {
   const { app, shop, host, isEmbedded } = useAppBridge();
   
@@ -186,79 +181,4 @@ export function useShopifyRedirect() {
   };
   
   return { redirectToAuth };
-}
-
-/**
- * Hook to get session token from App Bridge for authenticated API calls
- */
-export function useSessionToken() {
-  const { app, isEmbedded } = useAppBridge();
-  const [sessionToken, setSessionToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(isEmbedded);
-  
-  useEffect(() => {
-    if (!app || !isEmbedded) {
-      setIsLoading(false);
-      return;
-    }
-    
-    const appInstance = app; // Type narrowing - app is not null here
-    
-    async function fetchToken() {
-      try {
-        const { getSessionToken } = await import("@shopify/app-bridge/utilities");
-        const token = await getSessionToken(appInstance);
-        setSessionToken(token);
-        console.log("[SessionToken] Retrieved session token");
-      } catch (error) {
-        console.error("[SessionToken] Failed to get session token:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    
-    fetchToken();
-    
-    // Refresh token every 50 seconds (tokens expire after 60s)
-    const refreshInterval = setInterval(fetchToken, 50000);
-    return () => clearInterval(refreshInterval);
-  }, [app, isEmbedded]);
-  
-  return { sessionToken, isLoading };
-}
-
-/**
- * Hook for making authenticated API calls in embedded context
- */
-export function useAuthenticatedFetch() {
-  const { shop, isEmbedded, app } = useAppBridge();
-  
-  const authenticatedFetch = async (url: string, options: RequestInit = {}) => {
-    const fetchUrl = new URL(url, window.location.origin);
-    
-    // Add shop parameter
-    if (shop) {
-      fetchUrl.searchParams.set("shop", shop);
-    }
-    
-    const headers = new Headers(options.headers);
-    
-    // Get session token if in embedded context
-    if (isEmbedded && app) {
-      try {
-        const { getSessionToken } = await import("@shopify/app-bridge/utilities");
-        const token = await getSessionToken(app);
-        headers.set("Authorization", `Bearer ${token}`);
-      } catch (error) {
-        console.error("[AuthFetch] Failed to get session token:", error);
-      }
-    }
-    
-    return fetch(fetchUrl.toString(), {
-      ...options,
-      headers,
-    });
-  };
-  
-  return { authenticatedFetch, isEmbedded };
 }

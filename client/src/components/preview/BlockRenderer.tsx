@@ -376,38 +376,6 @@ export function renderBlock(block: Block, storeInfo?: { shopifyDomain: string },
       );
 
     case "phone-block":
-      const handlePhoneClick = () => {
-        if (config.trackCalls !== false) {
-          const w = window as any;
-          
-          if (w.fbq) {
-            w.fbq('track', 'Contact', { 
-              content_name: 'Phone Call',
-              phone_number: config.phoneNumber 
-            });
-          }
-          
-          if (w.gtag) {
-            w.gtag('event', 'conversion', {
-              'event_category': 'Contact',
-              'event_label': 'Phone Call',
-              'value': 1
-            });
-          }
-          
-          if (w.ttq) {
-            w.ttq.track('Contact', { 
-              description: 'Phone Call' 
-            });
-          }
-          
-          if (w.pintrk) {
-            w.pintrk('track', 'lead', {
-              lead_type: 'Phone Call'
-            });
-          }
-        }
-      };
       
       return (
         <section
@@ -417,7 +385,6 @@ export function renderBlock(block: Block, storeInfo?: { shopifyDomain: string },
         >
           <a
             href={`tel:${(config.phoneNumber || "").replace(/\D/g, "")}`}
-            onClick={handlePhoneClick}
             className="inline-flex items-center gap-3 px-6 py-3 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg transition-colors"
             data-testid="button-call-phone"
           >

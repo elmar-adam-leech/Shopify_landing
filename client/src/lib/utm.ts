@@ -117,19 +117,3 @@ export function captureUTMParams(): UTMParams {
   return getStoredUTMParams();
 }
 
-/**
- * Get all attribution data including UTM params and landing page info
- */
-export function getAttributionData(): {
-  utm: UTMParams;
-  landingPage: string;
-  referrer: string;
-  timestamp: string;
-} {
-  return {
-    utm: getStoredUTMParams(),
-    landingPage: window.location.href,
-    referrer: document.referrer,
-    timestamp: new Date().toISOString(),
-  };
-}

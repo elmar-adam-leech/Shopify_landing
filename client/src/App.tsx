@@ -7,7 +7,7 @@ import { ThemeProvider } from "@/lib/theme";
 import { StoreProvider } from "@/lib/store-context";
 import { ShopifyProviders } from "@/components/providers/AppBridgeProvider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { lazy, Suspense, useState, useCallback } from "react";
+import { lazy, Suspense, useCallback } from "react";
 
 const PagesList = lazy(() => import("@/pages/PagesList"));
 const Editor = lazy(() => import("@/pages/Editor"));
@@ -51,8 +51,6 @@ function ShopifyRouter() {
 }
 
 function AdminApp() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-
   const sessionQuery = useQuery({
     queryKey: ["/api/admin/session"],
     queryFn: async () => {

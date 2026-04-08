@@ -2,7 +2,7 @@ import { useEffect, useCallback, useRef, useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { captureUTMParams } from "@/lib/utm";
+import { captureUTMParams, getStoredUTMParams } from "@/lib/utm";
 import { firePixelEvent, fireCustomEvents, generatePixelInitCode, preloadProviders, type PixelEventName } from "@/lib/pixels";
 import { getOrAssignBlockVariant, getVariantAssignment, setVariantAssignment, selectVariant, evaluateBlockVisibility } from "@/lib/preview/ab-testing";
 import { trackEvent } from "@/lib/preview/analytics";
@@ -142,8 +142,15 @@ export default function Preview() {
         abTestInfo?.test?.id,
         abTestInfo?.variant?.id
       );
+
+      if (config.trackCalls !== false && page?.pixelSettings) {
+        firePixelEvent("Contact", {
+          content_name: "Phone Call",
+          content_category: "Contact",
+        }, page.pixelSettings);
+      }
     }
-  }, [pageId, abTestInfo]);
+  }, [pageId, abTestInfo, page?.pixelSettings]);
 
   const handleFormSubmit = useCallback(async (blockId: string, config: any, formData: Record<string, string>) => {
     if (pageId) {
@@ -174,7 +181,7 @@ export default function Preview() {
       }
       
       try {
-        const utmParams = JSON.parse(localStorage.getItem("utm_params") || "{}");
+        const utmParams = getStoredUTMParams();
         await fetch(`/api/pages/${pageId}/submissions`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
