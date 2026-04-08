@@ -4,7 +4,7 @@ import { storage } from "../storage";
 import { validateStoreOwnership } from "../lib/store-ownership";
 import { getShopifyConfigForStore } from "../lib/shopify";
 import { syncProductsForStore } from "../lib/sync-service";
-import { validateUserAccess } from "./helpers";
+import { validateUserAccess, sanitizeZodError } from "./helpers";
 import { logError } from "../lib/logger";
 
 const syncSettingsSchema = z.object({
@@ -250,7 +250,7 @@ export function createProductRoutes(): Router {
       if (error instanceof z.ZodError) {
         return res
           .status(400)
-          .json({ error: "Invalid data", details: error.errors });
+          .json({ error: "Invalid data", details: sanitizeZodError(error) });
       }
       logError("Failed to update sync settings", { endpoint: "PATCH /api/stores/:storeId/sync/settings", storeId: req.params.storeId }, error);
       res.status(500).json({ error: "Failed to update sync settings" });

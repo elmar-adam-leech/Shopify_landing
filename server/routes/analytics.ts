@@ -2,7 +2,7 @@ import { Router } from "express";
 import { insertAnalyticsEventSchema } from "@shared/schema";
 import { z } from "zod";
 import { storage } from "../storage";
-import { validatePageAccess } from "./helpers";
+import { validatePageAccess, sanitizeZodError } from "./helpers";
 import { analyticsLimiter } from "../middleware/rate-limit";
 import { logError } from "../lib/logger";
 
@@ -30,7 +30,7 @@ export function createAnalyticsRoutes(): Router {
       if (error instanceof z.ZodError) {
         return res
           .status(400)
-          .json({ error: "Invalid data", details: error.errors });
+          .json({ error: "Invalid data", details: sanitizeZodError(error) });
       }
       logError("Failed to record analytics event", { endpoint: "POST /api/analytics", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to record event" });

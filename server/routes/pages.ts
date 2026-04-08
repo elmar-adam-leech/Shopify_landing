@@ -5,7 +5,7 @@ import dns from "dns/promises";
 import net from "net";
 import { storage } from "../storage";
 import { renderPage, render404Page, renderErrorPage } from "../lib/page-renderer";
-import { validatePageAccess, requireStoreContext, processFormSubmissionCustomer } from "./helpers";
+import { validatePageAccess, requireStoreContext, processFormSubmissionCustomer, sanitizeZodError } from "./helpers";
 import { formSubmissionLimiter } from "../middleware/rate-limit";
 import { logError, logWarn, logInfo } from "../lib/logger";
 
@@ -266,7 +266,7 @@ export function createPageRoutes(): Router {
       if (error instanceof z.ZodError) {
         return res
           .status(400)
-          .json({ error: "Invalid data", details: error.errors });
+          .json({ error: "Invalid data", details: sanitizeZodError(error) });
       }
       logError("Failed to create page", { endpoint: "POST /api/pages", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to create page" });
@@ -308,7 +308,7 @@ export function createPageRoutes(): Router {
       if (error instanceof z.ZodError) {
         return res
           .status(400)
-          .json({ error: "Invalid data", details: error.errors });
+          .json({ error: "Invalid data", details: sanitizeZodError(error) });
       }
       logError("Failed to update page", { endpoint: "PATCH /api/pages/:id", storeId: req.storeContext?.storeId, pageId: req.params.id }, error);
       res.status(500).json({ error: "Failed to update page" });
@@ -454,7 +454,7 @@ export function createPageRoutes(): Router {
       if (error instanceof z.ZodError) {
         return res
           .status(400)
-          .json({ error: "Invalid data", details: error.errors });
+          .json({ error: "Invalid data", details: sanitizeZodError(error) });
       }
       logError("Failed to create submission", { endpoint: "POST /api/pages/:pageId/submissions", storeId: req.storeContext?.storeId, pageId: req.params.pageId }, error);
       res.status(500).json({ error: "Failed to submit form" });

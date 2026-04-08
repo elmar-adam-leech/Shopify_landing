@@ -4,7 +4,7 @@ import { insertStoreSchema, updateStoreSchema } from "@shared/schema";
 import { z } from "zod";
 import { storage } from "../storage";
 import { validateStoreOwnership } from "../lib/store-ownership";
-import { requireStoreContext, validateUserAccess } from "./helpers";
+import { requireStoreContext, validateUserAccess, sanitizeZodError } from "./helpers";
 import { logError } from "../lib/logger";
 
 const assignUserSchema = z.object({
@@ -95,7 +95,7 @@ export function createStoreRoutes(): Router {
       if (error instanceof z.ZodError) {
         return res
           .status(400)
-          .json({ error: "Invalid data", details: error.errors });
+          .json({ error: "Invalid data", details: sanitizeZodError(error) });
       }
       logError("Failed to create store", { endpoint: "POST /api/stores", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to create store" });
@@ -132,7 +132,7 @@ export function createStoreRoutes(): Router {
       if (error instanceof z.ZodError) {
         return res
           .status(400)
-          .json({ error: "Invalid data", details: error.errors });
+          .json({ error: "Invalid data", details: sanitizeZodError(error) });
       }
       logError("Failed to update store", { endpoint: "PATCH /api/stores/:id", storeId: req.params.id }, error);
       res.status(500).json({ error: "Failed to update store" });
@@ -222,7 +222,7 @@ export function createStoreRoutes(): Router {
       if (error instanceof z.ZodError) {
         return res
           .status(400)
-          .json({ error: "Invalid data", details: error.errors });
+          .json({ error: "Invalid data", details: sanitizeZodError(error) });
       }
       logError("Failed to assign user to store", { endpoint: "POST /api/stores/:storeId/users", storeId: req.params.storeId }, error);
       res.status(500).json({ error: "Failed to assign user to store" });

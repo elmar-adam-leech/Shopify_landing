@@ -12,6 +12,15 @@ import {
   updateCustomerTagsGraphQL,
   createShopifyCustomerGraphQL,
 } from "../lib/shopify";
+import { z } from "zod";
+
+export function sanitizeZodError(error: z.ZodError): { field: string; message: string }[] {
+  const isDev = process.env.NODE_ENV !== "production";
+  return error.issues.map((issue) => ({
+    field: issue.path.join(".") || "unknown",
+    message: isDev ? issue.message : "Invalid value",
+  }));
+}
 
 export function validatePageAccess(
   page: Page | undefined,

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { insertAbTestSchema, insertAbTestVariantSchema, type InsertAbTest, type InsertAbTestVariant } from "@shared/schema";
 import { z } from "zod";
 import { storage } from "../storage";
-import { validatePageAccess, validateAbTestOwnership } from "./helpers";
+import { validatePageAccess, validateAbTestOwnership, sanitizeZodError } from "./helpers";
 import { logError } from "../lib/logger";
 import { apiRateLimiter } from "../middleware/rate-limit";
 
@@ -138,7 +138,7 @@ export function createAbTestRoutes(): Router {
       if (error instanceof z.ZodError) {
         return res
           .status(400)
-          .json({ error: "Invalid data", details: error.errors });
+          .json({ error: "Invalid data", details: sanitizeZodError(error) });
       }
       logError("Failed to create A/B test", { endpoint: "POST /api/ab-tests", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to create A/B test" });
@@ -170,7 +170,7 @@ export function createAbTestRoutes(): Router {
       if (error instanceof z.ZodError) {
         return res
           .status(400)
-          .json({ error: "Invalid data", details: error.errors });
+          .json({ error: "Invalid data", details: sanitizeZodError(error) });
       }
       logError("Failed to update A/B test", { endpoint: "PATCH /api/ab-tests/:id", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to update A/B test" });
@@ -268,7 +268,7 @@ export function createAbTestRoutes(): Router {
       if (error instanceof z.ZodError) {
         return res
           .status(400)
-          .json({ error: "Invalid data", details: error.errors });
+          .json({ error: "Invalid data", details: sanitizeZodError(error) });
       }
       logError("Failed to create variant", { endpoint: "POST /api/ab-tests/:abTestId/variants", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to create variant" });
@@ -325,7 +325,7 @@ export function createAbTestRoutes(): Router {
       if (error instanceof z.ZodError) {
         return res
           .status(400)
-          .json({ error: "Invalid data", details: error.errors });
+          .json({ error: "Invalid data", details: sanitizeZodError(error) });
       }
       logError("Failed to update variant", { endpoint: "PATCH /api/ab-tests/:abTestId/variants/:variantId", storeId: req.storeContext?.storeId }, error);
       res.status(500).json({ error: "Failed to update variant" });
