@@ -234,11 +234,6 @@ export function adminCsrfProtection(req: Request, res: Response, next: NextFunct
     return next();
   }
 
-  const authHeader = req.headers["authorization"];
-  if (authHeader?.startsWith("Bearer ")) {
-    return next();
-  }
-
   const token = req.headers["x-csrf-token"] as string | undefined;
   if (!token || !req.session.csrfToken || token !== req.session.csrfToken) {
     return res.status(403).json({ error: "Forbidden: invalid CSRF token" });
