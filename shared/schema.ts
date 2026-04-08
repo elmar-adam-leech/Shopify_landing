@@ -444,6 +444,12 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const loginAttempts = pgTable("login_attempts", {
+  key: text("key").primaryKey(),
+  count: integer("count").notNull().default(0),
+  lastAttempt: timestamp("last_attempt").notNull().defaultNow(),
+});
+
 // User-store assignments for multi-tenancy access control
 export const userStoreAssignments = pgTable("user_store_assignments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

@@ -4,8 +4,8 @@ import connectPgSimple from "connect-pg-simple";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { db } from "./db";
-import { users } from "@shared/schema";
-import { eq, or } from "drizzle-orm";
+import { users, loginAttempts } from "@shared/schema";
+import { eq, or, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 
 declare module "express-session" {
@@ -18,58 +18,53 @@ declare module "express-session" {
 
 const PgStore = connectPgSimple(session);
 
-const loginAttempts = new Map<string, { count: number; lastAttempt: number }>();
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_DURATION = 15 * 60 * 1000;
 
-const PRUNE_INTERVAL_MS = 5 * 60 * 1000;
-const pruneTimer = setInterval(() => {
-  const now = Date.now();
-  loginAttempts.forEach((value, key) => {
-    if (now - value.lastAttempt > LOCKOUT_DURATION) {
-      loginAttempts.delete(key);
-    }
-  });
-}, PRUNE_INTERVAL_MS);
-pruneTimer.unref();
+async function checkRateLimit(key: string): Promise<{ allowed: boolean; retryAfter?: number }> {
+  const now = new Date();
+  const lockoutThreshold = new Date(now.getTime() - LOCKOUT_DURATION);
 
-export function stopPruneTimer(): void {
-  clearInterval(pruneTimer);
-  console.log("[Admin] Login attempt prune timer stopped");
-}
+  const [record] = await db.select().from(loginAttempts).where(eq(loginAttempts.key, key)).limit(1);
 
-function checkRateLimit(key: string): { allowed: boolean; retryAfter?: number } {
-  const now = Date.now();
-  const attempts = loginAttempts.get(key);
-  
-  if (!attempts) return { allowed: true };
-  
-  if (now - attempts.lastAttempt > LOCKOUT_DURATION) {
-    loginAttempts.delete(key);
+  if (!record) return { allowed: true };
+
+  if (record.lastAttempt < lockoutThreshold) {
+    await db.delete(loginAttempts).where(eq(loginAttempts.key, key));
     return { allowed: true };
   }
-  
-  if (attempts.count >= MAX_ATTEMPTS) {
-    const retryAfter = Math.ceil((LOCKOUT_DURATION - (now - attempts.lastAttempt)) / 1000);
+
+  if (record.count >= MAX_ATTEMPTS) {
+    const retryAfter = Math.ceil((LOCKOUT_DURATION - (now.getTime() - record.lastAttempt.getTime())) / 1000);
     return { allowed: false, retryAfter };
   }
-  
+
   return { allowed: true };
 }
 
-function recordFailedAttempt(key: string) {
-  const now = Date.now();
-  const attempts = loginAttempts.get(key);
-  
-  if (!attempts || now - attempts.lastAttempt > LOCKOUT_DURATION) {
-    loginAttempts.set(key, { count: 1, lastAttempt: now });
-  } else {
-    loginAttempts.set(key, { count: attempts.count + 1, lastAttempt: now });
-  }
+async function recordFailedAttempt(key: string): Promise<void> {
+  const now = new Date();
+  const lockoutThreshold = new Date(now.getTime() - LOCKOUT_DURATION);
+
+  await db
+    .insert(loginAttempts)
+    .values({ key, count: 1, lastAttempt: now })
+    .onConflictDoUpdate({
+      target: loginAttempts.key,
+      set: {
+        count: sql`CASE WHEN ${loginAttempts.lastAttempt} < ${lockoutThreshold} THEN 1 ELSE ${loginAttempts.count} + 1 END`,
+        lastAttempt: now,
+      },
+    });
 }
 
-function clearAttempts(key: string) {
-  loginAttempts.delete(key);
+async function clearAttempts(key: string): Promise<void> {
+  await db.delete(loginAttempts).where(eq(loginAttempts.key, key));
+}
+
+export async function pruneExpiredAttempts(): Promise<void> {
+  const lockoutThreshold = new Date(Date.now() - LOCKOUT_DURATION);
+  await db.delete(loginAttempts).where(lt(loginAttempts.lastAttempt, lockoutThreshold));
 }
 
 export function createSessionMiddleware() {
@@ -153,7 +148,7 @@ export function createAdminRouter(): Router {
       const clientIp = req.ip || req.socket.remoteAddress || "unknown";
       const rateLimitKey = `${clientIp}:${email}`;
 
-      const rateCheck = checkRateLimit(rateLimitKey);
+      const rateCheck = await checkRateLimit(rateLimitKey);
       if (!rateCheck.allowed) {
         return res.status(429).json({
           error: "Too many login attempts. Please try again later.",
@@ -166,22 +161,22 @@ export function createAdminRouter(): Router {
         .limit(1);
 
       if (!user) {
-        recordFailedAttempt(rateLimitKey);
+        await recordFailedAttempt(rateLimitKey);
         return res.status(401).json({ error: "Invalid email or password" });
       }
 
       if (user.role !== "admin") {
-        recordFailedAttempt(rateLimitKey);
+        await recordFailedAttempt(rateLimitKey);
         return res.status(401).json({ error: "Invalid email or password" });
       }
 
       const validPassword = await bcrypt.compare(password, user.password);
       if (!validPassword) {
-        recordFailedAttempt(rateLimitKey);
+        await recordFailedAttempt(rateLimitKey);
         return res.status(401).json({ error: "Invalid email or password" });
       }
 
-      clearAttempts(rateLimitKey);
+      await clearAttempts(rateLimitKey);
 
       req.session.adminUserId = user.id;
       req.session.adminRole = user.role;

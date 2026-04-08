@@ -4,7 +4,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { startSyncScheduler, stopSyncScheduler } from "./lib/sync-scheduler";
 import { closeDatabase, db } from "./db";
-import { stopPruneTimer } from "./admin-auth";
+import { pruneExpiredAttempts } from "./admin-auth";
 import { sql } from "drizzle-orm";
 
 const REQUIRED_ENV_VARS = [
@@ -154,7 +154,6 @@ function gracefulShutdown(signal: string): void {
   log(`Received ${signal}. Starting graceful shutdown...`, "shutdown");
 
   stopSyncScheduler();
-  stopPruneTimer();
 
   httpServer.close(async () => {
     log("HTTP server closed", "shutdown");
@@ -207,6 +206,9 @@ process.on("SIGINT", () => gracefulShutdown("SIGINT"));
       log(`serving on port ${port}`);
       
       startSyncScheduler();
+      pruneExpiredAttempts().catch((err) =>
+        console.error("[startup] Failed to prune expired login attempts:", err),
+      );
     },
   );
 })();
