@@ -67,6 +67,15 @@ export const formSubmissionLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+export const storefrontProxyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  keyGenerator: (req: Request) => getClientKey(req, "storefront"),
+  handler: (req: Request, res: Response) => logAndRespond(req, res, 30, 60, "storefront"),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 export const trackingLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 60,

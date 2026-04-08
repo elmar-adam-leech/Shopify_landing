@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 import DOMPurify from "dompurify";
 import { captureUTMParams, getStoredUTMParams, parseUTMParams } from "@/lib/utm";
 import { firePixelEvent, type PixelEventName } from "@/lib/pixels";
-import { getProductBySku, formatPrice, type StorefrontProduct } from "@/lib/shopify";
+import { formatPrice, type StorefrontProduct, type ProductResult } from "@/lib/shopify";
 import type { Page, Block, BlockVariant, VisibilityCondition, VisibilityRules, AnalyticsEventType, AbTest, AbTestVariant, PixelSettings } from "@shared/schema";
 
 function getOrCreateVisitorId(): string {
@@ -253,16 +253,36 @@ async function trackEvent(
 }
 
 // Dynamic Product Block - loads product from URL hash (#sku-value) via Storefront API
+async function fetchProductViaProxy(pageId: string, sku: string): Promise<ProductResult> {
+  try {
+    const response = await fetch("/api/public/storefront/product", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pageId, sku }),
+    });
+    if (response.status === 429) {
+      return { error: "Rate limited", message: "Too many requests, please try again later" };
+    }
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      return { error: data.error || "Network error", message: data.message || `HTTP ${response.status}` };
+    }
+    return await response.json();
+  } catch (err: any) {
+    return { error: "Network error", message: err.message || "Unknown error" };
+  }
+}
+
 function DynamicProductBlock({ 
   block, 
   config, 
   storeDomain, 
-  storefrontToken 
+  pageId 
 }: { 
   block: Block; 
   config: Record<string, any>;
   storeDomain?: string;
-  storefrontToken?: string;
+  pageId?: string;
 }) {
   const [product, setProduct] = useState<StorefrontProduct | null>(null);
   const [loading, setLoading] = useState(true);
@@ -279,7 +299,7 @@ function DynamicProductBlock({
       setLoading(false);
       return;
     }
-    if (!storeDomain || !storefrontToken) {
+    if (!storeDomain || !pageId) {
       setError("Store configuration missing");
       setLoading(false);
       return;
@@ -287,7 +307,7 @@ function DynamicProductBlock({
 
     setLoading(true);
     setError(null);
-    getProductBySku(storeDomain, storefrontToken, sku)
+    fetchProductViaProxy(pageId, sku)
       .then((result) => {
         if (result.error) {
           setError(`${result.error}: ${result.message || sku}`);
@@ -298,16 +318,15 @@ function DynamicProductBlock({
         }
         setLoading(false);
       });
-  }, [storeDomain, storefrontToken]);
+  }, [storeDomain, pageId]);
 
-  // Listen for hash changes
   useEffect(() => {
     const handleHashChange = () => {
       const sku = window.location.hash.slice(1);
-      if (sku && storeDomain && storefrontToken) {
+      if (sku && storeDomain && pageId) {
         setLoading(true);
         setError(null);
-        getProductBySku(storeDomain, storefrontToken, sku)
+        fetchProductViaProxy(pageId, sku)
           .then((result) => {
             if (result.error) {
               setError(`${result.error}: ${result.message || sku}`);
@@ -324,7 +343,7 @@ function DynamicProductBlock({
     };
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
-  }, [storeDomain, storefrontToken]);
+  }, [storeDomain, pageId]);
 
   const selectedVariant = product?.variants.find(v => v.id === selectedVariantId);
   const currentPrice = selectedVariant?.price || product?.priceRange.minVariantPrice;
@@ -529,7 +548,7 @@ function DynamicProductBlock({
   );
 }
 
-function renderBlock(block: Block, storeInfo?: { shopifyDomain: string; storefrontAccessToken: string | null }) {
+function renderBlock(block: Block, storeInfo?: { shopifyDomain: string }, pageId?: string) {
   // Apply A/B testing variant selection
   const { config: variantConfig } = getOrAssignBlockVariant(block);
   const { type } = block;
@@ -705,7 +724,7 @@ function renderBlock(block: Block, storeInfo?: { shopifyDomain: string; storefro
             block={block}
             config={config}
             storeDomain={storeInfo?.shopifyDomain}
-            storefrontToken={storeInfo?.storefrontAccessToken || undefined}
+            pageId={pageId}
           />
         );
       }
@@ -1552,7 +1571,7 @@ export default function Preview() {
     }
   }, [abTestData, pageId, setLocation]);
 
-  const { data: page, isLoading, error } = useQuery<Page & { storeInfo?: { shopifyDomain: string; storefrontAccessToken: string | null } }>({
+  const { data: page, isLoading, error } = useQuery<Page & { storeInfo?: { shopifyDomain: string } }>({
     queryKey: ["/api/public/pages", pageId],
     enabled: !!pageId,
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes client-side
@@ -1739,7 +1758,7 @@ export default function Preview() {
       );
     }
     
-    const rendered = renderBlock(block, page.storeInfo);
+    const rendered = renderBlock(block, page.storeInfo, pageId);
     
     // Wrap button blocks with click tracking
     if (block.type === "button-block" && rendered) {

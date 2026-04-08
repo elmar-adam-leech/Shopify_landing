@@ -6,7 +6,7 @@ import net from "net";
 import { storage } from "../storage";
 import { renderPage, render404Page, renderErrorPage } from "../lib/page-renderer";
 import { validatePageAccess, requireStoreContext, processFormSubmissionCustomer, sanitizeZodError } from "./helpers";
-import { formSubmissionLimiter } from "../middleware/rate-limit";
+import { formSubmissionLimiter, storefrontProxyLimiter } from "../middleware/rate-limit";
 import { logError, logWarn, logInfo } from "../lib/logger";
 
 function isPrivateIp(ip: string): boolean {
@@ -160,7 +160,6 @@ export function createPageRoutes(): Router {
         if (store) {
           storeInfo = {
             shopifyDomain: store.shopifyDomain,
-            storefrontAccessToken: store.storefrontAccessToken,
           };
         }
       }
@@ -174,6 +173,131 @@ export function createPageRoutes(): Router {
     } catch (error) {
       logError("Failed to fetch public page", { endpoint: "GET /api/public/pages/:id", pageId: req.params.id }, error);
       res.status(500).json({ error: "Failed to fetch page" });
+    }
+  });
+
+  router.post("/api/public/storefront/product", storefrontProxyLimiter, async (req: Request, res: Response) => {
+    try {
+      const { pageId, sku } = req.body;
+      if (!pageId || typeof pageId !== "string" || !sku || typeof sku !== "string") {
+        return res.status(400).json({ error: "Missing required parameters" });
+      }
+      if (sku.length > 200) {
+        return res.status(400).json({ error: "Invalid SKU" });
+      }
+
+      const page = await storage.getPage(pageId);
+      if (!page || !page.storeId) {
+        return res.status(404).json({ error: "Page or store not found" });
+      }
+
+      const store = await storage.getStore(page.storeId);
+      if (!store || !store.storefrontAccessToken || !store.shopifyDomain) {
+        return res.status(404).json({ error: "Store configuration missing" });
+      }
+
+      const STOREFRONT_API_VERSION = "2025-01";
+      const endpoint = `https://${store.shopifyDomain}/api/${STOREFRONT_API_VERSION}/graphql.json`;
+
+      const query = `
+        query getProductBySku($query: String!) {
+          products(first: 1, query: $query) {
+            edges {
+              node {
+                id
+                title
+                handle
+                descriptionHtml
+                vendor
+                productType
+                priceRange {
+                  minVariantPrice { amount currencyCode }
+                  maxVariantPrice { amount currencyCode }
+                }
+                images(first: 10) {
+                  edges {
+                    node { url altText width height }
+                  }
+                }
+                variants(first: 50) {
+                  edges {
+                    node {
+                      id
+                      title
+                      sku
+                      availableForSale
+                      price { amount currencyCode }
+                      selectedOptions { name value }
+                    }
+                  }
+                }
+                metafields(identifiers: [
+                  {namespace: "custom", key: "subtitle"},
+                  {namespace: "custom", key: "features"}
+                ]) {
+                  namespace
+                  key
+                  value
+                  type
+                }
+              }
+            }
+          }
+        }
+      `;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Shopify-Storefront-Access-Token": store.storefrontAccessToken,
+        },
+        body: JSON.stringify({
+          query,
+          variables: { query: `sku:${sku}` },
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (response.status === 429) {
+        return res.status(429).json({ error: "Rate limited", message: "Too many requests, please try again later" });
+      }
+
+      if (!response.ok) {
+        return res.status(502).json({ error: "Network error", message: `Upstream HTTP ${response.status}` });
+      }
+
+      const data = await response.json();
+
+      if (data.errors && data.errors.length > 0) {
+        return res.status(502).json({ error: "GraphQL error", message: data.errors[0].message });
+      }
+
+      const edges = data.data?.products?.edges;
+      if (!edges || edges.length === 0) {
+        return res.json({ error: "Product not found", message: `No product found with SKU: ${sku}` });
+      }
+
+      const productNode = edges[0].node;
+      const product = {
+        ...productNode,
+        images: productNode.images.edges.map((e: any) => e.node),
+        variants: productNode.variants.edges.map((e: any) => e.node),
+        metafields: (productNode.metafields || []).filter((m: any) => m !== null),
+      };
+
+      res.json({ product });
+    } catch (error: any) {
+      if (error.name === "AbortError") {
+        return res.status(504).json({ error: "Network error", message: "Request timed out" });
+      }
+      logError("Failed to proxy storefront query", { endpoint: "POST /api/public/storefront/product" }, error);
+      res.status(500).json({ error: "Failed to fetch product" });
     }
   });
 

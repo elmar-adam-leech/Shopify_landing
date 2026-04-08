@@ -79,9 +79,6 @@ pintrk('page');
 }
 
 function generateHydrationScript(store: Store, page: Page): string {
-  const storefrontDomain = store.shopifyDomain;
-  const storefrontToken = store.storefrontAccessToken || "";
-  
   return `
 <script>
 (function() {
@@ -90,9 +87,7 @@ function generateHydrationScript(store: Store, page: Page): string {
   window.__PAGE_DATA__ = {
     pageId: "${escapeJs(page.id)}",
     storeId: "${escapeJs(store.id)}",
-    storeDomain: "${escapeJs(store.shopifyDomain)}",
-    storefrontToken: "${escapeJs(storefrontToken)}",
-    storefrontUrl: "https://${escapeJs(storefrontDomain)}/api/2025-01/graphql.json"
+    storeDomain: "${escapeJs(store.shopifyDomain)}"
   };
 
   function parseHashSku() {
@@ -105,65 +100,24 @@ function generateHydrationScript(store: Store, page: Page): string {
 
   async function fetchProductBySku(sku) {
     const data = window.__PAGE_DATA__;
-    if (!data.storefrontToken) {
-      console.warn('No Storefront API token configured');
-      return null;
-    }
-
-    const query = \`
-      query getProductBySku($query: String!) {
-        products(first: 1, query: $query) {
-          edges {
-            node {
-              id
-              title
-              descriptionHtml
-              handle
-              vendor
-              productType
-              priceRange {
-                minVariantPrice { amount currencyCode }
-                maxVariantPrice { amount currencyCode }
-              }
-              images(first: 10) {
-                edges {
-                  node { url altText width height }
-                }
-              }
-              variants(first: 50) {
-                edges {
-                  node {
-                    id
-                    title
-                    sku
-                    availableForSale
-                    price { amount currencyCode }
-                    selectedOptions { name value }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    \`;
 
     try {
-      const response = await fetch(data.storefrontUrl, {
+      const response = await fetch('/api/public/storefront/product', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Shopify-Storefront-Access-Token': data.storefrontToken
-        },
-        body: JSON.stringify({
-          query: query,
-          variables: { query: 'sku:' + sku }
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pageId: data.pageId, sku: sku })
       });
 
+      if (!response.ok) return null;
+
       const result = await response.json();
-      const product = result?.data?.products?.edges?.[0]?.node;
-      return product || null;
+      if (result.product) {
+        var product = result.product;
+        product.images = { edges: (product.images || []).map(function(img) { return { node: img }; }) };
+        product.variants = { edges: (product.variants || []).map(function(v) { return { node: v }; }) };
+        return product;
+      }
+      return null;
     } catch (err) {
       console.error('Failed to fetch product:', err);
       return null;
