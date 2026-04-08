@@ -3,7 +3,7 @@ import { useRoute, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { captureUTMParams } from "@/lib/utm";
-import { firePixelEvent, fireCustomEvents, generatePixelInitCode, type PixelEventName } from "@/lib/pixels";
+import { firePixelEvent, fireCustomEvents, generatePixelInitCode, preloadProviders, type PixelEventName } from "@/lib/pixels";
 import { getOrAssignBlockVariant, getVariantAssignment, setVariantAssignment, selectVariant, evaluateBlockVisibility } from "@/lib/preview/ab-testing";
 import { trackEvent } from "@/lib/preview/analytics";
 import { renderBlock } from "@/components/preview/BlockRenderer";
@@ -71,6 +71,12 @@ export default function Preview() {
       return response.json();
     },
   });
+
+  useEffect(() => {
+    if (page?.pixelSettings) {
+      preloadProviders(page.pixelSettings);
+    }
+  }, [page?.pixelSettings]);
 
   useEffect(() => {
     pageViewTracked.current = false;

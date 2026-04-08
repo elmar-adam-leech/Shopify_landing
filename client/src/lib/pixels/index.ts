@@ -1,76 +1,119 @@
 import type { PixelSettings, CustomPixelEvent } from "@shared/schema";
 import type { PixelProvider, PixelEventName, PixelEventData } from "./types";
-import { metaProvider } from "./meta";
-import { googleAdsProvider } from "./google-ads";
-import { tiktokProvider } from "./tiktok";
-import { pinterestProvider } from "./pinterest";
+import {
+  generateMetaInitCode,
+  generateMetaInitScript,
+  generateGoogleAdsInitCode,
+  generateGoogleAdsInitScript,
+  generateTiktokInitCode,
+  generateTiktokInitScript,
+  generatePinterestInitCode,
+  generatePinterestInitScript,
+} from "@shared/pixel-utils";
 
 export type { PixelEventName, PixelEventData } from "./types";
 export { getUrlParam } from "./utils";
 
-const providers: PixelProvider[] = [
-  metaProvider,
-  googleAdsProvider,
-  tiktokProvider,
-  pinterestProvider,
+type ProviderCheck = {
+  key: string;
+  isEnabled: (ps: PixelSettings) => boolean;
+  getPixelId: (ps: PixelSettings) => string | undefined;
+  load: () => Promise<PixelProvider>;
+};
+
+const providerChecks: ProviderCheck[] = [
+  {
+    key: "meta",
+    isEnabled: (ps) => !!ps.metaPixelEnabled && !!ps.metaPixelId,
+    getPixelId: (ps) => ps.metaPixelId,
+    load: () => import("./meta").then((m) => m.metaProvider),
+  },
+  {
+    key: "google",
+    isEnabled: (ps) => !!ps.googleAdsEnabled && !!ps.googleAdsId,
+    getPixelId: (ps) => ps.googleAdsId,
+    load: () => import("./google-ads").then((m) => m.googleAdsProvider),
+  },
+  {
+    key: "tiktok",
+    isEnabled: (ps) => !!ps.tiktokPixelEnabled && !!ps.tiktokPixelId,
+    getPixelId: (ps) => ps.tiktokPixelId,
+    load: () => import("./tiktok").then((m) => m.tiktokProvider),
+  },
+  {
+    key: "pinterest",
+    isEnabled: (ps) => !!ps.pinterestTagEnabled && !!ps.pinterestTagId,
+    getPixelId: (ps) => ps.pinterestTagId,
+    load: () => import("./pinterest").then((m) => m.pinterestProvider),
+  },
 ];
 
-function getActiveProviders(pixelSettings: PixelSettings): Array<{ provider: PixelProvider; pixelId: string }> {
-  const active: Array<{ provider: PixelProvider; pixelId: string }> = [];
-  for (const provider of providers) {
-    if (provider.isEnabled(pixelSettings)) {
-      const pixelId = provider.getPixelId(pixelSettings);
-      if (pixelId) {
-        active.push({ provider, pixelId });
-      }
+const providerCache = new Map<string, PixelProvider>();
+
+export async function preloadProviders(pixelSettings?: PixelSettings | null): Promise<void> {
+  if (!pixelSettings) return;
+  await getActiveProviders(pixelSettings);
+}
+
+async function getActiveProviders(
+  pixelSettings: PixelSettings
+): Promise<Array<{ provider: PixelProvider; pixelId: string; key: string }>> {
+  const active: Array<{ provider: PixelProvider; pixelId: string; key: string }> = [];
+
+  for (const check of providerChecks) {
+    if (!check.isEnabled(pixelSettings)) continue;
+    const pixelId = check.getPixelId(pixelSettings);
+    if (!pixelId) continue;
+
+    let provider = providerCache.get(check.key);
+    if (!provider) {
+      provider = await check.load();
+      providerCache.set(check.key, provider);
     }
+    active.push({ provider, pixelId, key: check.key });
   }
+
   return active;
 }
 
-export function firePixelEvent(
+export async function firePixelEvent(
   eventName: PixelEventName,
   data: PixelEventData = {},
   pixelSettings?: PixelSettings | null
-): void {
+): Promise<void> {
   if (!pixelSettings) {
     console.log(`[Pixels] No pixel settings configured, would fire ${eventName}`, data);
     return;
   }
 
-  for (const { provider, pixelId } of getActiveProviders(pixelSettings)) {
+  for (const { provider, pixelId } of await getActiveProviders(pixelSettings)) {
     provider.fireEvent(eventName, data, pixelId);
   }
 }
 
-const platformToProviderName: Record<string, string> = {
-  meta: "Meta Pixel",
-  google: "Google Ads",
-  tiktok: "TikTok Pixel",
-  pinterest: "Pinterest Tag",
+const platformToProviderKey: Record<string, string> = {
+  meta: "meta",
+  google: "google",
+  tiktok: "tiktok",
+  pinterest: "pinterest",
 };
 
-export function fireCustomEvents(
+export async function fireCustomEvents(
   customEventIds: string[],
   pixelSettings?: PixelSettings | null,
   data: PixelEventData = {}
-): void {
+): Promise<void> {
   if (!pixelSettings || !customEventIds?.length) return;
 
   const customEvents: CustomPixelEvent[] = pixelSettings.customEvents || [];
+  const activeProviders = await getActiveProviders(pixelSettings);
 
   for (const eventId of customEventIds) {
     const customEvent = customEvents.find((e) => e.id === eventId);
     if (!customEvent) continue;
 
-    const activeProviders = getActiveProviders(pixelSettings);
-
-    for (const { provider, pixelId } of activeProviders) {
-      const platformKey = Object.entries(platformToProviderName).find(
-        ([, name]) => name === provider.name
-      )?.[0];
-
-      if (platformKey && customEvent.platforms[platformKey as keyof typeof customEvent.platforms]) {
+    for (const { provider, pixelId, key } of activeProviders) {
+      if (customEvent.platforms[key as keyof typeof customEvent.platforms]) {
         try {
           provider.fireEvent(customEvent.name, data, pixelId);
           console.log(`[Pixels] Fired custom event "${customEvent.name}" on ${provider.name}`);
@@ -82,13 +125,34 @@ export function fireCustomEvents(
   }
 }
 
+const initCodeGenerators: Record<string, (pixelId: string) => string> = {
+  meta: generateMetaInitCode,
+  google: generateGoogleAdsInitCode,
+  tiktok: generateTiktokInitCode,
+  pinterest: generatePinterestInitCode,
+};
+
+const initScriptGenerators: Record<string, (pixelId: string) => string> = {
+  meta: generateMetaInitScript,
+  google: generateGoogleAdsInitScript,
+  tiktok: generateTiktokInitScript,
+  pinterest: generatePinterestInitScript,
+};
+
 export function generatePixelInitCode(pixelSettings?: PixelSettings | null): string {
   if (!pixelSettings) return "";
 
   const codes: string[] = [];
 
-  for (const { provider, pixelId } of getActiveProviders(pixelSettings)) {
-    codes.push(provider.generateInitCode(pixelId));
+  for (const check of providerChecks) {
+    if (!check.isEnabled(pixelSettings)) continue;
+    const pixelId = check.getPixelId(pixelSettings);
+    if (!pixelId) continue;
+
+    const generator = initCodeGenerators[check.key];
+    if (generator) {
+      codes.push(generator(pixelId));
+    }
   }
 
   return codes.join("\n");
@@ -99,21 +163,28 @@ export function generatePixelInitScripts(pixelSettings?: PixelSettings | null): 
 
   const scripts: string[] = [];
 
-  for (const { provider, pixelId } of getActiveProviders(pixelSettings)) {
-    scripts.push(provider.generateInitScript(pixelId));
+  for (const check of providerChecks) {
+    if (!check.isEnabled(pixelSettings)) continue;
+    const pixelId = check.getPixelId(pixelSettings);
+    if (!pixelId) continue;
+
+    const generator = initScriptGenerators[check.key];
+    if (generator) {
+      scripts.push(generator(pixelId));
+    }
   }
 
   return scripts.join("\n");
 }
 
-export function fireLeadEvent(
+export async function fireLeadEvent(
   pixelSettings?: PixelSettings | null,
   data?: {
     formName?: string;
     formId?: string;
     value?: number;
   }
-): void {
+): Promise<void> {
   const eventData: PixelEventData = {
     content_name: data?.formName || "Form Submission",
     content_category: "Lead",
@@ -121,10 +192,10 @@ export function fireLeadEvent(
     currency: "USD",
   };
 
-  firePixelEvent("Lead", eventData, pixelSettings);
+  await firePixelEvent("Lead", eventData, pixelSettings);
 }
 
-export function fireAddToCartEvent(
+export async function fireAddToCartEvent(
   pixelSettings?: PixelSettings | null,
   data?: {
     productName?: string;
@@ -132,7 +203,7 @@ export function fireAddToCartEvent(
     price?: number;
     currency?: string;
   }
-): void {
+): Promise<void> {
   const eventData: PixelEventData = {
     content_name: data?.productName,
     content_ids: data?.productId ? [data.productId] : undefined,
@@ -142,10 +213,10 @@ export function fireAddToCartEvent(
     num_items: 1,
   };
 
-  firePixelEvent("AddToCart", eventData, pixelSettings);
+  await firePixelEvent("AddToCart", eventData, pixelSettings);
 }
 
-export function firePurchaseEvent(
+export async function firePurchaseEvent(
   pixelSettings?: PixelSettings | null,
   data?: {
     orderId?: string;
@@ -154,7 +225,7 @@ export function firePurchaseEvent(
     productIds?: string[];
     numItems?: number;
   }
-): void {
+): Promise<void> {
   const eventData: PixelEventData = {
     content_ids: data?.productIds,
     content_type: "product",
@@ -163,17 +234,17 @@ export function firePurchaseEvent(
     num_items: data?.numItems || 1,
   };
 
-  firePixelEvent("Purchase", eventData, pixelSettings);
+  await firePixelEvent("Purchase", eventData, pixelSettings);
 }
 
-export function fireViewContentEvent(
+export async function fireViewContentEvent(
   pixelSettings?: PixelSettings | null,
   data?: {
     contentName?: string;
     contentId?: string;
     contentCategory?: string;
   }
-): void {
+): Promise<void> {
   const eventData: PixelEventData = {
     content_name: data?.contentName,
     content_ids: data?.contentId ? [data.contentId] : undefined,
@@ -181,5 +252,5 @@ export function fireViewContentEvent(
     content_type: "page",
   };
 
-  firePixelEvent("ViewContent", eventData, pixelSettings);
+  await firePixelEvent("ViewContent", eventData, pixelSettings);
 }

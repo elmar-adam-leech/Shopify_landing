@@ -1,8 +1,9 @@
 import type { PixelSettings } from "@shared/schema";
-import type { PixelProvider, PixelEventName, PixelEventData } from "./types";
-import { sanitizePixelId } from "./utils";
+import { generateTiktokInitCode, generateTiktokInitScript } from "@shared/pixel-utils";
+import type { PixelProvider } from "./types";
+import { createFireEvent } from "./utils";
 
-const ttEventMap: Record<PixelEventName, string> = {
+const ttEventMap: Record<string, string> = {
   PageView: "ViewContent",
   Lead: "SubmitForm",
   AddToCart: "AddToCart",
@@ -25,45 +26,25 @@ export const tiktokProvider: PixelProvider = {
     return pixelSettings.tiktokPixelId;
   },
 
-  fireEvent(eventName: PixelEventName | string, data: PixelEventData, pixelId: string): void {
-    if (!pixelId || !window.ttq) {
-      console.log(`[TikTok Pixel] Would fire ${eventName}`, data);
-      return;
-    }
-
-    try {
-      const eventData = {
+  fireEvent: createFireEvent(
+    "TikTok Pixel",
+    () => !!window.ttq,
+    ttEventMap,
+    (mappedEvent, eventData) => {
+      window.ttq!.track(mappedEvent, eventData);
+    },
+    {
+      transformData: (data) => ({
         content_name: data?.content_name,
         content_category: data?.content_category,
         content_id: data?.content_ids?.[0],
         quantity: data?.num_items,
         value: data?.value,
         currency: data?.currency || "USD",
-      };
-
-      const mappedEvent = ttEventMap[eventName as PixelEventName] || eventName;
-      window.ttq.track(mappedEvent, eventData);
-      console.log(`[TikTok Pixel] Fired ${mappedEvent}`, eventData);
-    } catch (error) {
-      console.error("[TikTok Pixel] Error firing event:", error);
+      }),
     }
-  },
+  ),
 
-  generateInitCode(pixelId: string): string {
-    const safeId = sanitizePixelId(pixelId);
-    return `!function (w, d, t) {
-w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie"],ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e},ttq.load=function(e,n){var i="https://analytics.tiktok.com/i18n/pixel/events.js";ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=i,ttq._t=ttq._t||{},ttq._t[e]=+new Date,ttq._o=ttq._o||{},ttq._o[e]=n||{};var o=document.createElement("script");o.type="text/javascript",o.async=!0,o.src=i+"?sdkid="+e+"&lib="+t;var a=document.getElementsByTagName("script")[0];a.parentNode.insertBefore(o,a)};
-ttq.load('${safeId}');
-ttq.page();
-}(window, document, 'ttq');`;
-  },
-
-  generateInitScript(pixelId: string): string {
-    return `
-<!-- TikTok Pixel Code -->
-<script>
-${this.generateInitCode(pixelId)}
-</script>
-<!-- End TikTok Pixel Code -->`;
-  },
+  generateInitCode: generateTiktokInitCode,
+  generateInitScript: generateTiktokInitScript,
 };

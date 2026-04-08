@@ -1,6 +1,12 @@
 import type { Request } from "express";
 import type { Block, Page, PixelSettings } from "@shared/schema";
 import { escapeHtml, escapeJs } from "@shared/html-utils";
+import {
+  generateMetaInitScript,
+  generateGoogleAdsInitScript,
+  generateTiktokInitScript,
+  generatePinterestInitScript,
+} from "@shared/pixel-utils";
 
 interface Store {
   id: string;
@@ -13,66 +19,25 @@ interface RenderOptions {
   useLiquidWrapper?: boolean;
 }
 
-function sanitizePixelId(id: string): string {
-  return id.replace(/[^a-zA-Z0-9\-_/]/g, "");
-}
-
 function generatePixelScripts(pixels: PixelSettings | undefined): string {
   if (!pixels) return "";
 
   const scripts: string[] = [];
 
   if (pixels.metaPixelEnabled && pixels.metaPixelId) {
-    const safeId = sanitizePixelId(pixels.metaPixelId);
-    scripts.push(`
-<!-- Meta Pixel -->
-<script>
-!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
-n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
-t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
-document,'script','https://connect.facebook.net/en_US/fbevents.js');
-fbq('init', '${escapeJs(safeId)}');
-fbq('track', 'PageView');
-</script>
-<noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=${escapeHtml(safeId)}&ev=PageView&noscript=1"/></noscript>`);
+    scripts.push(generateMetaInitScript(pixels.metaPixelId));
   }
 
   if (pixels.googleAdsEnabled && pixels.googleAdsId) {
-    const safeId = sanitizePixelId(pixels.googleAdsId);
-    scripts.push(`
-<!-- Google Ads/Tag Manager -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=${escapeHtml(safeId)}"></script>
-<script>
-window.dataLayer = window.dataLayer || [];
-function gtag(){dataLayer.push(arguments);}
-gtag('js', new Date());
-gtag('config', '${escapeJs(safeId)}');
-</script>`);
+    scripts.push(generateGoogleAdsInitScript(pixels.googleAdsId));
   }
 
   if (pixels.tiktokPixelEnabled && pixels.tiktokPixelId) {
-    const safeId = sanitizePixelId(pixels.tiktokPixelId);
-    scripts.push(`
-<!-- TikTok Pixel -->
-<script>
-!function(w,d,t){w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie"];ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e};ttq.load=function(e,n){var i="https://analytics.tiktok.com/i18n/pixel/events.js";ttq._i=ttq._i||{};ttq._i[e]=[];ttq._i[e]._u=i;ttq._t=ttq._t||{};ttq._t[e]=+new Date;ttq._o=ttq._o||{};ttq._o[e]=n||{};var o=document.createElement("script");o.type="text/javascript";o.async=!0;o.src=i+"?sdkid="+e+"&lib="+t;var a=document.getElementsByTagName("script")[0];a.parentNode.insertBefore(o,a)};
-ttq.load('${escapeJs(safeId)}');
-ttq.page();
-}(window, document, 'ttq');
-</script>`);
+    scripts.push(generateTiktokInitScript(pixels.tiktokPixelId));
   }
 
   if (pixels.pinterestTagEnabled && pixels.pinterestTagId) {
-    const safeId = sanitizePixelId(pixels.pinterestTagId);
-    scripts.push(`
-<!-- Pinterest Tag -->
-<script>
-!function(e){if(!window.pintrk){window.pintrk=function(){window.pintrk.queue.push(Array.prototype.slice.call(arguments))};var n=window.pintrk;n.queue=[],n.version="3.0";var t=document.createElement("script");t.async=!0,t.src=e;var r=document.getElementsByTagName("script")[0];r.parentNode.insertBefore(t,r)}}("https://s.pinimg.com/ct/core.js");
-pintrk('load', '${escapeJs(safeId)}');
-pintrk('page');
-</script>
-<noscript><img height="1" width="1" style="display:none" alt="" src="https://ct.pinterest.com/v3/?event=init&tid=${escapeHtml(safeId)}&noscript=1"/></noscript>`);
+    scripts.push(generatePinterestInitScript(pixels.pinterestTagId));
   }
 
   return scripts.join("\n");
