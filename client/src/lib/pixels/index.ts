@@ -1,45 +1,41 @@
 import type { PixelSettings, CustomPixelEvent } from "@shared/schema";
-import type { PixelProvider, PixelEventName, PixelEventData } from "./types";
 import {
-  generateMetaInitCode,
-  generateGoogleAdsInitCode,
-  generateTiktokInitCode,
-  generatePinterestInitCode,
-} from "@shared/pixel-utils";
+  metaProviderConfig,
+  googleAdsProviderConfig,
+  tiktokProviderConfig,
+  pinterestProviderConfig,
+} from "@shared/pixels";
+import type { SharedPixelProviderConfig } from "@shared/pixels";
+import type { PixelProvider, PixelEventName, PixelEventData } from "./types";
 
 export type { PixelEventName, PixelEventData } from "./types";
 export { getUrlParam } from "./utils";
 
 type ProviderCheck = {
   key: string;
-  isEnabled: (ps: PixelSettings) => boolean;
-  getPixelId: (ps: PixelSettings) => string | undefined;
+  config: SharedPixelProviderConfig;
   load: () => Promise<PixelProvider>;
 };
 
 const providerChecks: ProviderCheck[] = [
   {
     key: "meta",
-    isEnabled: (ps) => !!ps.metaPixelEnabled && !!ps.metaPixelId,
-    getPixelId: (ps) => ps.metaPixelId,
+    config: metaProviderConfig,
     load: () => import("./meta").then((m) => m.metaProvider),
   },
   {
     key: "google",
-    isEnabled: (ps) => !!ps.googleAdsEnabled && !!ps.googleAdsId,
-    getPixelId: (ps) => ps.googleAdsId,
+    config: googleAdsProviderConfig,
     load: () => import("./google-ads").then((m) => m.googleAdsProvider),
   },
   {
     key: "tiktok",
-    isEnabled: (ps) => !!ps.tiktokPixelEnabled && !!ps.tiktokPixelId,
-    getPixelId: (ps) => ps.tiktokPixelId,
+    config: tiktokProviderConfig,
     load: () => import("./tiktok").then((m) => m.tiktokProvider),
   },
   {
     key: "pinterest",
-    isEnabled: (ps) => !!ps.pinterestTagEnabled && !!ps.pinterestTagId,
-    getPixelId: (ps) => ps.pinterestTagId,
+    config: pinterestProviderConfig,
     load: () => import("./pinterest").then((m) => m.pinterestProvider),
   },
 ];
@@ -57,8 +53,8 @@ async function getActiveProviders(
   const active: Array<{ provider: PixelProvider; pixelId: string; key: string }> = [];
 
   for (const check of providerChecks) {
-    if (!check.isEnabled(pixelSettings)) continue;
-    const pixelId = check.getPixelId(pixelSettings);
+    if (!check.config.isEnabled(pixelSettings)) continue;
+    const pixelId = check.config.getPixelId(pixelSettings);
     if (!pixelId) continue;
 
     let provider = providerCache.get(check.key);
@@ -114,27 +110,16 @@ export async function fireCustomEvents(
   }
 }
 
-const initCodeGenerators: Record<string, (pixelId: string) => string> = {
-  meta: generateMetaInitCode,
-  google: generateGoogleAdsInitCode,
-  tiktok: generateTiktokInitCode,
-  pinterest: generatePinterestInitCode,
-};
-
 export function generatePixelInitCode(pixelSettings?: PixelSettings | null): string {
   if (!pixelSettings) return "";
 
   const codes: string[] = [];
 
   for (const check of providerChecks) {
-    if (!check.isEnabled(pixelSettings)) continue;
-    const pixelId = check.getPixelId(pixelSettings);
+    if (!check.config.isEnabled(pixelSettings)) continue;
+    const pixelId = check.config.getPixelId(pixelSettings);
     if (!pixelId) continue;
-
-    const generator = initCodeGenerators[check.key];
-    if (generator) {
-      codes.push(generator(pixelId));
-    }
+    codes.push(check.config.generateInitCode(pixelId));
   }
 
   return codes.join("\n");

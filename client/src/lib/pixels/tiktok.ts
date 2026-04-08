@@ -1,35 +1,14 @@
-import type { PixelSettings } from "@shared/schema";
-import { generateTiktokInitCode, generateTiktokInitScript } from "@shared/pixel-utils";
+import { tiktokProviderConfig } from "@shared/pixels";
 import type { PixelProvider } from "./types";
 import { createFireEvent } from "./utils";
 
-const ttEventMap: Record<string, string> = {
-  PageView: "ViewContent",
-  Lead: "SubmitForm",
-  AddToCart: "AddToCart",
-  InitiateCheckout: "InitiateCheckout",
-  Purchase: "CompletePayment",
-  ViewContent: "ViewContent",
-  CompleteRegistration: "CompleteRegistration",
-  Contact: "Contact",
-  SubmitApplication: "SubmitForm",
-};
-
 export const tiktokProvider: PixelProvider = {
-  name: "TikTok Pixel",
-
-  isEnabled(pixelSettings: PixelSettings): boolean {
-    return !!pixelSettings.tiktokPixelEnabled && !!pixelSettings.tiktokPixelId;
-  },
-
-  getPixelId(pixelSettings: PixelSettings): string | undefined {
-    return pixelSettings.tiktokPixelId;
-  },
+  ...tiktokProviderConfig,
 
   fireEvent: createFireEvent(
-    "TikTok Pixel",
+    tiktokProviderConfig.name,
     () => !!window.ttq,
-    ttEventMap,
+    tiktokProviderConfig.eventMap,
     (mappedEvent, eventData) => {
       window.ttq!.track(mappedEvent, eventData);
     },
@@ -44,7 +23,4 @@ export const tiktokProvider: PixelProvider = {
       }),
     }
   ),
-
-  generateInitCode: generateTiktokInitCode,
-  generateInitScript: generateTiktokInitScript,
 };

@@ -1,7 +1,7 @@
 import { getStoredUTMParams } from "../utm";
 import type { PixelEventName, PixelEventData } from "./types";
 
-export { sanitizePixelId } from "@shared/pixel-utils";
+export { sanitizePixelId } from "@shared/pixels";
 
 export function getUrlParam(paramName: string): string {
   if (typeof window === "undefined") return "";

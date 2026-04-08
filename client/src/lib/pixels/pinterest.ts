@@ -1,35 +1,14 @@
-import type { PixelSettings } from "@shared/schema";
-import { generatePinterestInitCode, generatePinterestInitScript } from "@shared/pixel-utils";
+import { pinterestProviderConfig } from "@shared/pixels";
 import type { PixelProvider } from "./types";
 import { createFireEvent } from "./utils";
 
-const pinterestEventMap: Record<string, string> = {
-  PageView: "pagevisit",
-  Lead: "lead",
-  AddToCart: "addtocart",
-  InitiateCheckout: "checkout",
-  Purchase: "checkout",
-  ViewContent: "pagevisit",
-  CompleteRegistration: "signup",
-  Contact: "lead",
-  SubmitApplication: "lead",
-};
-
 export const pinterestProvider: PixelProvider = {
-  name: "Pinterest Tag",
-
-  isEnabled(pixelSettings: PixelSettings): boolean {
-    return !!pixelSettings.pinterestTagEnabled && !!pixelSettings.pinterestTagId;
-  },
-
-  getPixelId(pixelSettings: PixelSettings): string | undefined {
-    return pixelSettings.pinterestTagId;
-  },
+  ...pinterestProviderConfig,
 
   fireEvent: createFireEvent(
-    "Pinterest Tag",
+    pinterestProviderConfig.name,
     () => typeof window.pintrk === "function",
-    pinterestEventMap,
+    pinterestProviderConfig.eventMap,
     (mappedEvent, eventData) => {
       window.pintrk!("track", mappedEvent, eventData);
     },
@@ -45,7 +24,4 @@ export const pinterestProvider: PixelProvider = {
       }),
     }
   ),
-
-  generateInitCode: generatePinterestInitCode,
-  generateInitScript: generatePinterestInitScript,
 };

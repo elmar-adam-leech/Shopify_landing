@@ -1,12 +1,7 @@
 import type { Request } from "express";
 import type { Block, Page, PixelSettings } from "@shared/schema";
 import { escapeHtml, escapeJs } from "@shared/html-utils";
-import {
-  generateMetaInitScript,
-  generateGoogleAdsInitScript,
-  generateTiktokInitScript,
-  generatePinterestInitScript,
-} from "@shared/pixel-utils";
+import { allProviderConfigs } from "@shared/pixels";
 
 interface Store {
   id: string;
@@ -24,20 +19,11 @@ function generatePixelScripts(pixels: PixelSettings | undefined): string {
 
   const scripts: string[] = [];
 
-  if (pixels.metaPixelEnabled && pixels.metaPixelId) {
-    scripts.push(generateMetaInitScript(pixels.metaPixelId));
-  }
-
-  if (pixels.googleAdsEnabled && pixels.googleAdsId) {
-    scripts.push(generateGoogleAdsInitScript(pixels.googleAdsId));
-  }
-
-  if (pixels.tiktokPixelEnabled && pixels.tiktokPixelId) {
-    scripts.push(generateTiktokInitScript(pixels.tiktokPixelId));
-  }
-
-  if (pixels.pinterestTagEnabled && pixels.pinterestTagId) {
-    scripts.push(generatePinterestInitScript(pixels.pinterestTagId));
+  for (const config of allProviderConfigs) {
+    if (!config.isEnabled(pixels)) continue;
+    const pixelId = config.getPixelId(pixels);
+    if (!pixelId) continue;
+    scripts.push(config.generateInitScript(pixelId));
   }
 
   return scripts.join("\n");
