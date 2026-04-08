@@ -103,7 +103,7 @@ export async function resolveStoreContext(req: Request, res: Response, next: Nex
     return next();
   }
 
-  const isDev = process.env.NODE_ENV !== "production";
+  const devSkipAuth = process.env.DEV_SKIP_AUTH === "true" && process.env.NODE_ENV === "development";
   const session = req.session as SessionWithAdmin | undefined;
   const isAdmin = !!session?.adminRole;
 
@@ -117,7 +117,8 @@ export async function resolveStoreContext(req: Request, res: Response, next: Nex
     verifiedShop = tokenInfo.shop;
     authenticatedUserId = tokenInfo.userId;
 
-    if (!verifiedShop && isDev) {
+    if (!verifiedShop && devSkipAuth) {
+      logWarn("DEV_SKIP_AUTH: Bypassing session token verification for store context — do NOT use in production", { operation: "store_context", shop: shop || "unknown" });
       verifiedShop = shop || null;
     }
 

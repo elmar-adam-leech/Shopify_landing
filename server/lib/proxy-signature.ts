@@ -84,23 +84,22 @@ export function verifyAppProxySignature(
 export function appProxyMiddleware(secret: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
     if (!secret) {
-      const isProduction = process.env.NODE_ENV === "production";
-      if (isProduction) {
-        console.error("App Proxy: SHOPIFY_API_SECRET not configured in production - blocking request");
-        logSecurityEvent({
-          eventType: "invalid_signature",
-          req,
-          storeId: null,
-          details: {
-            reason: "missing_api_secret_production",
-            path: req.path,
-          },
-        });
-        return res.status(500).json({ error: "Server configuration error" });
+      const devSkipAuth = process.env.DEV_SKIP_AUTH === "true" && process.env.NODE_ENV === "development";
+      if (devSkipAuth) {
+        console.warn("⚠️  DEV_SKIP_AUTH: Skipping App Proxy signature verification — do NOT use in production");
+        return next();
       }
-      // Development only: allow testing without signature verification
-      console.warn("App Proxy: SHOPIFY_API_SECRET not configured (dev mode), skipping signature verification");
-      return next();
+      console.error("App Proxy: SHOPIFY_API_SECRET not configured - blocking request");
+      logSecurityEvent({
+        eventType: "invalid_signature",
+        req,
+        storeId: null,
+        details: {
+          reason: "missing_api_secret",
+          path: req.path,
+        },
+      });
+      return res.status(500).json({ error: "Server configuration error" });
     }
     
     const isValid = verifyAppProxySignature(

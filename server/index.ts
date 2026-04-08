@@ -62,6 +62,18 @@ function validateEnvironment(): void {
     console.warn("[startup] TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN not set — global Twilio fallback disabled");
   }
 
+  if (process.env.DEV_SKIP_AUTH === "true") {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("\n⚠️  WARNING: DEV_SKIP_AUTH is enabled — authentication bypasses are active.");
+      console.warn("⚠️  Session token and App Proxy signature verification will be skipped.");
+      console.warn("⚠️  Do NOT deploy with this setting enabled.\n");
+    } else {
+      console.error(`\nFATAL: DEV_SKIP_AUTH=true is set but NODE_ENV is "${process.env.NODE_ENV}" (not "development").`);
+      console.error("This flag is only allowed in development. Remove DEV_SKIP_AUTH or set NODE_ENV=development.\n");
+      process.exit(1);
+    }
+  }
+
   console.log("[startup] Environment validation passed");
 }
 
