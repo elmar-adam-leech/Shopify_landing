@@ -30,6 +30,22 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          polaris: ["@shopify/polaris", "@shopify/polaris/locales/en.json"],
+          recharts: ["recharts"],
+          "framer-motion": ["framer-motion"],
+          "dnd-kit": [
+            "@dnd-kit/core",
+            "@dnd-kit/sortable",
+            "@dnd-kit/utilities",
+          ],
+          "react-hook-form": ["react-hook-form", "@hookform/resolvers"],
+          tanstack: ["@tanstack/react-query"],
+        },
+      },
+    },
   },
   server: {
     fs: {

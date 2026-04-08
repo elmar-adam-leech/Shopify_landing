@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, lazy, Suspense } from "react";
 import { useRoute } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useEmbeddedNavigation } from "@/hooks/use-embedded-navigation";
@@ -21,15 +21,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { BlockLibrary } from "@/components/editor/BlockLibrary";
 import { EditorCanvas } from "@/components/editor/EditorCanvas";
-import { BlockSettings } from "@/components/editor/BlockSettings";
-import { PixelSettingsDialog } from "@/components/editor/PixelSettings";
-import { PageSettingsDialog } from "@/components/editor/PageSettings";
-import { VersionHistory } from "@/components/editor/VersionHistory";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useStore } from "@/lib/store-context";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Page, Block, BlockType, PixelSettings, Section } from "@shared/schema";
+
+const BlockSettings = lazy(() =>
+  import("@/components/editor/BlockSettings").then((m) => ({ default: m.BlockSettings }))
+);
+const PixelSettingsDialog = lazy(() =>
+  import("@/components/editor/PixelSettings").then((m) => ({ default: m.PixelSettingsDialog }))
+);
+const PageSettingsDialog = lazy(() =>
+  import("@/components/editor/PageSettings").then((m) => ({ default: m.PageSettingsDialog }))
+);
+const VersionHistory = lazy(() =>
+  import("@/components/editor/VersionHistory").then((m) => ({ default: m.VersionHistory }))
+);
 
 const defaultBlockConfigs: Record<BlockType, Record<string, any>> = {
   "hero-banner": {
@@ -570,50 +579,64 @@ export default function Editor() {
           </main>
         </div>
 
-        <BlockSettings
-          block={selectedBlock}
-          open={!!settingsBlockId}
-          onClose={() => setSettingsBlockId(null)}
-          onUpdate={handleUpdateBlockConfig}
-          onUpdateBlock={handleUpdateBlock}
-          storeId={pageData?.storeId || selectedStoreId || undefined}
-        />
+        {settingsBlockId && (
+          <Suspense fallback={null}>
+            <BlockSettings
+              block={selectedBlock}
+              open={!!settingsBlockId}
+              onClose={() => setSettingsBlockId(null)}
+              onUpdate={handleUpdateBlockConfig}
+              onUpdateBlock={handleUpdateBlock}
+              storeId={pageData?.storeId || selectedStoreId || undefined}
+            />
+          </Suspense>
+        )}
 
-        <PixelSettingsDialog
-          open={showPixelSettings}
-          onClose={() => setShowPixelSettings(false)}
-          settings={pixelSettings}
-          onUpdate={(settings) => {
-            setPixelSettings(settings);
-            setHasChanges(true);
-          }}
-        />
+        {showPixelSettings && (
+          <Suspense fallback={null}>
+            <PixelSettingsDialog
+              open={showPixelSettings}
+              onClose={() => setShowPixelSettings(false)}
+              settings={pixelSettings}
+              onUpdate={(settings) => {
+                setPixelSettings(settings);
+                setHasChanges(true);
+              }}
+            />
+          </Suspense>
+        )}
 
-        <PageSettingsDialog
-          open={showPageSettings}
-          onClose={() => setShowPageSettings(false)}
-          allowIndexing={allowIndexing}
-          onAllowIndexingChange={(value) => {
-            setAllowIndexing(value);
-            setHasChanges(true);
-          }}
-        />
+        {showPageSettings && (
+          <Suspense fallback={null}>
+            <PageSettingsDialog
+              open={showPageSettings}
+              onClose={() => setShowPageSettings(false)}
+              allowIndexing={allowIndexing}
+              onAllowIndexingChange={(value) => {
+                setAllowIndexing(value);
+                setHasChanges(true);
+              }}
+            />
+          </Suspense>
+        )}
 
-        {!isNewPage && pageId && (
-          <VersionHistory
-            pageId={pageId}
-            open={showVersionHistory}
-            onClose={() => setShowVersionHistory(false)}
-            onRestore={(restoredPage) => {
-              if (restoredPage) {
-                setBlocks(restoredPage.blocks || []);
-                setTitle(restoredPage.title);
-                setPixelSettings(restoredPage.pixelSettings || defaultPixelSettings);
-                setHasChanges(false);
-              }
-              queryClient.invalidateQueries({ queryKey: ["/api/pages", pageId] });
-            }}
-          />
+        {!isNewPage && pageId && showVersionHistory && (
+          <Suspense fallback={null}>
+            <VersionHistory
+              pageId={pageId}
+              open={showVersionHistory}
+              onClose={() => setShowVersionHistory(false)}
+              onRestore={(restoredPage) => {
+                if (restoredPage) {
+                  setBlocks(restoredPage.blocks || []);
+                  setTitle(restoredPage.title);
+                  setPixelSettings(restoredPage.pixelSettings || defaultPixelSettings);
+                  setHasChanges(false);
+                }
+                queryClient.invalidateQueries({ queryKey: ["/api/pages", pageId] });
+              }}
+            />
+          </Suspense>
         )}
       </div>
 

@@ -7,6 +7,7 @@ import type { ShopifyConfig } from "./shopify";
 const CHECK_INTERVAL = 5 * 60 * 1000;
 
 let schedulerInterval: NodeJS.Timeout | null = null;
+let startupTimeout: NodeJS.Timeout | null = null;
 let isRunning = false;
 
 export async function checkAndRunScheduledSyncs(): Promise<void> {
@@ -73,25 +74,35 @@ export async function checkAndRunScheduledSyncs(): Promise<void> {
   }
 }
 
+const STARTUP_DELAY = 45 * 1000;
+
 export function startSyncScheduler(): void {
-  if (schedulerInterval) {
-    console.log("[Scheduler] Scheduler already running");
+  if (schedulerInterval || startupTimeout) {
+    console.log("[Scheduler] Scheduler already running or starting");
     return;
   }
   
-  console.log(`[Scheduler] Starting sync scheduler (checking every ${CHECK_INTERVAL / 1000 / 60} minutes)`);
+  console.log(`[Scheduler] Deferring first sync check by ${STARTUP_DELAY / 1000}s to allow server to warm up`);
   
-  checkAndRunScheduledSyncs();
-  
-  schedulerInterval = setInterval(() => {
+  startupTimeout = setTimeout(() => {
+    startupTimeout = null;
+    console.log(`[Scheduler] Starting sync scheduler (checking every ${CHECK_INTERVAL / 1000 / 60} minutes)`);
     checkAndRunScheduledSyncs();
-  }, CHECK_INTERVAL);
+    schedulerInterval = setInterval(() => {
+      checkAndRunScheduledSyncs();
+    }, CHECK_INTERVAL);
+  }, STARTUP_DELAY);
+  startupTimeout.unref();
 }
 
 export function stopSyncScheduler(): void {
+  if (startupTimeout) {
+    clearTimeout(startupTimeout);
+    startupTimeout = null;
+  }
   if (schedulerInterval) {
     clearInterval(schedulerInterval);
     schedulerInterval = null;
-    console.log("[Scheduler] Sync scheduler stopped");
   }
+  console.log("[Scheduler] Sync scheduler stopped");
 }

@@ -1,4 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
+import compression from "compression";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -98,6 +99,8 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+app.use(compression());
 
 
 export function log(message: string, source = "express") {

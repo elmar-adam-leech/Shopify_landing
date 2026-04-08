@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, lazy, Suspense } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -15,7 +15,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Plus, Trash2, GripVertical, FlaskConical, Copy, Eye, ChevronDown, ChevronUp, EyeOff } from "lucide-react";
 import type { Block, BlockType, BlockVariant, VisibilityCondition, VisibilityRules, ShopifyProduct } from "@shared/schema";
 import { v4 as uuidv4 } from "uuid";
-import { ProductPicker } from "./ProductPicker";
+const ProductPicker = lazy(() =>
+  import("./ProductPicker").then((m) => ({ default: m.ProductPicker }))
+);
 import {
   DndContext,
   closestCenter,
@@ -1393,13 +1395,15 @@ function ProductBlockSettings({
       <div className="space-y-2">
         <Label>{config.dynamic ? "Default Product (shown when no SKU in URL)" : "Product"}</Label>
         {storeId ? (
-          <ProductPicker
-            storeId={storeId}
-            userId={userId}
-            selectedProductId={config.productId}
-            selectedProduct={selectedProduct}
-            onSelect={handleProductSelect}
-          />
+          <Suspense fallback={<div className="p-4 bg-muted rounded-lg animate-pulse"><p className="text-sm text-muted-foreground text-center">Loading product picker...</p></div>}>
+            <ProductPicker
+              storeId={storeId}
+              userId={userId}
+              selectedProductId={config.productId}
+              selectedProduct={selectedProduct}
+              onSelect={handleProductSelect}
+            />
+          </Suspense>
         ) : (
           <div className="p-4 bg-muted rounded-lg">
             <p className="text-sm text-muted-foreground text-center">

@@ -36,7 +36,7 @@ Preferred communication style: Simple, everyday language.
 - **Page Builder**: Visual editor with drag-and-drop, responsive preview, and block-level A/B testing.
 - **Block Types**: Hero Banner, Product Grid, Text, Image, Button, Form, Phone, Chat.
 - **Data Model**: Stores, Pages, Blocks, Form Submissions, Users.
-- **Performance**: SQL aggregation, upsert for products, database indexing, caching, code splitting, memoization, DOMPurify sanitization for user HTML content.
+- **Performance**: SQL aggregation, upsert for products, database indexing, caching, code splitting, memoization, DOMPurify sanitization for user HTML content. Response compression (gzip/brotli) via `compression` middleware. Static asset caching (1yr immutable for hashed `/assets`, no-cache for HTML). Vite manual chunk splitting for large vendor libs (Polaris, recharts, framer-motion, dnd-kit, react-hook-form, tanstack). Lazy-loaded editor sub-components (BlockSettings, PixelSettings, PageSettings, VersionHistory). Deferred sync scheduler startup (45s delay).
 - **Security**: Store ownership validation, audit logging, typed request properties, pixel ID sanitization, preview route auth gating, ErrorBoundary for graceful error recovery.
 - **Pagination**: Server-side pagination on pages list (`/api/pages/list`) and form submissions (`/api/pages/:id/submissions`) endpoints — responses are `{ data, total, limit, offset }`.
 

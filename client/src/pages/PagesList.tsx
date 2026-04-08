@@ -24,14 +24,16 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { TemplateLibrary } from "@/components/editor/TemplateLibrary";
+const TemplateLibrary = lazy(() =>
+  import("@/components/editor/TemplateLibrary").then((m) => ({ default: m.TemplateLibrary }))
+);
 import { StoreSelector } from "@/components/StoreSelector";
 import { useStore } from "@/lib/store-context";
 import { useToast } from "@/hooks/use-toast";
 import { useShopifyRedirect, useAppBridge } from "@/components/providers/AppBridgeProvider";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Block } from "@shared/schema";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { formatDistanceToNow } from "date-fns";
 
 export default function PagesList() {
@@ -464,15 +466,18 @@ export default function PagesList() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <TemplateLibrary
-        open={showTemplates}
-        onClose={() => setShowTemplates(false)}
-        onSelectTemplate={(blocks: Block[]) => {
-          // Store selected template blocks in sessionStorage for the editor to pick up
-          sessionStorage.setItem("templateBlocks", JSON.stringify(blocks));
-          navigate("/editor/new");
-        }}
-      />
+      {showTemplates && (
+        <Suspense fallback={null}>
+          <TemplateLibrary
+            open={showTemplates}
+            onClose={() => setShowTemplates(false)}
+            onSelectTemplate={(blocks: Block[]) => {
+              sessionStorage.setItem("templateBlocks", JSON.stringify(blocks));
+              navigate("/editor/new");
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }
