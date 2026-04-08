@@ -160,14 +160,6 @@ function generateHydrationScript(store: Store, page: Page): string {
       descDiv.className = 'lp-product-description';
       if (product.descriptionHtml) {
         descDiv.innerHTML = product.descriptionHtml;
-        descDiv.querySelectorAll('script,iframe,object,embed,form,base,meta,link,style').forEach(function(el) { el.remove(); });
-        descDiv.querySelectorAll('*').forEach(function(el) {
-          Array.from(el.attributes).forEach(function(attr) {
-            if (attr.name.startsWith('on') || attr.name === 'formaction' || (attr.name === 'href' && attr.value.trim().toLowerCase().startsWith('javascript:'))) {
-              el.removeAttribute(attr.name);
-            }
-          });
-        });
       }
 
       el.innerHTML = \`

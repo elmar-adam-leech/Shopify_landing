@@ -8,6 +8,7 @@ import { renderPage, render404Page, renderErrorPage } from "../lib/page-renderer
 import { validatePageAccess, requireStoreContext, processFormSubmissionCustomer, sanitizeZodError } from "./helpers";
 import { formSubmissionLimiter, storefrontProxyLimiter } from "../middleware/rate-limit";
 import { logError, logWarn, logInfo } from "../lib/logger";
+import { sanitizeProductHtml } from "../lib/sanitize";
 
 function isPrivateIp(ip: string): boolean {
   if (net.isIPv4(ip)) {
@@ -286,6 +287,9 @@ export function createPageRoutes(): Router {
       const productNode = edges[0].node;
       const product = {
         ...productNode,
+        descriptionHtml: productNode.descriptionHtml
+          ? sanitizeProductHtml(productNode.descriptionHtml)
+          : productNode.descriptionHtml,
         images: productNode.images.edges.map((e: any) => e.node),
         variants: productNode.variants.edges.map((e: any) => e.node),
         metafields: (productNode.metafields || []).filter((m: any) => m !== null),
