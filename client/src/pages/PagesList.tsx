@@ -94,7 +94,7 @@ export default function PagesList() {
 
         {!isLoading && (!pages || pages.length === 0) && needsAuth && <PagesAuthState />}
 
-        {!isLoading && (!pages || pages.length === 0) && !needsAuth && (
+        {!isLoading && !pagesError && (!pages || pages.length === 0) && !needsAuth && (
           <PagesEmptyState
             selectedStoreId={selectedStoreId}
             isEmbedded={isEmbedded}

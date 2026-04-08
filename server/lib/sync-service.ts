@@ -1,6 +1,6 @@
 import { db } from "../db";
 import { stores, storeSyncLogs, shopifyProducts as shopifyProductsTable } from "@shared/schema";
-import { eq, and, notInArray, sql } from "drizzle-orm";
+import { eq, and, notInArray, sql, inArray } from "drizzle-orm";
 import { fetchAllShopifyProducts, convertShopifyProduct, type ShopifyConfig } from "./shopify";
 import { storage } from "../storage";
 import { logError, logInfo } from "./logger";
@@ -99,7 +99,7 @@ export async function syncProductsForStore(
         .where(
           and(
             eq(shopifyProductsTable.storeId, storeId),
-            sql`${shopifyProductsTable.shopifyProductId} = ANY(${batchShopifyIds})`
+            inArray(shopifyProductsTable.shopifyProductId, batchShopifyIds)
           )
         );
       const existingShopifyIds = new Set(existingProducts.map((r) => r.shopifyProductId));
