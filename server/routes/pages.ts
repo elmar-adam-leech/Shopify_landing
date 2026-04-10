@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { insertPageSchema, updatePageSchema, insertFormSubmissionSchema, type InsertPage, type UpdatePage, type InsertPageVersion, type InsertFormSubmission } from "@shared/schema";
+import { insertPageSchema, updatePageSchema, insertFormSubmissionSchema, type InsertPage, type UpdatePage, type InsertPageVersion, type InsertFormSubmission, type ShopifyProduct } from "@shared/schema";
 import { z } from "zod";
 import dns from "dns/promises";
 import net from "net";
@@ -76,6 +76,75 @@ async function isAllowedWebhookUrl(urlStr: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function lookupProductInDatabase(
+  storeId: string,
+  identifier: string,
+  identifierType?: string
+): Promise<ShopifyProduct | undefined> {
+  if (identifierType === "handle") {
+    return storage.getShopifyProductByHandle(storeId, identifier);
+  }
+
+  if (identifierType === "id") {
+    const byId = await storage.getShopifyProductByShopifyId(storeId, identifier);
+    if (byId) return byId;
+    const withPrefix = identifier.startsWith("gid://") ? identifier : `gid://shopify/Product/${identifier}`;
+    if (withPrefix !== identifier) {
+      return storage.getShopifyProductByShopifyId(storeId, withPrefix);
+    }
+    return undefined;
+  }
+
+  const byVariantSku = await storage.getShopifyProductByVariantSku(storeId, identifier);
+  if (byVariantSku) return byVariantSku;
+
+  const byHandle = await storage.getShopifyProductByHandle(storeId, identifier);
+  if (byHandle) return byHandle;
+
+  const byShopifyId = await storage.getShopifyProductByShopifyId(storeId, identifier);
+  if (byShopifyId) return byShopifyId;
+
+  return undefined;
+}
+
+function formatDbProductForStorefront(dbProduct: ShopifyProduct): Record<string, any> {
+  const pd = dbProduct.productData as Record<string, any>;
+
+  const variants = (pd.variants || []).map((v: any) => ({
+    id: v.id,
+    title: v.title,
+    sku: v.sku || null,
+    availableForSale: v.availableForSale ?? true,
+    price: v.price || { amount: "0", currencyCode: "USD" },
+    selectedOptions: v.selectedOptions || [],
+  }));
+
+  const images = (pd.images || []).map((img: any) => ({
+    url: img.url,
+    altText: img.altText || null,
+    width: img.width || null,
+    height: img.height || null,
+  }));
+
+  const rawHtml = pd.descriptionHtml || dbProduct.description || "";
+
+  return {
+    id: pd.id || dbProduct.shopifyProductId,
+    title: pd.title || dbProduct.title,
+    handle: pd.handle || dbProduct.handle,
+    descriptionHtml: rawHtml ? sanitizeProductHtml(rawHtml) : "",
+    vendor: pd.vendor || dbProduct.vendor || "",
+    productType: pd.productType || dbProduct.productType || "",
+    priceRange: pd.priceRange || {
+      minVariantPrice: { amount: dbProduct.price || "0", currencyCode: "USD" },
+      maxVariantPrice: { amount: dbProduct.price || "0", currencyCode: "USD" },
+    },
+    images,
+    variants,
+    metafields: [],
+  };
 }
 
 export function createPageRoutes(): Router {
@@ -179,7 +248,7 @@ export function createPageRoutes(): Router {
 
   router.post("/api/public/storefront/product", storefrontProxyLimiter, async (req: Request, res: Response) => {
     try {
-      const { pageId, sku } = req.body;
+      const { pageId, sku, identifierType } = req.body;
       if (!pageId || typeof pageId !== "string" || !sku || typeof sku !== "string") {
         return res.status(400).json({ error: "Missing required parameters" });
       }
@@ -192,13 +261,30 @@ export function createPageRoutes(): Router {
         return res.status(404).json({ error: "Page or store not found" });
       }
 
-      const store = await storage.getStore(page.storeId);
+      const storeId = page.storeId;
+
+      const dbProduct = await lookupProductInDatabase(storeId, sku, identifierType);
+      if (dbProduct) {
+        const product = formatDbProductForStorefront(dbProduct);
+        return res.json({ product, source: "database" });
+      }
+
+      const store = await storage.getStore(storeId);
       if (!store || !store.storefrontAccessToken || !store.shopifyDomain) {
         return res.status(404).json({ error: "Store configuration missing" });
       }
 
       const STOREFRONT_API_VERSION = "2025-01";
       const endpoint = `https://${store.shopifyDomain}/api/${STOREFRONT_API_VERSION}/graphql.json`;
+
+      let storefrontQuery: string;
+      if (identifierType === "id") {
+        storefrontQuery = `id:${sku}`;
+      } else if (identifierType === "handle") {
+        storefrontQuery = `handle:${sku}`;
+      } else {
+        storefrontQuery = `sku:${sku}`;
+      }
 
       const query = `
         query getProductBySku($query: String!) {
@@ -258,7 +344,7 @@ export function createPageRoutes(): Router {
         },
         body: JSON.stringify({
           query,
-          variables: { query: `sku:${sku}` },
+          variables: { query: storefrontQuery },
         }),
         signal: controller.signal,
       });
@@ -295,7 +381,7 @@ export function createPageRoutes(): Router {
         metafields: (productNode.metafields || []).filter((m: any) => m !== null),
       };
 
-      res.json({ product });
+      res.json({ product, source: "shopify" });
     } catch (error: any) {
       if (error.name === "AbortError") {
         return res.status(504).json({ error: "Network error", message: "Request timed out" });
@@ -380,12 +466,22 @@ export function createPageRoutes(): Router {
       };
       const validatedData = insertPageSchema.parse(bodyWithStore);
 
+      validatedData.slug = validatedData.slug
+        .toLowerCase()
+        .replace(/[^a-z0-9-]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .replace(/-{2,}/g, "-");
+
+      if (!validatedData.slug) {
+        return res.status(400).json({ error: "Slug cannot be empty" });
+      }
+
       const existingPage = await storage.getPageBySlug(
         validatedData.slug,
         validatedData.storeId ?? undefined
       );
       if (existingPage) {
-        validatedData.slug = `${validatedData.slug}-${Date.now()}`;
+        return res.status(409).json({ error: `The URL slug "${validatedData.slug}" is already in use. Please choose a different one.` });
       }
 
       const page = await storage.createPage(validatedData as InsertPage);
@@ -420,13 +516,25 @@ export function createPageRoutes(): Router {
       const { storeId: _, ...updateBody } = req.body;
       const validatedData = updatePageSchema.parse(updateBody);
 
-      if (validatedData.slug && validatedData.slug !== existingPage.slug) {
-        const slugConflict = await storage.getPageBySlug(
-          validatedData.slug,
-          existingPage.storeId ?? undefined
-        );
-        if (slugConflict && slugConflict.id !== id) {
-          validatedData.slug = `${validatedData.slug}-${Date.now()}`;
+      if (validatedData.slug !== undefined) {
+        validatedData.slug = validatedData.slug
+          .toLowerCase()
+          .replace(/[^a-z0-9-]+/g, "-")
+          .replace(/^-|-$/g, "")
+          .replace(/-{2,}/g, "-");
+
+        if (!validatedData.slug) {
+          return res.status(400).json({ error: "Slug cannot be empty" });
+        }
+
+        if (validatedData.slug !== existingPage.slug) {
+          const slugConflict = await storage.getPageBySlug(
+            validatedData.slug,
+            existingPage.storeId ?? undefined
+          );
+          if (slugConflict && slugConflict.id !== id) {
+            return res.status(409).json({ error: `The URL slug "${validatedData.slug}" is already in use. Please choose a different one.` });
+          }
         }
       }
 

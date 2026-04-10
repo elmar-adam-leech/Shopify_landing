@@ -133,6 +133,7 @@ export interface IStorage {
   getShopifyProduct(id: string): Promise<ShopifyProduct | undefined>;
   getShopifyProductByShopifyId(storeId: string, shopifyProductId: string): Promise<ShopifyProduct | undefined>;
   getShopifyProductByHandle(storeId: string, handle: string): Promise<ShopifyProduct | undefined>;
+  getShopifyProductByVariantSku(storeId: string, sku: string): Promise<ShopifyProduct | undefined>;
   createShopifyProduct(product: InsertShopifyProduct): Promise<ShopifyProduct>;
   updateShopifyProduct(id: string, product: Partial<InsertShopifyProduct>): Promise<ShopifyProduct | undefined>;
   upsertShopifyProduct(storeId: string, shopifyProductId: string, product: Omit<InsertShopifyProduct, 'storeId' | 'shopifyProductId'>): Promise<{ product: ShopifyProduct; created: boolean }>;
@@ -680,6 +681,17 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(shopifyProducts)
       .where(and(eq(shopifyProducts.storeId, storeId), eq(shopifyProducts.handle, handle)));
+    return product || undefined;
+  }
+
+  async getShopifyProductByVariantSku(storeId: string, sku: string): Promise<ShopifyProduct | undefined> {
+    const [product] = await db
+      .select()
+      .from(shopifyProducts)
+      .where(and(
+        eq(shopifyProducts.storeId, storeId),
+        sql`${shopifyProducts.productData}::jsonb @> ${JSON.stringify({ variants: [{ sku }] })}::jsonb`
+      ));
     return product || undefined;
   }
 

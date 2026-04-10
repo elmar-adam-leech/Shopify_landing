@@ -29,6 +29,7 @@ export function useEditorPage() {
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
   const [title, setTitle] = useState("Untitled Page");
+  const [slug, setSlug] = useState("");
   const [pixelSettings, setPixelSettings] = useState<PixelSettings>(defaultPixelSettings);
   const [allowIndexing, setAllowIndexing] = useState(true);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
@@ -89,6 +90,7 @@ export function useEditorPage() {
       setBlocks(pageData.blocks || []);
       setSections(pageData.sections || []);
       setTitle(pageData.title);
+      setSlug(pageData.slug || "");
       setPixelSettings(pageData.pixelSettings || defaultPixelSettings);
       setAllowIndexing(pageData.allowIndexing ?? true);
       setHasChanges(false);
@@ -101,10 +103,11 @@ export function useEditorPage() {
         throw new Error("Store context required to create a page. Please select a store first.");
       }
 
-      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const autoSlug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const effectiveSlug = isNewPage ? (slug || autoSlug) : slug;
       const saveData: Record<string, unknown> = {
         title,
-        slug,
+        slug: effectiveSlug,
         blocks,
         sections,
         pixelSettings,
@@ -122,6 +125,7 @@ export function useEditorPage() {
     onSuccess: async (response) => {
       const data = await response.json();
       setHasChanges(false);
+      if (data.slug) setSlug(data.slug);
       queryClient.invalidateQueries({ queryKey: ["/api/pages/list"] });
       if (!isNewPage) {
         queryClient.setQueryData(["/api/pages", pageId], data);
@@ -136,9 +140,17 @@ export function useEditorPage() {
       }
     },
     onError: (error: Error) => {
+      let description = "Failed to save page. Please try again.";
+      try {
+        const jsonPart = error.message.substring(error.message.indexOf("{"));
+        const parsed = JSON.parse(jsonPart);
+        if (parsed.error) description = parsed.error;
+      } catch {
+        if (error.message) description = error.message;
+      }
       toast({
         title: "Error",
-        description: error.message || "Failed to save page. Please try again.",
+        description,
         variant: "destructive",
       });
     },
@@ -265,6 +277,12 @@ export function useEditorPage() {
     setHasChanges(true);
   }, []);
 
+  const handleSlugChange = useCallback((newSlug: string) => {
+    const sanitized = newSlug.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-|-$/g, "");
+    setSlug(sanitized);
+    setHasChanges(true);
+  }, []);
+
   const handlePixelSettingsUpdate = useCallback((settings: PixelSettings) => {
     setPixelSettings(settings);
     setHasChanges(true);
@@ -297,6 +315,7 @@ export function useEditorPage() {
 
     blocks,
     title,
+    slug,
     pixelSettings,
     allowIndexing,
     selectedBlockId,
@@ -327,6 +346,7 @@ export function useEditorPage() {
     handleUpdateBlockConfig,
     handleUpdateBlock,
     handleTitleChange,
+    handleSlugChange,
     handlePixelSettingsUpdate,
     handleAllowIndexingChange,
     handleRestore,

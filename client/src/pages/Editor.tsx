@@ -134,8 +134,11 @@ export default function Editor() {
             <PageSettingsDialog
               open={editor.showPageSettings}
               onClose={() => editor.setShowPageSettings(false)}
+              slug={editor.slug}
+              onSlugChange={editor.handleSlugChange}
               allowIndexing={editor.allowIndexing}
               onAllowIndexingChange={editor.handleAllowIndexingChange}
+              isNewPage={editor.isNewPage}
             />
           </Suspense>
         )}

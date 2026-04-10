@@ -42,26 +42,47 @@ function generateHydrationScript(store: Store, page: Page): string {
   };
 
   function parseHashSku() {
-    const hash = window.location.hash;
-    if (hash && hash.startsWith('#')) {
-      return decodeURIComponent(hash.slice(1));
+    var hash = window.location.hash;
+    if (!hash || !hash.startsWith('#')) return null;
+    var raw;
+    try {
+      raw = decodeURIComponent(hash.slice(1));
+    } catch (e) {
+      raw = hash.slice(1);
     }
-    return null;
+    if (!raw) return null;
+
+    var prefixMatch = raw.match(/^(handle|sku|id):(.+)$/);
+    if (prefixMatch) {
+      return { value: prefixMatch[2], identifierType: prefixMatch[1] };
+    }
+
+    var identifierType = 'sku';
+    if (raw.startsWith('gid://shopify/Product/') || /^\\d{10,}$/.test(raw)) {
+      identifierType = 'id';
+    }
+
+    return { value: raw, identifierType: identifierType };
   }
 
-  async function fetchProductBySku(sku) {
-    const data = window.__PAGE_DATA__;
+  async function fetchProductBySku(identifier) {
+    var data = window.__PAGE_DATA__;
+    var sku = typeof identifier === 'object' ? identifier.value : identifier;
+    var identifierType = typeof identifier === 'object' ? identifier.identifierType : undefined;
 
     try {
-      const response = await fetch('/api/public/storefront/product', {
+      var body = { pageId: data.pageId, sku: sku };
+      if (identifierType) body.identifierType = identifierType;
+
+      var response = await fetch('/api/public/storefront/product', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pageId: data.pageId, sku: sku })
+        body: JSON.stringify(body)
       });
 
       if (!response.ok) return null;
 
-      const result = await response.json();
+      var result = await response.json();
       if (result.product) {
         var product = result.product;
         product.images = { edges: (product.images || []).map(function(img) { return { node: img }; }) };
@@ -133,10 +154,10 @@ function generateHydrationScript(store: Store, page: Page): string {
   }
 
   async function init() {
-    const sku = parseHashSku();
-    if (sku) {
-      const product = await fetchProductBySku(sku);
-      updateDynamicBlocks(product, sku);
+    var parsed = parseHashSku();
+    if (parsed) {
+      var product = await fetchProductBySku(parsed);
+      updateDynamicBlocks(product, parsed.value);
     }
   }
 
