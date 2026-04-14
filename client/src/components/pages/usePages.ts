@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useStore } from "@/lib/store-context";
 import { useShopifyRedirect, useAppBridge } from "@/components/providers/AppBridgeProvider";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, authenticatedFetch, queryClient } from "@/lib/queryClient";
 
 export type PageListItem = {
   id: string;
@@ -44,7 +44,7 @@ export function usePages(options?: { onDeleteSuccess?: () => void }) {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(pageOffset) });
       if (selectedStoreId) params.set("storeId", selectedStoreId);
       const url = `/api/pages/list?${params.toString()}`;
-      const response = await fetch(url, { credentials: 'include' });
+      const response = await authenticatedFetch(url);
       if (!response.ok) throw new Error('Failed to fetch pages');
       return response.json();
     },
@@ -78,7 +78,7 @@ export function usePages(options?: { onDeleteSuccess?: () => void }) {
 
   const duplicateMutation = useMutation({
     mutationFn: async (pageId: string) => {
-      const res = await fetch(`/api/pages/${pageId}`);
+      const res = await authenticatedFetch(`/api/pages/${pageId}`);
       if (!res.ok) throw new Error("Failed to fetch page for duplication");
       const fullPage = await res.json();
       return apiRequest("POST", "/api/pages", {
