@@ -60,11 +60,11 @@ export function ProductBlockSettings({
   } : null;
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
-        <div className="flex items-center justify-between gap-2">
-          <div className="space-y-0.5">
-            <Label htmlFor="dynamic-mode">Load product dynamically from URL hash</Label>
+    <div className="space-y-6 min-w-0 overflow-hidden">
+      <div className="space-y-3 p-4 border rounded-lg bg-muted/30 min-w-0 overflow-hidden">
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <div className="space-y-0.5 min-w-0">
+            <Label htmlFor="dynamic-mode" className="truncate block">Load product dynamically from URL hash</Label>
             <p className="text-xs text-muted-foreground">
               Enable to load product by SKU from URL (e.g. #SKU123)
             </p>
@@ -126,8 +126,8 @@ export function ProductBlockSettings({
       <div className="space-y-4">
         <h4 className="font-medium text-sm">Display Components</h4>
         
-        <div className="flex items-center justify-between">
-          <Label htmlFor="showImage">Product Image</Label>
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <Label htmlFor="showImage" className="truncate">Product Image</Label>
           <Switch
             id="showImage"
             checked={config.showImage !== false}
@@ -136,8 +136,8 @@ export function ProductBlockSettings({
           />
         </div>
 
-        <div className="flex items-center justify-between">
-          <Label htmlFor="showTitle">Product Title</Label>
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <Label htmlFor="showTitle" className="truncate">Product Title</Label>
           <Switch
             id="showTitle"
             checked={config.showTitle !== false}
@@ -146,8 +146,8 @@ export function ProductBlockSettings({
           />
         </div>
 
-        <div className="flex items-center justify-between">
-          <Label htmlFor="showPrice">Price</Label>
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <Label htmlFor="showPrice" className="truncate">Price</Label>
           <Switch
             id="showPrice"
             checked={config.showPrice !== false}
@@ -156,8 +156,8 @@ export function ProductBlockSettings({
           />
         </div>
 
-        <div className="flex items-center justify-between">
-          <Label htmlFor="showCompareAtPrice">Compare at Price</Label>
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <Label htmlFor="showCompareAtPrice" className="truncate">Compare at Price</Label>
           <Switch
             id="showCompareAtPrice"
             checked={config.showCompareAtPrice !== false}
@@ -166,7 +166,7 @@ export function ProductBlockSettings({
           />
         </div>
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 min-w-0">
           <Label htmlFor="showDescription">Description</Label>
           <Switch
             id="showDescription"
@@ -176,7 +176,7 @@ export function ProductBlockSettings({
           />
         </div>
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 min-w-0">
           <Label htmlFor="showVariants">Variant Selector</Label>
           <Switch
             id="showVariants"
@@ -186,7 +186,7 @@ export function ProductBlockSettings({
           />
         </div>
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 min-w-0">
           <Label htmlFor="showQuantitySelector">Quantity Selector</Label>
           <Switch
             id="showQuantitySelector"
@@ -196,7 +196,7 @@ export function ProductBlockSettings({
           />
         </div>
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 min-w-0">
           <Label htmlFor="showAddToCart">Add to Cart Button</Label>
           <Switch
             id="showAddToCart"
@@ -206,7 +206,7 @@ export function ProductBlockSettings({
           />
         </div>
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 min-w-0">
           <Label htmlFor="showBuyNow">Buy Now Button</Label>
           <Switch
             id="showBuyNow"
@@ -216,7 +216,7 @@ export function ProductBlockSettings({
           />
         </div>
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 min-w-0">
           <Label htmlFor="showVendor">Vendor</Label>
           <Switch
             id="showVendor"
@@ -226,7 +226,7 @@ export function ProductBlockSettings({
           />
         </div>
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 min-w-0">
           <Label htmlFor="showSku">SKU</Label>
           <Switch
             id="showSku"
@@ -236,7 +236,7 @@ export function ProductBlockSettings({
           />
         </div>
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 min-w-0">
           <Label htmlFor="showTags">Tags</Label>
           <Switch
             id="showTags"
@@ -246,7 +246,7 @@ export function ProductBlockSettings({
           />
         </div>
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 min-w-0">
           <Label htmlFor="showMetafields">Metafields</Label>
           <Switch
             id="showMetafields"
@@ -378,7 +378,7 @@ export function ProductBlockSettings({
       <div className="space-y-4">
         <h4 className="font-medium text-sm">Conversion Tracking</h4>
         
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 min-w-0">
           <Label htmlFor="trackAddToCart">Track Add to Cart</Label>
           <Switch
             id="trackAddToCart"
@@ -388,7 +388,7 @@ export function ProductBlockSettings({
           />
         </div>
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 min-w-0">
           <Label htmlFor="trackBuyNow">Track Buy Now</Label>
           <Switch
             id="trackBuyNow"

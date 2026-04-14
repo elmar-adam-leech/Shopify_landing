@@ -98,7 +98,7 @@ export function BlockSettings({ block, open, onClose, onUpdate, onUpdateBlock, s
 
   return (
     <Sheet open={open} onOpenChange={(isOpen) => !isOpen && handleClose()}>
-      <SheetContent className="w-[400px] sm:max-w-[400px]" data-testid="block-settings-panel">
+      <SheetContent className="w-full max-w-[400px] p-4 sm:p-6" data-testid="block-settings-panel">
         <SheetHeader>
           <SheetTitle className="capitalize">
             {block.type.replace("-", " ")} Settings
@@ -118,7 +118,7 @@ export function BlockSettings({ block, open, onClose, onUpdate, onUpdateBlock, s
               A/B Test
             </TabsTrigger>
           </TabsList>
-          <ScrollArea className="h-[calc(100vh-180px)] pr-4">
+          <ScrollArea className="h-[calc(100vh-180px)] pr-4 overflow-hidden">
             <TabsContent value="settings" className="mt-0">
               {editingVariantId && (
                 <Card className="p-3 mb-4 bg-primary/5">
