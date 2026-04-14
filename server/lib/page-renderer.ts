@@ -153,11 +153,70 @@ function generateHydrationScript(store: Store, page: Page): string {
     window.dispatchEvent(new CustomEvent('lp:product-loaded', { detail: { product, sku } }));
   }
 
+  function updateSingleBlock(el, product, sku) {
+    if (!product) {
+      el.innerHTML = '<div class="lp-product-error">No product selected</div>';
+      return;
+    }
+
+    const variant = product.variants?.edges?.find(function(v) {
+      return v.node.sku === sku;
+    })?.node || product.variants?.edges?.[0]?.node;
+
+    const price = variant?.price?.amount || product.priceRange?.minVariantPrice?.amount || '0';
+    const image = product.images?.edges?.[0]?.node?.url || '';
+    const currency = variant?.price?.currencyCode || 'USD';
+
+    const formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: currency });
+
+    var safeTitle = escapeHtml(product.title);
+    var safeVendor = escapeHtml(product.vendor);
+    var safeImage = escapeHtml(image);
+    var safeVariantId = escapeHtml(variant?.id || '');
+    var safeProductId = escapeHtml(product.id);
+
+    var descDiv = document.createElement('div');
+    descDiv.className = 'lp-product-description';
+    if (product.descriptionHtml) {
+      descDiv.innerHTML = product.descriptionHtml;
+    }
+
+    el.innerHTML = \`
+      <div class="lp-product-dynamic">
+        \${safeImage ? '<img src="' + safeImage + '" alt="' + safeTitle + '" class="lp-product-image" loading="lazy">' : ''}
+        <h2 class="lp-product-title">\${safeTitle}</h2>
+        \${safeVendor ? '<p class="lp-product-vendor">' + safeVendor + '</p>' : ''}
+        <div class="lp-product-price">
+          <span class="lp-price-current">\${formatter.format(price)}</span>
+        </div>
+        <button class="lp-add-to-cart" data-variant-id="\${safeVariantId}" data-product-id="\${safeProductId}">
+          Add to Cart
+        </button>
+      </div>
+    \`;
+    el.querySelector('.lp-product-dynamic').insertBefore(descDiv, el.querySelector('.lp-add-to-cart'));
+  }
+
   async function init() {
     var parsed = parseHashSku();
     if (parsed) {
       var product = await fetchProductBySku(parsed);
       updateDynamicBlocks(product, parsed.value);
+    } else {
+      var dynamicBlocks = document.querySelectorAll('[data-dynamic-sku]');
+      for (var i = 0; i < dynamicBlocks.length; i++) {
+        var block = dynamicBlocks[i];
+        var defaultProductId = block.getAttribute('data-default-product-id');
+        if (defaultProductId) {
+          var defaultProduct = await fetchProductBySku({ value: defaultProductId, identifierType: 'id' });
+          updateSingleBlock(block, defaultProduct, null);
+          if (defaultProduct) {
+            window.dispatchEvent(new CustomEvent('lp:product-loaded', { detail: { product: defaultProduct, sku: null } }));
+          }
+        } else {
+          block.innerHTML = '<div class="lp-product-error">No product selected</div>';
+        }
+      }
     }
   }
 
