@@ -103,6 +103,19 @@ export const analyticsLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+export const aiGenerationLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  keyGenerator: (req: Request) => {
+    const userId = req.session?.adminUserId;
+    if (userId) return `user:${userId}:ai`;
+    return getClientKey(req, "ai");
+  },
+  handler: (req: Request, res: Response) => logAndRespond(req, res, 10, 60, "ai"),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 export const authenticatedApiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 200,

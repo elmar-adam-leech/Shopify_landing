@@ -13,6 +13,7 @@ import { createProductRoutes } from "./routes/products";
 import { createPageRoutes } from "./routes/pages";
 import { createAnalyticsRoutes } from "./routes/analytics";
 import { createAbTestRoutes } from "./routes/ab-tests";
+import { createAiRoutes } from "./routes/ai";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -44,6 +45,8 @@ export async function registerRoutes(
   app.use(createAnalyticsRoutes());
 
   app.use(createAbTestRoutes());
+
+  app.use(createAiRoutes());
 
   registerTwilioRoutes(app);
 

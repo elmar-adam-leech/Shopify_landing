@@ -588,6 +588,49 @@ export function useEditorPage() {
     setHasChanges(true);
   }, [pushHistory]);
 
+  const handleInsertGeneratedBlocks = useCallback(
+    (generated: Block[]): string | null => {
+      if (generated.length === 0) return null;
+
+      const cloneWithFreshIds = (block: Block): Block => ({
+        ...block,
+        id: uuidv4(),
+        children: block.children?.map(cloneWithFreshIds),
+      });
+      const fresh = generated.map(cloneWithFreshIds);
+
+      let parentId: string | null = null;
+      let insertIndex = blocks.length;
+
+      if (selectedBlockId) {
+        const selected = findBlockById(blocks, selectedBlockId);
+        if (selected && isContainerBlockType(selected.type)) {
+          parentId = selected.id;
+          insertIndex = selected.children?.length ?? 0;
+        } else {
+          const parentInfo = findParentOf(blocks, selectedBlockId);
+          if (parentInfo) {
+            parentId = parentInfo.parent ? parentInfo.parent.id : null;
+            insertIndex = parentInfo.index + 1;
+          }
+        }
+      }
+
+      pushHistory();
+      setBlocks((prev) => {
+        let next = prev;
+        fresh.forEach((block, i) => {
+          next = insertBlockAt(next, parentId, insertIndex + i, block);
+        });
+        return next;
+      });
+      setHasChanges(true);
+      setSelectedBlockId(fresh[0].id);
+      return fresh[0].id;
+    },
+    [blocks, selectedBlockId, pushHistory]
+  );
+
   const handleApplyTemplate = useCallback((templateBlocks: Block[]) => {
     pushHistory();
     const { blocks: migrated } = migrateBlocksResponsive(templateBlocks);
@@ -670,6 +713,7 @@ export function useEditorPage() {
     handlePixelSettingsUpdate,
     handleAllowIndexingChange,
     handleApplyTemplate,
+    handleInsertGeneratedBlocks,
     handleRestore,
   };
 }

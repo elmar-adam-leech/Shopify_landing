@@ -17,6 +17,7 @@ import {
 } from "@/components/editor/EditorCanvas";
 import { EditorToolbar } from "@/components/editor/EditorToolbar";
 import { ViewportSwitcher } from "@/components/editor/ViewportSwitcher";
+import { AIPromptBar } from "@/components/editor/AIPromptBar";
 import { useEditorPage } from "@/components/editor/useEditorPage";
 import { defaultBlockConfigs, defaultResponsiveFor } from "@/components/editor/editorDefaults";
 import type { Block } from "@shared/schema";
@@ -218,13 +219,17 @@ export default function Editor() {
             </aside>
           )}
 
-          <main className="flex-1 overflow-hidden bg-muted/30 flex flex-col">
+          <main className="flex-1 overflow-hidden bg-muted/30 flex flex-col relative">
             <ViewportSwitcher
               value={editor.viewportSize}
               onChange={editor.setViewportSize}
             />
 
-            <div className="flex-1 overflow-auto flex justify-center py-4">
+            {!editor.previewMode && (
+              <AIPromptBar onInsertBlocks={editor.handleInsertGeneratedBlocks} />
+            )}
+
+            <div className="flex-1 overflow-auto flex justify-center py-4 pt-24">
               <div
                 className={`transition-all duration-300 ${
                   editor.viewportSize === "desktop" ? "w-full max-w-none" :
