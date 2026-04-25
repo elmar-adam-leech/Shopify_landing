@@ -27,6 +27,7 @@ interface EditorCanvasProps {
   onDeleteBlock: (id: string) => void;
   onDuplicateBlock: (id: string) => void;
   onOpenSettings: (id: string) => void;
+  previewMode?: boolean;
 }
 
 interface SortableBlockProps {
@@ -36,6 +37,7 @@ interface SortableBlockProps {
   onDelete: () => void;
   onDuplicate: () => void;
   onOpenSettings: () => void;
+  previewMode?: boolean;
 }
 
 function getBlockPreview(block: Block) {
@@ -70,6 +72,7 @@ const SortableBlock = memo(function SortableBlock({
   onDelete,
   onDuplicate,
   onOpenSettings,
+  previewMode,
 }: SortableBlockProps) {
   const {
     attributes,
@@ -78,7 +81,7 @@ const SortableBlock = memo(function SortableBlock({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: block.id });
+  } = useSortable({ id: block.id, disabled: previewMode });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -86,6 +89,19 @@ const SortableBlock = memo(function SortableBlock({
   };
 
   const blockPreview = useMemo(() => getBlockPreview(block), [block]);
+
+  if (previewMode) {
+    return (
+      <div
+        ref={setNodeRef}
+        style={style}
+        className="rounded-lg overflow-hidden"
+        data-testid={`canvas-block-${block.id}`}
+      >
+        {blockPreview}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -167,26 +183,28 @@ export function EditorCanvas({
   onDeleteBlock,
   onDuplicateBlock,
   onOpenSettings,
+  previewMode = false,
 }: EditorCanvasProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: "editor-canvas",
+    disabled: previewMode,
   });
 
   const sortableItems = useMemo(() => blocks.map((b) => b.id), [blocks]);
 
   return (
     <ScrollArea className="flex-1 h-full">
-      <div className="p-8">
+      <div className={previewMode ? "p-0" : "p-8"}>
         <div
           ref={setNodeRef}
           className={`max-w-5xl mx-auto min-h-[600px] rounded-lg transition-all ${
-            blocks.length === 0
+            blocks.length === 0 && !previewMode
               ? `border-2 border-dashed ${
                   isOver ? "border-primary bg-primary/5" : "border-border"
                 }`
               : ""
           }`}
-          onClick={() => onSelectBlock(null)}
+          onClick={previewMode ? undefined : () => onSelectBlock(null)}
           data-testid="editor-canvas"
         >
           {blocks.length === 0 ? (
@@ -210,11 +228,12 @@ export function EditorCanvas({
                   <SortableBlock
                     key={block.id}
                     block={block}
-                    isSelected={selectedBlockId === block.id}
+                    isSelected={selectedBlockId === block.id && !previewMode}
                     onSelect={() => onSelectBlock(block.id)}
                     onDelete={() => onDeleteBlock(block.id)}
                     onDuplicate={() => onDuplicateBlock(block.id)}
                     onOpenSettings={() => onOpenSettings(block.id)}
+                    previewMode={previewMode}
                   />
                 ))}
               </div>

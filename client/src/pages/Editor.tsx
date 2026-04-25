@@ -1,9 +1,9 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
-import { Loader2 } from "lucide-react";
+import { Loader2, Eye } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { BlockLibrary } from "@/components/editor/BlockLibrary";
+import { EditorSidebar } from "@/components/editor/EditorSidebar";
 import { EditorCanvas } from "@/components/editor/EditorCanvas";
 import { EditorToolbar } from "@/components/editor/EditorToolbar";
 import { ViewportSwitcher } from "@/components/editor/ViewportSwitcher";
@@ -22,8 +22,59 @@ const VersionHistory = lazy(() =>
   import("@/components/editor/VersionHistory").then((m) => ({ default: m.VersionHistory }))
 );
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (target.isContentEditable) return true;
+  return false;
+}
+
 export default function Editor() {
   const editor = useEditorPage();
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      const inEditable = isEditableTarget(e.target);
+
+      if (mod && (e.key === "z" || e.key === "Z")) {
+        if (inEditable) return;
+        e.preventDefault();
+        if (e.shiftKey) {
+          if (editor.canRedo) editor.redo();
+        } else {
+          if (editor.canUndo) editor.undo();
+        }
+        return;
+      }
+      if (mod && (e.key === "y" || e.key === "Y")) {
+        if (inEditable) return;
+        e.preventDefault();
+        if (editor.canRedo) editor.redo();
+        return;
+      }
+      if (e.key === "Escape") {
+        if (editor.previewMode) {
+          editor.setPreviewMode(false);
+        } else if (editor.selectedBlockId) {
+          editor.setSelectedBlockId(null);
+        }
+        return;
+      }
+      if (
+        (e.key === "Delete" || e.key === "Backspace") &&
+        editor.selectedBlockId &&
+        !inEditable &&
+        !editor.previewMode
+      ) {
+        e.preventDefault();
+        editor.handleDeleteBlock(editor.selectedBlockId);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [editor]);
 
   if (!editor.isNewPage && editor.isLoading) {
     return (
@@ -54,29 +105,42 @@ export default function Editor() {
       onDragEnd={editor.handleDragEnd}
     >
       <div className="h-screen flex flex-col bg-background">
-        <EditorToolbar
-          title={editor.title}
-          onTitleChange={editor.handleTitleChange}
-          isNewPage={editor.isNewPage}
-          pageId={editor.pageId}
-          pageData={editor.pageData}
-          hasChanges={editor.hasChanges}
-          selectedStoreId={editor.selectedStoreId}
-          selectedStoreDomain={editor.selectedStoreDomain}
-          buildHref={editor.buildHref}
-          onShowVersionHistory={() => editor.setShowVersionHistory(true)}
-          onShowPageSettings={() => editor.setShowPageSettings(true)}
-          onShowPixelSettings={() => editor.setShowPixelSettings(true)}
-          onSave={() => editor.saveMutation.mutate()}
-          isSaving={editor.saveMutation.isPending}
-          onPublish={(status) => editor.publishMutation.mutate(status)}
-          isPublishing={editor.publishMutation.isPending}
-        />
+        {!editor.previewMode && (
+          <EditorToolbar
+            title={editor.title}
+            onTitleChange={editor.handleTitleChange}
+            isNewPage={editor.isNewPage}
+            pageId={editor.pageId}
+            pageData={editor.pageData}
+            hasChanges={editor.hasChanges}
+            selectedStoreId={editor.selectedStoreId ?? undefined}
+            selectedStoreDomain={editor.selectedStoreDomain}
+            buildHref={editor.buildHref}
+            onShowVersionHistory={() => editor.setShowVersionHistory(true)}
+            onShowPageSettings={() => editor.setShowPageSettings(true)}
+            onShowPixelSettings={() => editor.setShowPixelSettings(true)}
+            onSave={() => editor.saveMutation.mutate()}
+            isSaving={editor.saveMutation.isPending}
+            onPublish={(status) => editor.publishMutation.mutate(status)}
+            isPublishing={editor.publishMutation.isPending}
+            canUndo={editor.canUndo}
+            canRedo={editor.canRedo}
+            onUndo={editor.undo}
+            onRedo={editor.redo}
+            previewMode={editor.previewMode}
+            onTogglePreview={() => editor.setPreviewMode(!editor.previewMode)}
+          />
+        )}
 
         <div className="flex flex-1 overflow-hidden">
-          <aside className="w-80 border-r flex-shrink-0 bg-card">
-            <BlockLibrary />
-          </aside>
+          {!editor.previewMode && (
+            <aside className="w-80 border-r flex-shrink-0 bg-card">
+              <EditorSidebar
+                currentPageId={editor.isNewPage ? undefined : editor.pageId}
+                onApplyTemplate={editor.handleApplyTemplate}
+              />
+            </aside>
+          )}
 
           <main className="flex-1 overflow-hidden bg-muted/30 flex flex-col">
             <ViewportSwitcher
@@ -99,11 +163,25 @@ export default function Editor() {
                   onDeleteBlock={editor.handleDeleteBlock}
                   onDuplicateBlock={editor.handleDuplicateBlock}
                   onOpenSettings={editor.setSettingsBlockId}
+                  previewMode={editor.previewMode}
                 />
               </div>
             </div>
           </main>
         </div>
+
+        {editor.previewMode && (
+          <Button
+            size="sm"
+            variant="default"
+            className="fixed top-4 right-4 z-50 gap-2 shadow-lg"
+            onClick={() => editor.setPreviewMode(false)}
+            data-testid="button-exit-preview"
+          >
+            <Eye className="h-4 w-4" />
+            Exit preview
+          </Button>
+        )}
 
         {editor.settingsBlockId && (
           <Suspense fallback={null}>

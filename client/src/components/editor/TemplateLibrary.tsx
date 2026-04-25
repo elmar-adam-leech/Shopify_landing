@@ -284,18 +284,72 @@ interface TemplateLibraryProps {
   onSelectTemplate: (blocks: Block[]) => void;
 }
 
-export function TemplateLibrary({ open, onClose, onSelectTemplate }: TemplateLibraryProps) {
+interface TemplateGridProps {
+  onSelectTemplate: (blocks: Block[]) => void;
+  variant?: "dialog" | "inline";
+}
+
+export function TemplateGrid({ onSelectTemplate, variant = "dialog" }: TemplateGridProps) {
   const handleSelect = (template: Template) => {
     const blocksWithIds = template.blocks.map((block) => ({
       ...block,
       id: uuidv4(),
     }));
     onSelectTemplate(blocksWithIds as Block[]);
-    onClose();
   };
 
   const categories = Array.from(new Set(templates.map((t) => t.category)));
+  const gridCols =
+    variant === "inline"
+      ? "grid-cols-1"
+      : "grid-cols-2 md:grid-cols-3";
 
+  return (
+    <>
+      {categories.map((category) => (
+        <div key={category} className="mb-6">
+          <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            {category}
+          </h3>
+          <div className={`grid ${gridCols} gap-3`}>
+            {templates
+              .filter((t) => t.category === category)
+              .map((template) => {
+                const Icon = template.icon;
+                return (
+                  <Card
+                    key={template.id}
+                    className="cursor-pointer hover-elevate active-elevate-2 transition-all"
+                    onClick={() => handleSelect(template)}
+                    data-testid={`template-${template.id}`}
+                  >
+                    <CardContent className="p-3">
+                      <div className="flex items-start gap-3">
+                        <div className="p-2 bg-primary/10 rounded-lg flex-shrink-0">
+                          <Icon className="h-5 w-5 text-primary" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h4 className="font-medium text-sm mb-1">{template.name}</h4>
+                          <p className="text-xs text-muted-foreground line-clamp-2">
+                            {template.description}
+                          </p>
+                          <Badge variant="secondary" className="mt-2">
+                            {template.blocks.length} blocks
+                          </Badge>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+export function TemplateLibrary({ open, onClose, onSelectTemplate }: TemplateLibraryProps) {
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent className="max-w-4xl max-h-[85vh]" data-testid="template-library-dialog">
@@ -306,43 +360,12 @@ export function TemplateLibrary({ open, onClose, onSelectTemplate }: TemplateLib
           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="h-[60vh] pr-4">
-          {categories.map((category) => (
-            <div key={category} className="mb-6">
-              <h3 className="text-sm font-medium text-muted-foreground mb-3">{category}</h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {templates
-                  .filter((t) => t.category === category)
-                  .map((template) => {
-                    const Icon = template.icon;
-                    return (
-                      <Card
-                        key={template.id}
-                        className="cursor-pointer hover-elevate active-elevate-2 transition-all"
-                        onClick={() => handleSelect(template)}
-                        data-testid={`template-${template.id}`}
-                      >
-                        <CardContent className="p-4">
-                          <div className="flex items-start gap-3">
-                            <div className="p-2 bg-primary/10 rounded-lg flex-shrink-0">
-                              <Icon className="h-5 w-5 text-primary" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <h4 className="font-medium text-sm mb-1">{template.name}</h4>
-                              <p className="text-xs text-muted-foreground line-clamp-2">
-                                {template.description}
-                              </p>
-                              <Badge variant="secondary" className="mt-2">
-                                {template.blocks.length} blocks
-                              </Badge>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-              </div>
-            </div>
-          ))}
+          <TemplateGrid
+            onSelectTemplate={(blocks) => {
+              onSelectTemplate(blocks);
+              onClose();
+            }}
+          />
         </ScrollArea>
       </DialogContent>
     </Dialog>

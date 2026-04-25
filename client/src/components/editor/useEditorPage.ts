@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useRoute } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useEmbeddedNavigation } from "@/hooks/use-embedded-navigation";
@@ -17,6 +17,18 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { defaultBlockConfigs, defaultPixelSettings } from "./editorDefaults";
 import type { Page, Block, BlockType, PixelSettings, Section } from "@shared/schema";
+
+interface HistorySnapshot {
+  blocks: Block[];
+  sections: Section[];
+  title: string;
+  slug: string;
+  pixelSettings: PixelSettings;
+  allowIndexing: boolean;
+}
+
+const HISTORY_LIMIT = 50;
+const TITLE_DEBOUNCE_MS = 500;
 
 export function useEditorPage() {
   const [, params] = useRoute("/editor/:id");
@@ -40,6 +52,102 @@ export function useEditorPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [viewportSize, setViewportSize] = useState<"desktop" | "tablet" | "mobile">("desktop");
+  const [previewMode, setPreviewMode] = useState(false);
+
+  const [undoStack, setUndoStack] = useState<HistorySnapshot[]>([]);
+  const [redoStack, setRedoStack] = useState<HistorySnapshot[]>([]);
+
+  const stateRef = useRef<HistorySnapshot>({
+    blocks,
+    sections,
+    title,
+    slug,
+    pixelSettings,
+    allowIndexing,
+  });
+
+  useEffect(() => {
+    stateRef.current = {
+      blocks,
+      sections,
+      title,
+      slug,
+      pixelSettings,
+      allowIndexing,
+    };
+  }, [blocks, sections, title, slug, pixelSettings, allowIndexing]);
+
+  const lastTitlePushRef = useRef<number>(0);
+
+  const snapshotCurrent = useCallback((): HistorySnapshot => {
+    const current = stateRef.current;
+    return {
+      blocks: current.blocks,
+      sections: current.sections,
+      title: current.title,
+      slug: current.slug,
+      pixelSettings: current.pixelSettings,
+      allowIndexing: current.allowIndexing,
+    };
+  }, []);
+
+  const pushHistory = useCallback(() => {
+    const snapshot = snapshotCurrent();
+    setUndoStack((prev) => {
+      const next = [...prev, snapshot];
+      if (next.length > HISTORY_LIMIT) next.shift();
+      return next;
+    });
+    setRedoStack([]);
+  }, [snapshotCurrent]);
+
+  const applySnapshot = useCallback((snapshot: HistorySnapshot) => {
+    setBlocks(snapshot.blocks);
+    setSections(snapshot.sections);
+    setTitle(snapshot.title);
+    setSlug(snapshot.slug);
+    setPixelSettings(snapshot.pixelSettings);
+    setAllowIndexing(snapshot.allowIndexing);
+    setHasChanges(true);
+  }, []);
+
+  const undo = useCallback(() => {
+    setUndoStack((prevUndo) => {
+      if (prevUndo.length === 0) return prevUndo;
+      const next = [...prevUndo];
+      const snapshot = next.pop()!;
+      const current = snapshotCurrent();
+      setRedoStack((prevRedo) => {
+        const r = [...prevRedo, current];
+        if (r.length > HISTORY_LIMIT) r.shift();
+        return r;
+      });
+      applySnapshot(snapshot);
+      return next;
+    });
+  }, [applySnapshot, snapshotCurrent]);
+
+  const redo = useCallback(() => {
+    setRedoStack((prevRedo) => {
+      if (prevRedo.length === 0) return prevRedo;
+      const next = [...prevRedo];
+      const snapshot = next.pop()!;
+      const current = snapshotCurrent();
+      setUndoStack((prevUndo) => {
+        const u = [...prevUndo, current];
+        if (u.length > HISTORY_LIMIT) u.shift();
+        return u;
+      });
+      applySnapshot(snapshot);
+      return next;
+    });
+  }, [applySnapshot, snapshotCurrent]);
+
+  const resetHistory = useCallback(() => {
+    setUndoStack([]);
+    setRedoStack([]);
+    lastTitlePushRef.current = 0;
+  }, []);
 
   useEffect(() => {
     if (!hasChanges) return;
@@ -64,8 +172,9 @@ export function useEditorPage() {
           console.error("Failed to parse template blocks:", e);
         }
       }
+      resetHistory();
     }
-  }, [isNewPage]);
+  }, [isNewPage, resetHistory]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -94,8 +203,9 @@ export function useEditorPage() {
       setPixelSettings(pageData.pixelSettings || defaultPixelSettings);
       setAllowIndexing(pageData.allowIndexing ?? true);
       setHasChanges(false);
+      resetHistory();
     }
-  }, [pageData, isNewPage]);
+  }, [pageData, isNewPage, resetHistory]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -213,6 +323,7 @@ export function useEditorPage() {
         order: insertIndex,
       };
 
+      pushHistory();
       setBlocks((prev) => {
         const updated = [...prev];
         updated.splice(insertIndex, 0, newBlock);
@@ -221,26 +332,28 @@ export function useEditorPage() {
       setHasChanges(true);
       setSelectedBlockId(newBlock.id);
     } else if (active.id !== over.id) {
+      const oldIndex = blocks.findIndex((item) => item.id === active.id);
+      const newIndex = blocks.findIndex((item) => item.id === over.id);
+      if (oldIndex === -1 || newIndex === -1) return;
+      pushHistory();
       setBlocks((items) => {
-        const oldIndex = items.findIndex((item) => item.id === active.id);
-        const newIndex = items.findIndex((item) => item.id === over.id);
-        if (oldIndex === -1 || newIndex === -1) return items;
         const newItems = arrayMove(items, oldIndex, newIndex).map((item, index) => ({
           ...item,
           order: index,
         }));
-        setHasChanges(true);
         return newItems;
       });
+      setHasChanges(true);
     }
-  }, [blocks]);
+  }, [blocks, pushHistory]);
 
   const handleDeleteBlock = useCallback((id: string) => {
+    pushHistory();
     setBlocks((prev) => prev.filter((b) => b.id !== id));
     setHasChanges(true);
     if (selectedBlockId === id) setSelectedBlockId(null);
     if (settingsBlockId === id) setSettingsBlockId(null);
-  }, [selectedBlockId, settingsBlockId]);
+  }, [selectedBlockId, settingsBlockId, pushHistory]);
 
   const handleDuplicateBlock = useCallback((id: string) => {
     const blockToDuplicate = blocks.find((b) => b.id === id);
@@ -251,47 +364,70 @@ export function useEditorPage() {
       id: uuidv4(),
       order: blocks.length,
     };
+    pushHistory();
     setBlocks((prev) => [...prev, newBlock]);
     setHasChanges(true);
-  }, [blocks]);
+  }, [blocks, pushHistory]);
 
   const handleUpdateBlockConfig = useCallback((config: Record<string, any>) => {
     if (!settingsBlockId) return;
+    pushHistory();
     setBlocks((prev) =>
       prev.map((b) => (b.id === settingsBlockId ? { ...b, config } : b))
     );
     setHasChanges(true);
-  }, [settingsBlockId]);
+  }, [settingsBlockId, pushHistory]);
 
   const handleUpdateBlock = useCallback((updatedBlock: Block) => {
+    pushHistory();
     setBlocks((prev) =>
       prev.map((b) => (b.id === updatedBlock.id ? updatedBlock : b))
     );
     setHasChanges(true);
-  }, []);
+  }, [pushHistory]);
 
   const selectedBlock = blocks.find((b) => b.id === settingsBlockId) || null;
 
   const handleTitleChange = useCallback((newTitle: string) => {
+    const now = Date.now();
+    if (now - lastTitlePushRef.current > TITLE_DEBOUNCE_MS) {
+      pushHistory();
+      lastTitlePushRef.current = now;
+    } else {
+      lastTitlePushRef.current = now;
+    }
     setTitle(newTitle);
     setHasChanges(true);
-  }, []);
+  }, [pushHistory]);
 
   const handleSlugChange = useCallback((newSlug: string) => {
     const sanitized = newSlug.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-|-$/g, "");
+    pushHistory();
     setSlug(sanitized);
     setHasChanges(true);
-  }, []);
+  }, [pushHistory]);
 
   const handlePixelSettingsUpdate = useCallback((settings: PixelSettings) => {
+    pushHistory();
     setPixelSettings(settings);
     setHasChanges(true);
-  }, []);
+  }, [pushHistory]);
 
   const handleAllowIndexingChange = useCallback((value: boolean) => {
+    pushHistory();
     setAllowIndexing(value);
     setHasChanges(true);
-  }, []);
+  }, [pushHistory]);
+
+  const handleApplyTemplate = useCallback((templateBlocks: Block[]) => {
+    pushHistory();
+    setBlocks(templateBlocks);
+    setHasChanges(true);
+    toast({
+      title: "Template applied",
+      description: "Template blocks have been added to your page.",
+    });
+  }, [pushHistory, toast]);
 
   const handleRestore = useCallback((restoredPage: any) => {
     if (restoredPage) {
@@ -299,9 +435,10 @@ export function useEditorPage() {
       setTitle(restoredPage.title);
       setPixelSettings(restoredPage.pixelSettings || defaultPixelSettings);
       setHasChanges(false);
+      resetHistory();
     }
     queryClient.invalidateQueries({ queryKey: ["/api/pages", pageId] });
-  }, [pageId]);
+  }, [pageId, resetHistory]);
 
   return {
     pageId,
@@ -327,6 +464,12 @@ export function useEditorPage() {
     activeId,
     hasChanges,
     viewportSize,
+    previewMode,
+
+    canUndo: undoStack.length > 0,
+    canRedo: redoStack.length > 0,
+    undo,
+    redo,
 
     sensors,
     saveMutation,
@@ -338,6 +481,7 @@ export function useEditorPage() {
     setShowPageSettings,
     setShowVersionHistory,
     setViewportSize,
+    setPreviewMode,
 
     handleDragStart,
     handleDragEnd,
@@ -349,6 +493,7 @@ export function useEditorPage() {
     handleSlugChange,
     handlePixelSettingsUpdate,
     handleAllowIndexingChange,
+    handleApplyTemplate,
     handleRestore,
   };
 }
