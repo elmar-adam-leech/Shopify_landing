@@ -404,7 +404,9 @@ export function useEditorPage() {
       return;
     }
 
-    const overData = over.data.current as { isContainer?: boolean } | undefined;
+    const overData = over.data.current as
+      | { isContainer?: boolean; hasChildren?: boolean }
+      | undefined;
     const isContainerTarget = !!overData?.isContainer;
     const overRect = over.rect;
     if (!overRect) {
@@ -424,10 +426,24 @@ export function useEditorPage() {
     const relative = (y - overRect.top) / overRect.height;
     let position: "before" | "after" | "inside";
     if (isContainerTarget) {
-      // Container blocks: top 25% before, middle 50% inside, bottom 25% after.
-      if (relative < 0.25) position = "before";
-      else if (relative > 0.75) position = "after";
-      else position = "inside";
+      // Resolve hasChildren from the live block tree as a source of truth
+      // (sortable data is updated on re-render but the tree is authoritative).
+      const targetBlock = findBlockById(blocks, overId);
+      const targetHasChildren = targetBlock
+        ? (targetBlock.children?.length ?? 0) > 0
+        : !!overData?.hasChildren;
+
+      if (!targetHasChildren) {
+        // Empty containers/sections: anywhere inside the block counts as
+        // "inside" so editors cannot miss the drop target.
+        position = "inside";
+      } else {
+        // Non-empty containers: widen the middle "inside" zone (20%–80%) so
+        // the before/after edges stay narrow and easy to avoid.
+        if (relative < 0.2) position = "before";
+        else if (relative > 0.8) position = "after";
+        else position = "inside";
+      }
       // Prevent dropping a container into itself / its descendants.
       if (position === "inside") {
         const draggedBlock = findBlockById(blocks, activeIdStr);

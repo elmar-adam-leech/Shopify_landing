@@ -14,32 +14,55 @@ interface ContainerPreviewProps {
    * `legacyDesignFromBlock` in `shared/responsive.ts`.
    */
   design?: DesignProps;
+  /**
+   * True while a block is being dragged anywhere on the canvas. Used to
+   * make the empty "Drop blocks here" affordance more prominent so editors
+   * can see clearly which areas accept the drop.
+   */
+  isDragActive?: boolean;
 }
 
 export const ContainerPreview = memo(function ContainerPreview({
   hasChildren,
   children,
   design,
+  isDragActive = false,
 }: ContainerPreviewProps) {
   const style = {
-    minHeight: 60,
+    minHeight: hasChildren ? 60 : 120,
     width: "100%",
     ...designToStyle(design),
   };
 
+  if (hasChildren) {
+    return (
+      <div
+        className="rounded-md"
+        style={style}
+        data-testid="container-block-preview"
+      >
+        {children}
+      </div>
+    );
+  }
+
   return (
     <div
-      className="rounded-md"
+      className="rounded-md border-2 border-dashed border-border/70 bg-muted/30"
       style={style}
       data-testid="container-block-preview"
+      data-empty="true"
     >
-      {hasChildren ? (
-        children
-      ) : (
-        <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground/70 italic min-h-[60px]">
-          Drop blocks here
-        </div>
-      )}
+      <div
+        className={`flex-1 flex items-center justify-center min-h-[120px] transition-all ${
+          isDragActive
+            ? "text-base font-medium text-primary"
+            : "text-xs italic text-muted-foreground/70"
+        }`}
+        data-testid="container-empty-drop-hint"
+      >
+        Drop blocks here
+      </div>
     </div>
   );
 });

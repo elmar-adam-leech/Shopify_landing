@@ -74,6 +74,12 @@ interface PreviewOptions {
    * the outer wrapper's inline style applied by `RenderBlock`).
    */
   design?: DesignProps;
+  /**
+   * True while any block is being dragged on the canvas. Container/Section
+   * previews use this to make their empty-state "Drop blocks here" hint
+   * unmistakable while a drag is in progress.
+   */
+  isDragActive?: boolean;
 }
 
 export function getBlockPreview(
@@ -81,7 +87,7 @@ export function getBlockPreview(
   children?: ReactNode,
   options: PreviewOptions = {}
 ): JSX.Element {
-  const { editable, onUpdateConfig, design } = options;
+  const { editable, onUpdateConfig, design, isDragActive } = options;
   switch (block.type) {
     case "hero-banner":
       return (
@@ -128,6 +134,7 @@ export function getBlockPreview(
           config={block.config}
           hasChildren={!!children && (block.children?.length ?? 0) > 0}
           design={design}
+          isDragActive={isDragActive}
         >
           {children}
         </ContainerPreview>
@@ -138,6 +145,7 @@ export function getBlockPreview(
           config={block.config}
           hasChildren={!!children && (block.children?.length ?? 0) > 0}
           design={design}
+          isDragActive={isDragActive}
         >
           {children}
         </SectionPreview>
@@ -161,6 +169,7 @@ const RenderBlock = memo(function RenderBlock({
   activeBreakpoint,
 }: RenderBlockProps) {
   const isContainer = isContainerBlockType(block.type);
+  const hasChildren = (block.children?.length ?? 0) > 0;
   const {
     attributes,
     listeners,
@@ -171,7 +180,7 @@ const RenderBlock = memo(function RenderBlock({
   } = useSortable({
     id: block.id,
     disabled: previewMode,
-    data: { type: "block", isContainer, blockId: block.id },
+    data: { type: "block", isContainer, hasChildren, blockId: block.id },
   });
 
   const sortableStyle = {
@@ -211,10 +220,13 @@ const RenderBlock = memo(function RenderBlock({
     if (onUpdateBlock) onUpdateBlock({ ...block, config });
   };
 
+  const isDragActive = !!activeId && !previewMode;
+
   const previewOptions: PreviewOptions = {
     editable: isSelected && !!onUpdateBlock,
     onUpdateConfig: onUpdateBlock ? handleConfigUpdate : undefined,
     design: resolvedDesign,
+    isDragActive,
   };
 
   const childrenNodes = isContainer ? (
@@ -257,17 +269,29 @@ const RenderBlock = memo(function RenderBlock({
     );
   }
 
+  // While a drag is in progress, every container/section on the canvas
+  // (other than the dragged block itself) advertises that it accepts drops
+  // with a subtle dashed primary outline + tinted background. The active
+  // intent highlight (`showInside`) layers on top with a thicker outline.
+  const candidateTargetClass =
+    isContainer && isDragActive && !isDragging && !showInside
+      ? "outline outline-1 outline-dashed outline-primary/40 outline-offset-[-2px] bg-primary/5"
+      : "";
+
   return (
     <div
       ref={setNodeRef}
       style={{ ...sortableStyle, ...designStyle }}
       data-block-id={block.id}
+      data-drop-candidate={isContainer && isDragActive && !isDragging ? "true" : undefined}
       className={`group relative rounded-lg border-2 transition-all ${
         isSelected
           ? "border-primary ring-2 ring-primary/20"
           : "border-transparent hover:border-border"
       } ${isDragging ? "opacity-50 scale-[0.98]" : ""} ${
-        showInside ? "outline outline-2 outline-dashed outline-primary outline-offset-[-2px]" : ""
+        showInside
+          ? "outline outline-[3px] outline-dashed outline-primary outline-offset-[-3px] bg-primary/10"
+          : candidateTargetClass
       }`}
       onClick={(e) => {
         e.stopPropagation();
