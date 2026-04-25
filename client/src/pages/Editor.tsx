@@ -18,7 +18,7 @@ import {
 import { EditorToolbar } from "@/components/editor/EditorToolbar";
 import { ViewportSwitcher } from "@/components/editor/ViewportSwitcher";
 import { useEditorPage } from "@/components/editor/useEditorPage";
-import { defaultBlockConfigs } from "@/components/editor/editorDefaults";
+import { defaultBlockConfigs, defaultResponsiveFor } from "@/components/editor/editorDefaults";
 import type { Block } from "@shared/schema";
 
 const BlockSettings = lazy(() =>
@@ -131,6 +131,7 @@ export default function Editor() {
         config: {
           ...(defaultBlockConfigs[editor.activeLibraryType] ?? {}),
         },
+        responsive: defaultResponsiveFor(editor.activeLibraryType),
         order: 0,
       };
       return (
@@ -238,9 +239,11 @@ export default function Editor() {
                   onDeleteBlock={editor.handleDeleteBlock}
                   onDuplicateBlock={editor.handleDuplicateBlock}
                   onOpenSettings={editor.setSettingsBlockId}
+                  onUpdateBlock={editor.handleUpdateBlock}
                   previewMode={editor.previewMode}
                   dragIntent={editor.dragIntent}
                   activeId={editor.activeId}
+                  activeBreakpoint={editor.viewportSize}
                 />
               </div>
             </div>
@@ -269,6 +272,8 @@ export default function Editor() {
               onUpdate={editor.handleUpdateBlockConfig}
               onUpdateBlock={editor.handleUpdateBlock}
               storeId={editor.pageData?.storeId || editor.selectedStoreId || undefined}
+              activeBreakpoint={editor.viewportSize}
+              onChangeBreakpoint={editor.setViewportSize}
             />
           </Suspense>
         )}

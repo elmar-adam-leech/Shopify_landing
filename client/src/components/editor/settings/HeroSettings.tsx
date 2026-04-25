@@ -1,10 +1,15 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 
-export function HeroSettings({ config, onUpdate }: { config: Record<string, any>; onUpdate: (config: Record<string, any>) => void }) {
+export function HeroSettings({
+  config,
+  onUpdate,
+}: {
+  config: Record<string, any>;
+  onUpdate: (config: Record<string, any>) => void;
+}) {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
@@ -48,19 +53,9 @@ export function HeroSettings({ config, onUpdate }: { config: Record<string, any>
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="backgroundImage">Background Image URL</Label>
-        <Input
-          id="backgroundImage"
-          value={config.backgroundImage || ""}
-          onChange={(e) => onUpdate({ ...config, backgroundImage: e.target.value })}
-          placeholder="https://..."
-          data-testid="input-hero-bg"
-        />
-      </div>
-      <div className="space-y-2">
-        <Label>Overlay Opacity: {config.overlayOpacity || 50}%</Label>
+        <Label>Overlay Opacity: {config.overlayOpacity ?? 50}%</Label>
         <Slider
-          value={[config.overlayOpacity || 50]}
+          value={[config.overlayOpacity ?? 50]}
           onValueChange={(value) => onUpdate({ ...config, overlayOpacity: value[0] })}
           min={0}
           max={100}
@@ -68,22 +63,10 @@ export function HeroSettings({ config, onUpdate }: { config: Record<string, any>
           data-testid="slider-hero-opacity"
         />
       </div>
-      <div className="space-y-2">
-        <Label>Text Alignment</Label>
-        <Select
-          value={config.textAlign || "center"}
-          onValueChange={(value) => onUpdate({ ...config, textAlign: value })}
-        >
-          <SelectTrigger data-testid="select-hero-align">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="left">Left</SelectItem>
-            <SelectItem value="center">Center</SelectItem>
-            <SelectItem value="right">Right</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <p className="text-xs text-muted-foreground">
+        Background image, alignment, colors, and spacing live in the Design tab.
+        Double-click the title or subtitle on the canvas to edit text inline.
+      </p>
     </div>
   );
 }

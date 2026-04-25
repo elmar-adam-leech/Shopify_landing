@@ -3,7 +3,13 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-export function ButtonBlockSettings({ config, onUpdate }: { config: Record<string, any>; onUpdate: (config: Record<string, any>) => void }) {
+export function ButtonBlockSettings({
+  config,
+  onUpdate,
+}: {
+  config: Record<string, any>;
+  onUpdate: (config: Record<string, any>) => void;
+}) {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
@@ -27,7 +33,7 @@ export function ButtonBlockSettings({ config, onUpdate }: { config: Record<strin
         />
       </div>
       <div className="space-y-2">
-        <Label>Style</Label>
+        <Label>Variant</Label>
         <Select
           value={config.variant || "primary"}
           onValueChange={(value) => onUpdate({ ...config, variant: value })}
@@ -55,22 +61,6 @@ export function ButtonBlockSettings({ config, onUpdate }: { config: Record<strin
             <SelectItem value="small">Small</SelectItem>
             <SelectItem value="medium">Medium</SelectItem>
             <SelectItem value="large">Large</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="space-y-2">
-        <Label>Alignment</Label>
-        <Select
-          value={config.alignment || "center"}
-          onValueChange={(value) => onUpdate({ ...config, alignment: value })}
-        >
-          <SelectTrigger data-testid="select-button-align">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="left">Left</SelectItem>
-            <SelectItem value="center">Center</SelectItem>
-            <SelectItem value="right">Right</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -116,9 +106,9 @@ export function ButtonBlockSettings({ config, onUpdate }: { config: Record<strin
                 value={config.conversionValue !== undefined ? config.conversionValue : ""}
                 onChange={(e) => {
                   const value = e.target.value;
-                  onUpdate({ 
-                    ...config, 
-                    conversionValue: value === "" ? undefined : parseFloat(value) 
+                  onUpdate({
+                    ...config,
+                    conversionValue: value === "" ? undefined : parseFloat(value)
                   });
                 }}
                 placeholder="e.g., 99.99"

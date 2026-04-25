@@ -43,3 +43,28 @@ export function sanitizeProductHtml(html: string): string {
     },
   });
 }
+
+const INLINE_ALLOWED_TAGS = ["b", "strong", "i", "em", "u", "a", "br", "span"];
+const INLINE_ALLOWED_ATTRIBUTES: Record<string, string[]> = {
+  a: ["href", "target", "rel"],
+};
+
+export function sanitizeInlineHtml(html: string): string {
+  if (typeof html !== "string") return "";
+  return sanitizeHtml(html, {
+    allowedTags: INLINE_ALLOWED_TAGS,
+    allowedAttributes: INLINE_ALLOWED_ATTRIBUTES,
+    allowedSchemes: ["http", "https", "mailto", "tel"],
+    allowedSchemesByTag: {
+      a: ["http", "https", "mailto", "tel"],
+    },
+    transformTags: {
+      a: (tagName, attribs) => {
+        if (attribs.target === "_blank") {
+          attribs.rel = "noopener noreferrer";
+        }
+        return { tagName, attribs };
+      },
+    },
+  });
+}

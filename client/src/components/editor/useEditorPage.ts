@@ -16,7 +16,7 @@ import { v4 as uuidv4 } from "uuid";
 import { useStore } from "@/lib/store-context";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { defaultBlockConfigs, defaultPixelSettings } from "./editorDefaults";
+import { defaultBlockConfigs, defaultPixelSettings, defaultResponsiveFor } from "./editorDefaults";
 import {
   findBlockById,
   findParentOf,
@@ -466,6 +466,7 @@ export function useEditorPage() {
         id: uuidv4(),
         type: blockType,
         config: { ...defaultBlockConfigs[blockType] },
+        responsive: defaultResponsiveFor(blockType),
         order: target.index,
       };
       pushHistory();

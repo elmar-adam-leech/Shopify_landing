@@ -2,6 +2,8 @@ import type { Request } from "express";
 import type { Block, Page, PixelSettings } from "@shared/schema";
 import { escapeHtml, escapeJs } from "@shared/html-utils";
 import { allProviderConfigs } from "@shared/pixels";
+import { blocksToCss } from "@shared/responsive";
+import { sanitizeInlineHtml } from "./sanitize";
 
 interface Store {
   id: string;
@@ -232,20 +234,12 @@ function generateHydrationScript(store: Store, page: Page): string {
 }
 
 function renderHeroBlock(config: Record<string, any>, blockId: string): string {
-  const title = escapeHtml(config.title || "Your Headline Here");
-  const subtitle = escapeHtml(config.subtitle || "Add a compelling subtitle");
-  const buttonText = escapeHtml(config.buttonText || "Shop Now");
+  const title = sanitizeInlineHtml(config.title || "Your Headline Here");
+  const subtitle = sanitizeInlineHtml(config.subtitle || "Add a compelling subtitle");
+  const buttonText = sanitizeInlineHtml(config.buttonText || "Shop Now");
   const buttonUrl = escapeHtml(config.buttonUrl || "#");
-  const textAlign = config.textAlign || "center";
   const overlayOpacity = config.overlayOpacity ?? 50;
   const backgroundImage = config.backgroundImage || "";
-
-  const alignmentMap: Record<string, string> = {
-    left: "lp-align-left",
-    center: "lp-align-center",
-    right: "lp-align-right",
-  };
-  const alignmentClass = alignmentMap[textAlign] || "lp-align-center";
 
   return `
     <section class="lp-hero" data-block-id="${escapeHtml(blockId)}">
@@ -253,7 +247,7 @@ function renderHeroBlock(config: Record<string, any>, blockId: string): string {
         <img src="${escapeHtml(backgroundImage)}" alt="" class="lp-hero-bg" loading="lazy">
         <div class="lp-hero-overlay" style="opacity: ${overlayOpacity / 100}"></div>
       ` : ""}
-      <div class="lp-hero-content ${alignmentClass}">
+      <div class="lp-hero-content">
         <h1 class="lp-hero-title">${title}</h1>
         <p class="lp-hero-subtitle">${subtitle}</p>
         <a href="${buttonUrl}" class="lp-btn lp-btn-primary">${buttonText}</a>
@@ -380,28 +374,10 @@ function renderProductGridBlock(config: Record<string, any>, blockId: string): s
 
 function renderTextBlock(config: Record<string, any>, blockId: string): string {
   const content = config.content || "Add your text here...";
-  const textAlign = config.textAlign || "left";
-  const fontSize = config.fontSize || "medium";
-
-  const alignMap: Record<string, string> = {
-    left: "lp-text-left",
-    center: "lp-text-center",
-    right: "lp-text-right",
-  };
-  const alignClass = alignMap[textAlign] || "lp-text-left";
-
-  const sizeMap: Record<string, string> = {
-    small: "lp-text-sm",
-    medium: "lp-text-md",
-    large: "lp-text-lg",
-    xlarge: "lp-text-xl",
-  };
-  const sizeClass = sizeMap[fontSize] || "lp-text-md";
-
-  const sanitizedContent = escapeHtml(content).replace(/\n/g, "<br>");
+  const sanitizedContent = sanitizeInlineHtml(content.replace(/\n/g, "<br>"));
 
   return `
-    <section class="lp-text-block ${alignClass} ${sizeClass}" data-block-id="${escapeHtml(blockId)}">
+    <section class="lp-text-block" data-block-id="${escapeHtml(blockId)}">
       <div class="lp-text-content">${sanitizedContent}</div>
     </section>`;
 }
@@ -441,11 +417,10 @@ function renderImageBlock(config: Record<string, any>, blockId: string): string 
 }
 
 function renderButtonBlock(config: Record<string, any>, blockId: string): string {
-  const text = escapeHtml(config.text || "Click Here");
+  const text = sanitizeInlineHtml(config.text || "Click Here");
   const url = escapeHtml(config.url || "#");
   const variant = config.variant || "primary";
   const size = config.size || "medium";
-  const alignment = config.alignment || "center";
 
   const variantMap: Record<string, string> = {
     primary: "lp-btn-primary",
@@ -461,15 +436,8 @@ function renderButtonBlock(config: Record<string, any>, blockId: string): string
   };
   const sizeClass = sizeMap[size] || "lp-btn-md";
 
-  const alignMap: Record<string, string> = {
-    left: "lp-align-left",
-    center: "lp-align-center",
-    right: "lp-align-right",
-  };
-  const alignClass = alignMap[alignment] || "lp-align-center";
-
   return `
-    <section class="lp-button-block ${alignClass}" data-block-id="${escapeHtml(blockId)}">
+    <section class="lp-button-block" data-block-id="${escapeHtml(blockId)}">
       <a href="${url}" class="lp-btn ${variantClass} ${sizeClass}">${text}</a>
     </section>`;
 }
@@ -613,105 +581,167 @@ function renderChatBlock(config: Record<string, any>, blockId: string): string {
     </script>`;
 }
 
-const justifyMapCss: Record<string, string> = {
-  start: "flex-start",
-  center: "center",
-  end: "flex-end",
-  between: "space-between",
-  around: "space-around",
-};
-
-const alignMapCss: Record<string, string> = {
-  start: "flex-start",
-  center: "center",
-  end: "flex-end",
-  stretch: "stretch",
-};
-
-const sectionMaxWidthMap: Record<string, string> = {
-  narrow: "640px",
-  medium: "768px",
-  wide: "1200px",
-  full: "100%",
-};
-
-function buildContainerStyleString(config: Record<string, any>): string {
-  const direction = config.direction === "row" ? "row" : "column";
-  const gap = typeof config.gap === "number" ? config.gap : 16;
-  const justifyContent = justifyMapCss[config.justifyContent ?? "start"] ?? "flex-start";
-  const alignItems = alignMapCss[config.alignItems ?? "stretch"] ?? "stretch";
-  const wrap = config.wrap ? "wrap" : "nowrap";
-  const padding = config.padding ?? { top: 0, right: 0, bottom: 0, left: 0 };
-  const parts = [
-    "display:flex",
-    `flex-direction:${direction}`,
-    `gap:${gap}px`,
-    `justify-content:${justifyContent}`,
-    `align-items:${alignItems}`,
-    `flex-wrap:${wrap}`,
-    `padding:${padding.top ?? 0}px ${padding.right ?? 0}px ${padding.bottom ?? 0}px ${padding.left ?? 0}px`,
-  ];
-  if (config.background) {
-    parts.push(`background:${config.background}`);
-  }
-  return parts.join(";");
-}
-
 function renderContainerBlock(block: Block, pageId: string): string {
-  const config = block.config || {};
   const blockId = block.id;
   const childrenHtml = (block.children ?? [])
     .map((child) => renderBlock(child, pageId))
     .join("\n");
-  const style = buildContainerStyleString(config);
-  return `<div class="lp-container-block" data-block-id="${escapeHtml(blockId)}" style="${escapeHtml(style)}">${childrenHtml}</div>`;
+  return `<div class="lp-container-block" data-block-id="${escapeHtml(blockId)}">${childrenHtml}</div>`;
 }
 
 function renderSectionBlock(block: Block, pageId: string): string {
-  const config = block.config || {};
   const blockId = block.id;
   const childrenHtml = (block.children ?? [])
     .map((child) => renderBlock(child, pageId))
     .join("\n");
-  const innerStyle = buildContainerStyleString(config);
-  const maxWidth = sectionMaxWidthMap[config.maxWidth ?? "wide"] ?? "1200px";
-  const outerStyleParts = ["width:100%"];
-  if (config.background) outerStyleParts.push(`background:${config.background}`);
-  const outerStyle = outerStyleParts.join(";");
-  const innerWithMax = `${innerStyle};max-width:${maxWidth};margin-left:auto;margin-right:auto`;
-  return `<section class="lp-section-block" data-block-id="${escapeHtml(blockId)}" style="${escapeHtml(outerStyle)}"><div style="${escapeHtml(innerWithMax)}">${childrenHtml}</div></section>`;
+  return `<section class="lp-section-block" data-block-id="${escapeHtml(blockId)}">${childrenHtml}</section>`;
+}
+
+function safeOnClickUrl(raw: string): string | null {
+  if (typeof raw !== "string") return null;
+  const url = raw.trim();
+  if (!url || url.length > 2048) return null;
+  if (url.startsWith("/") || url.startsWith("#")) return url;
+  const lower = url.toLowerCase();
+  if (
+    lower.startsWith("http://") ||
+    lower.startsWith("https://") ||
+    lower.startsWith("mailto:") ||
+    lower.startsWith("tel:")
+  ) {
+    return url;
+  }
+  return null;
+}
+
+const SELF_INTERACTIVE_BLOCK_TYPES = new Set([
+  "button-block",
+  "phone-block",
+  "chat-block",
+]);
+
+function applyOnClickAction(block: Block, html: string): string {
+  const action = block.onClickAction;
+  if (!action || action.type === "none" || !action.value) return html;
+  const value = action.value;
+  const isSelfInteractive = SELF_INTERACTIVE_BLOCK_TYPES.has(block.type);
+
+  switch (action.type) {
+    case "link":
+    case "link-new-tab": {
+      const safe = safeOnClickUrl(value);
+      if (!safe) return html;
+      const target = action.type === "link-new-tab" ? ' target="_blank" rel="noopener noreferrer"' : "";
+      if (isSelfInteractive) {
+        // Don't wrap in another anchor — annotate so the runtime picks it up
+        const tgtAttr = action.type === "link-new-tab" ? ' data-onclick-target="_blank"' : "";
+        return `<div data-onclick-action="${action.type}" data-onclick-href="${escapeHtml(safe)}"${tgtAttr} style="display:contents;">${html}</div>`;
+      }
+      return `<a href="${escapeHtml(safe)}"${target} data-onclick-action="${action.type}" style="display:block;color:inherit;text-decoration:none;">${html}</a>`;
+    }
+    case "scroll": {
+      const anchor = value.startsWith("#") ? value : `#${value}`;
+      const safe = safeOnClickUrl(anchor);
+      if (!safe) return html;
+      if (isSelfInteractive) {
+        return `<div data-onclick-action="scroll" data-onclick-href="${escapeHtml(safe)}" style="display:contents;">${html}</div>`;
+      }
+      return `<a href="${escapeHtml(safe)}" data-onclick-action="scroll" style="display:block;color:inherit;text-decoration:none;">${html}</a>`;
+    }
+    case "open-form":
+      return `<div data-onclick-action="open-form" data-form-target="${escapeHtml(value)}" style="cursor:pointer;">${html}</div>`;
+    default:
+      return html;
+  }
+}
+
+function generateOnClickActionRuntime(): string {
+  return `<script>
+(function(){
+  function safeUrl(u){
+    if(typeof u!=='string')return null;
+    if(u.length>2048)return null;
+    if(u[0]==='/'||u[0]==='#')return u;
+    var lower=u.toLowerCase();
+    if(lower.indexOf('http://')===0||lower.indexOf('https://')===0||lower.indexOf('mailto:')===0||lower.indexOf('tel:')===0)return u;
+    return null;
+  }
+  document.addEventListener('click', function(ev){
+    var node = ev.target && ev.target.closest ? ev.target.closest('[data-onclick-action]') : null;
+    if(!node) return;
+    var action = node.getAttribute('data-onclick-action');
+    var href = node.getAttribute('data-onclick-href') || '';
+    if(action === 'link' || action === 'link-new-tab'){
+      var u = safeUrl(href); if(!u) return;
+      ev.preventDefault();
+      var newTab = action === 'link-new-tab' || node.getAttribute('data-onclick-target') === '_blank';
+      if(newTab){ window.open(u, '_blank', 'noopener,noreferrer'); }
+      else { window.location.assign(u); }
+    } else if(action === 'scroll'){
+      var u2 = safeUrl(href); if(!u2 || u2[0] !== '#') return;
+      var id = u2.slice(1);
+      var el = document.getElementById(id) || document.querySelector('[data-block-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');
+      if(!el) return;
+      ev.preventDefault();
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if(action === 'open-form'){
+      var target = node.getAttribute('data-form-target') || '';
+      if(!target) return;
+      var form = document.querySelector('[data-block-id="' + (window.CSS && CSS.escape ? CSS.escape(target) : target) + '"]');
+      if(!form) return;
+      ev.preventDefault();
+      form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      var input = form.querySelector('input,textarea,select');
+      if(input && input.focus) { try { input.focus(); } catch(e){} }
+    }
+  }, false);
+})();
+</script>`;
 }
 
 function renderBlock(block: Block, pageId: string): string {
   const config = block.config || {};
   const blockId = block.id;
 
+  let inner: string;
   switch (block.type) {
     case "hero-banner":
-      return renderHeroBlock(config, blockId);
+      inner = renderHeroBlock(config, blockId);
+      break;
     case "product-block":
-      return renderProductBlock(config, blockId);
+      inner = renderProductBlock(config, blockId);
+      break;
     case "product-grid":
-      return renderProductGridBlock(config, blockId);
+      inner = renderProductGridBlock(config, blockId);
+      break;
     case "text-block":
-      return renderTextBlock(config, blockId);
+      inner = renderTextBlock(config, blockId);
+      break;
     case "image-block":
-      return renderImageBlock(config, blockId);
+      inner = renderImageBlock(config, blockId);
+      break;
     case "button-block":
-      return renderButtonBlock(config, blockId);
+      inner = renderButtonBlock(config, blockId);
+      break;
     case "form-block":
-      return renderFormBlock(config, blockId, pageId);
+      inner = renderFormBlock(config, blockId, pageId);
+      break;
     case "phone-block":
-      return renderPhoneBlock(config, blockId);
+      inner = renderPhoneBlock(config, blockId);
+      break;
     case "chat-block":
-      return renderChatBlock(config, blockId);
+      inner = renderChatBlock(config, blockId);
+      break;
     case "container":
-      return renderContainerBlock(block, pageId);
+      inner = renderContainerBlock(block, pageId);
+      break;
     case "section":
-      return renderSectionBlock(block, pageId);
+      inner = renderSectionBlock(block, pageId);
+      break;
     default:
-      return `<section class="lp-block lp-block-unknown" data-block-id="${escapeHtml(blockId)}">Unknown block type: ${escapeHtml(block.type)}</section>`;
+      inner = `<section class="lp-block lp-block-unknown" data-block-id="${escapeHtml(blockId)}">Unknown block type: ${escapeHtml(block.type)}</section>`;
   }
+  return applyOnClickAction(block, inner);
 }
 
 function generateStyles(): string {
@@ -859,18 +889,25 @@ export async function renderPage(
   const pixelScripts = generatePixelScripts(pixels);
   const hydrationScript = generateHydrationScript(store, page);
   const styles = generateStyles();
+  const responsiveCss = blocksToCss(blocks);
+  const responsiveStyleTag = responsiveCss
+    ? `<style data-lp-responsive>${responsiveCss}</style>`
+    : "";
+  const onClickRuntime = generateOnClickActionRuntime();
 
   if (options.useLiquidWrapper) {
     const liquidHtml = `
 {{ content_for_header }}
 <div id="app-proxy-content">
 ${styles}
+${responsiveStyleTag}
 ${blocksHtml}
 ${pixelScripts}
 ${hydrationScript}
+${onClickRuntime}
 </div>
 {{ content_for_layout }}`;
-    
+
     return { html: liquidHtml, contentType: "application/liquid" };
   }
 
@@ -882,6 +919,7 @@ ${hydrationScript}
   <meta name="description" content="${description}">
   <title>${title}</title>
   ${styles}
+  ${responsiveStyleTag}
   ${pixelScripts}
 </head>
 <body>
@@ -889,6 +927,7 @@ ${hydrationScript}
     ${blocksHtml}
   </main>
   ${hydrationScript}
+  ${onClickRuntime}
 </body>
 </html>`;
 

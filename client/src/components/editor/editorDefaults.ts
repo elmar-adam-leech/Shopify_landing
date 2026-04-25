@@ -1,5 +1,10 @@
 import { v4 as uuidv4 } from "uuid";
-import type { BlockType, PixelSettings } from "@shared/schema";
+import type {
+  BlockType,
+  PixelSettings,
+  DesignProps,
+  ResponsiveDesign,
+} from "@shared/schema";
 
 export const defaultBlockConfigs: Record<BlockType, Record<string, any>> = {
   "hero-banner": {
@@ -8,7 +13,6 @@ export const defaultBlockConfigs: Record<BlockType, Record<string, any>> = {
     buttonText: "Shop Now",
     buttonUrl: "#",
     overlayOpacity: 50,
-    textAlign: "center",
   },
   "product-grid": {
     columns: 3,
@@ -35,8 +39,6 @@ export const defaultBlockConfigs: Record<BlockType, Record<string, any>> = {
   },
   "text-block": {
     content: "Add your text here...",
-    textAlign: "left",
-    fontSize: "medium",
   },
   "image-block": {
     src: "",
@@ -49,7 +51,6 @@ export const defaultBlockConfigs: Record<BlockType, Record<string, any>> = {
     url: "#",
     variant: "primary",
     size: "medium",
-    alignment: "center",
     trackConversion: false,
   },
   "form-block": {
@@ -72,24 +73,50 @@ export const defaultBlockConfigs: Record<BlockType, Record<string, any>> = {
     welcomeMessage: "Hi! How can we help you today?",
     position: "bottom-right",
   },
+  "container": {},
+  "section": {},
+};
+
+/**
+ * Seed `responsive.desktop` for newly created blocks. Centralising the visual
+ * defaults here means new blocks have explicit DesignProps from the moment
+ * they are dropped on the canvas instead of relying on `legacyDesignFromBlock`
+ * to back-fill from per-block config keys (which we are deprecating).
+ */
+const defaultDesktopDesign: Partial<Record<BlockType, DesignProps>> = {
+  "hero-banner": {
+    textAlign: "center",
+  },
+  "text-block": {
+    textAlign: "left",
+    fontSize: 16,
+  },
+  "button-block": {
+    textAlign: "center",
+  },
   "container": {
-    direction: "row",
+    display: "flex",
+    flexDirection: "row",
     gap: 16,
     alignItems: "stretch",
     justifyContent: "start",
-    wrap: false,
     padding: { top: 16, right: 16, bottom: 16, left: 16 },
   },
   "section": {
-    direction: "column",
+    display: "flex",
+    flexDirection: "column",
     gap: 24,
     alignItems: "stretch",
     justifyContent: "start",
-    wrap: false,
     padding: { top: 48, right: 24, bottom: 48, left: 24 },
-    maxWidth: "wide",
+    maxWidth: "1200px",
   },
 };
+
+export function defaultResponsiveFor(type: BlockType): ResponsiveDesign | undefined {
+  const desktop = defaultDesktopDesign[type];
+  return desktop ? { desktop } : undefined;
+}
 
 export const defaultPixelSettings: PixelSettings = {
   metaPixelEnabled: false,

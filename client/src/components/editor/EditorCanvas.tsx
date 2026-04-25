@@ -10,8 +10,9 @@ import { GripVertical, Settings, Trash2, Copy } from "lucide-react";
 import { memo, useMemo, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { Block, ContainerConfig } from "@shared/schema";
+import type { Block, ContainerConfig, DesignProps } from "@shared/schema";
 import { isContainerBlockType } from "@shared/schema";
+import { resolveDesign, designToStyle, type Breakpoint } from "@/lib/responsive";
 import { HeroBlockPreview } from "./blocks/HeroBlockPreview";
 import { ProductGridPreview } from "./blocks/ProductGridPreview";
 import { ProductBlockPreview } from "./blocks/ProductBlockPreview";
@@ -43,9 +44,11 @@ interface EditorCanvasProps {
   onDeleteBlock: (id: string) => void;
   onDuplicateBlock: (id: string) => void;
   onOpenSettings: (id: string) => void;
+  onUpdateBlock?: (block: Block) => void;
   previewMode?: boolean;
   dragIntent?: DragIntent;
   activeId?: string | null;
+  activeBreakpoint?: Breakpoint;
 }
 
 interface RenderBlockProps {
@@ -55,25 +58,64 @@ interface RenderBlockProps {
   onDeleteBlock: (id: string) => void;
   onDuplicateBlock: (id: string) => void;
   onOpenSettings: (id: string) => void;
+  onUpdateBlock?: (block: Block) => void;
   previewMode?: boolean;
   dragIntent?: DragIntent;
   activeId?: string | null;
+  activeBreakpoint: Breakpoint;
 }
 
-export function getBlockPreview(block: Block, children?: ReactNode): JSX.Element {
+interface PreviewOptions {
+  editable?: boolean;
+  onUpdateConfig?: (config: Record<string, any>) => void;
+  /**
+   * Resolved design for the active breakpoint, forwarded to previews so that
+   * inner alignment / typography reflect breakpoint changes (in addition to
+   * the outer wrapper's inline style applied by `RenderBlock`).
+   */
+  design?: DesignProps;
+}
+
+export function getBlockPreview(
+  block: Block,
+  children?: ReactNode,
+  options: PreviewOptions = {}
+): JSX.Element {
+  const { editable, onUpdateConfig, design } = options;
   switch (block.type) {
     case "hero-banner":
-      return <HeroBlockPreview config={block.config} />;
+      return (
+        <HeroBlockPreview
+          config={block.config}
+          editable={editable}
+          onUpdateConfig={onUpdateConfig}
+          design={design}
+        />
+      );
     case "product-grid":
       return <ProductGridPreview config={block.config} />;
     case "product-block":
       return <ProductBlockPreview config={block.config} />;
     case "text-block":
-      return <TextBlockPreview config={block.config} />;
+      return (
+        <TextBlockPreview
+          config={block.config}
+          editable={editable}
+          onUpdateConfig={onUpdateConfig}
+          design={design}
+        />
+      );
     case "image-block":
       return <ImageBlockPreview config={block.config} />;
     case "button-block":
-      return <ButtonBlockPreview config={block.config} />;
+      return (
+        <ButtonBlockPreview
+          config={block.config}
+          editable={editable}
+          onUpdateConfig={onUpdateConfig}
+          design={design}
+        />
+      );
     case "form-block":
       return <FormBlockPreview config={block.config} />;
     case "phone-block":
@@ -85,6 +127,7 @@ export function getBlockPreview(block: Block, children?: ReactNode): JSX.Element
         <ContainerPreview
           config={block.config}
           hasChildren={!!children && (block.children?.length ?? 0) > 0}
+          design={design}
         >
           {children}
         </ContainerPreview>
@@ -94,6 +137,7 @@ export function getBlockPreview(block: Block, children?: ReactNode): JSX.Element
         <SectionPreview
           config={block.config}
           hasChildren={!!children && (block.children?.length ?? 0) > 0}
+          design={design}
         >
           {children}
         </SectionPreview>
@@ -110,9 +154,11 @@ const RenderBlock = memo(function RenderBlock({
   onDeleteBlock,
   onDuplicateBlock,
   onOpenSettings,
+  onUpdateBlock,
   previewMode,
   dragIntent,
   activeId,
+  activeBreakpoint,
 }: RenderBlockProps) {
   const isContainer = isContainerBlockType(block.type);
   const {
@@ -128,7 +174,7 @@ const RenderBlock = memo(function RenderBlock({
     data: { type: "block", isContainer, blockId: block.id },
   });
 
-  const style = {
+  const sortableStyle = {
     transform: CSS.Transform.toString(transform),
     transition,
   };
@@ -147,6 +193,30 @@ const RenderBlock = memo(function RenderBlock({
   const showAfter = intentMatches && dragIntent?.position === "after";
   const showInside = intentMatches && dragIntent?.position === "inside" && isContainer;
 
+  const resolvedDesign = useMemo(
+    () => resolveDesign(block, activeBreakpoint),
+    [block, activeBreakpoint]
+  );
+  // For container/section blocks, layout-affecting styles (display:flex, gap,
+  // padding, alignment, etc.) live on the preview's inner element so that the
+  // children of the block are direct flex children. Applying the same styles
+  // on the outer selection wrapper would double padding and create an extra
+  // flex layer, so we omit them here.
+  const designStyle = useMemo(
+    () => (isContainer ? {} : designToStyle(resolvedDesign)),
+    [resolvedDesign, isContainer]
+  );
+
+  const handleConfigUpdate = (config: Record<string, any>) => {
+    if (onUpdateBlock) onUpdateBlock({ ...block, config });
+  };
+
+  const previewOptions: PreviewOptions = {
+    editable: isSelected && !!onUpdateBlock,
+    onUpdateConfig: onUpdateBlock ? handleConfigUpdate : undefined,
+    design: resolvedDesign,
+  };
+
   const childrenNodes = isContainer ? (
     <SortableContext
       items={childItemIds}
@@ -161,9 +231,11 @@ const RenderBlock = memo(function RenderBlock({
           onDeleteBlock={onDeleteBlock}
           onDuplicateBlock={onDuplicateBlock}
           onOpenSettings={onOpenSettings}
+          onUpdateBlock={onUpdateBlock}
           previewMode={previewMode}
           dragIntent={dragIntent}
           activeId={activeId}
+          activeBreakpoint={activeBreakpoint}
         />
       ))}
     </SortableContext>
@@ -173,11 +245,14 @@ const RenderBlock = memo(function RenderBlock({
     return (
       <div
         ref={setNodeRef}
-        style={style}
+        style={{ ...sortableStyle, ...designStyle }}
+        data-block-id={block.id}
         className="rounded-lg overflow-hidden"
         data-testid={`canvas-block-${block.id}`}
       >
-        {isContainer ? getBlockPreview(block, childrenNodes) : getBlockPreview(block)}
+        {isContainer
+          ? getBlockPreview(block, childrenNodes, { design: resolvedDesign })
+          : getBlockPreview(block, undefined, { design: resolvedDesign })}
       </div>
     );
   }
@@ -185,7 +260,8 @@ const RenderBlock = memo(function RenderBlock({
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={{ ...sortableStyle, ...designStyle }}
+      data-block-id={block.id}
       className={`group relative rounded-lg border-2 transition-all ${
         isSelected
           ? "border-primary ring-2 ring-primary/20"
@@ -267,7 +343,9 @@ const RenderBlock = memo(function RenderBlock({
         </div>
       </div>
       <div className="overflow-hidden rounded-lg">
-        {isContainer ? getBlockPreview(block, childrenNodes) : getBlockPreview(block)}
+        {isContainer
+          ? getBlockPreview(block, childrenNodes, previewOptions)
+          : getBlockPreview(block, undefined, previewOptions)}
       </div>
     </div>
   );
@@ -280,9 +358,11 @@ export function EditorCanvas({
   onDeleteBlock,
   onDuplicateBlock,
   onOpenSettings,
+  onUpdateBlock,
   previewMode = false,
   dragIntent = null,
   activeId = null,
+  activeBreakpoint = "desktop",
 }: EditorCanvasProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: ROOT_DROPPABLE_ID,
@@ -341,9 +421,11 @@ export function EditorCanvas({
                     onDeleteBlock={onDeleteBlock}
                     onDuplicateBlock={onDuplicateBlock}
                     onOpenSettings={onOpenSettings}
+                    onUpdateBlock={onUpdateBlock}
                     previewMode={previewMode}
                     dragIntent={dragIntent}
                     activeId={activeId}
+                    activeBreakpoint={activeBreakpoint}
                   />
                 ))}
               </div>

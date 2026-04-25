@@ -245,6 +245,10 @@ export const blockVariantSchema = z.object({
   name: z.string().default("Variant"),
   config: z.record(z.any()),
   trafficPercentage: z.number().min(0).max(100).default(50),
+  /** Per-variant responsive design overrides. When omitted, the variant
+   * inherits the block-level `responsive`. Defined as `z.lazy` because
+   * `responsiveDesignSchema` is declared further down in this file. */
+  responsive: z.lazy(() => responsiveDesignSchema).optional(),
 });
 
 export type BlockVariant = z.infer<typeof blockVariantSchema>;
@@ -334,6 +338,56 @@ export const visibilityRulesSchema = z.object({
 
 export type VisibilityRules = z.infer<typeof visibilityRulesSchema>;
 
+export const designPropsSchema = z.object({
+  padding: paddingSchema.optional(),
+  margin: paddingSchema.optional(),
+  display: z.enum(["block", "flex", "grid", "inline-block", "none"]).optional(),
+  flexDirection: z.enum(["row", "column", "row-reverse", "column-reverse"]).optional(),
+  gap: z.number().optional(),
+  justifyContent: z
+    .enum(["start", "center", "end", "between", "around", "evenly"])
+    .optional(),
+  alignItems: z.enum(["start", "center", "end", "stretch", "baseline"]).optional(),
+  flexWrap: z.enum(["wrap", "nowrap"]).optional(),
+  fontSize: z.number().optional(),
+  fontWeight: z.number().optional(),
+  lineHeight: z.number().optional(),
+  letterSpacing: z.number().optional(),
+  color: z.string().optional(),
+  textAlign: z.enum(["left", "center", "right", "justify"]).optional(),
+  backgroundColor: z.string().optional(),
+  backgroundImage: z.string().optional(),
+  backgroundSize: z.enum(["cover", "contain", "auto"]).optional(),
+  backgroundPosition: z.string().optional(),
+  borderWidth: z.number().optional(),
+  borderColor: z.string().optional(),
+  borderStyle: z.enum(["solid", "dashed", "dotted", "double", "none"]).optional(),
+  borderRadius: z.number().optional(),
+  width: z.string().optional(),
+  height: z.string().optional(),
+  maxWidth: z.string().optional(),
+  minHeight: z.string().optional(),
+});
+
+export type DesignProps = z.infer<typeof designPropsSchema>;
+
+export const responsiveDesignSchema = z.object({
+  desktop: designPropsSchema.optional(),
+  tablet: designPropsSchema.optional(),
+  mobile: designPropsSchema.optional(),
+});
+
+export type ResponsiveDesign = z.infer<typeof responsiveDesignSchema>;
+
+export const onClickActionSchema = z.object({
+  type: z
+    .enum(["none", "link", "link-new-tab", "scroll", "open-form"])
+    .default("none"),
+  value: z.string().optional(),
+});
+
+export type OnClickAction = z.infer<typeof onClickActionSchema>;
+
 export type Block = {
   id: string;
   type: BlockType;
@@ -342,6 +396,8 @@ export type Block = {
   variants?: BlockVariant[];
   abTestEnabled?: boolean;
   visibilityRules?: VisibilityRules;
+  responsive?: ResponsiveDesign;
+  onClickAction?: OnClickAction;
   sectionId?: string;
   /** @deprecated Legacy freeform positioning — see {@link blockPositionSchema}. */
   position?: BlockPosition;
@@ -357,6 +413,8 @@ export const blockSchema: z.ZodType<Block, z.ZodTypeDef, any> = z.lazy(() =>
     variants: z.array(blockVariantSchema).optional(),
     abTestEnabled: z.boolean().optional(),
     visibilityRules: visibilityRulesSchema.optional(),
+    responsive: responsiveDesignSchema.optional(),
+    onClickAction: onClickActionSchema.optional(),
     sectionId: z.string().optional(),
     position: blockPositionSchema.optional(),
     children: z.array(blockSchema).optional(),

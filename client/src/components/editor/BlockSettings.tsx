@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { FlaskConical, Eye } from "lucide-react";
+import { Palette, Type, MousePointerClick } from "lucide-react";
 import type { Block, BlockType } from "@shared/schema";
+import type { Breakpoint } from "@/lib/responsive";
 
 import { HeroSettings } from "./settings/HeroSettings";
 import { ProductGridSettings } from "./settings/ProductGridSettings";
@@ -17,9 +18,8 @@ import { FormBlockSettings } from "./settings/FormBlockSettings";
 import { PhoneBlockSettings } from "./settings/PhoneBlockSettings";
 import { ChatBlockSettings } from "./settings/ChatBlockSettings";
 import { ProductBlockSettings } from "./settings/ProductBlockSettings";
-import { ContainerSettings } from "./settings/ContainerSettings";
-import { ABTestingPanel } from "./settings/ABTestingPanel";
-import { VisibilityPanel } from "./settings/VisibilityPanel";
+import { DesignPanel } from "./settings/DesignPanel";
+import { InteractionsPanel } from "./settings/InteractionsPanel";
 
 interface BlockSettingsProps {
   block: Block | null;
@@ -29,11 +29,13 @@ interface BlockSettingsProps {
   onUpdateBlock?: (block: Block) => void;
   storeId?: string;
   userId?: string;
+  activeBreakpoint: Breakpoint;
+  onChangeBreakpoint: (b: Breakpoint) => void;
 }
 
-function getSettingsComponent(
-  type: BlockType, 
-  config: Record<string, any>, 
+function getContentSettings(
+  type: BlockType,
+  config: Record<string, any>,
   onUpdate: (config: Record<string, any>) => void,
   storeId?: string,
   userId?: string
@@ -58,22 +60,40 @@ function getSettingsComponent(
     case "chat-block":
       return <ChatBlockSettings config={config} onUpdate={onUpdate} />;
     case "container":
-      return <ContainerSettings config={config} onUpdate={onUpdate} />;
     case "section":
-      return <ContainerSettings config={config} onUpdate={onUpdate} isSection />;
+      return (
+        <div
+          className="text-sm text-muted-foreground"
+          data-testid="content-empty-container"
+        >
+          Layout, spacing, alignment and width for {type === "section" ? "sections" : "containers"} live in the
+          <strong className="font-medium"> Design</strong> tab. Drag blocks
+          inside on the canvas to add content.
+        </div>
+      );
     default:
-      return <div>No settings available</div>;
+      return <div className="text-sm text-muted-foreground">No content settings available for this block.</div>;
   }
 }
 
-export function BlockSettings({ block, open, onClose, onUpdate, onUpdateBlock, storeId, userId }: BlockSettingsProps) {
-  const [activeTab, setActiveTab] = useState("settings");
+export function BlockSettings({
+  block,
+  open,
+  onClose,
+  onUpdate,
+  onUpdateBlock,
+  storeId,
+  userId,
+  activeBreakpoint,
+  onChangeBreakpoint,
+}: BlockSettingsProps) {
+  const [activeTab, setActiveTab] = useState("design");
   const [editingVariantId, setEditingVariantId] = useState<string | null>(null);
-  
+
   if (!block) return null;
 
-  const editingVariant = editingVariantId 
-    ? block.variants?.find(v => v.id === editingVariantId)
+  const editingVariant = editingVariantId
+    ? block.variants?.find((v) => v.id === editingVariantId)
     : null;
   const editingConfig = editingVariant ? editingVariant.config : block.config;
   const editingLabel = editingVariant ? editingVariant.name : "Original";
@@ -82,7 +102,7 @@ export function BlockSettings({ block, open, onClose, onUpdate, onUpdateBlock, s
     if (editingVariantId && onUpdateBlock && block.variants) {
       onUpdateBlock({
         ...block,
-        variants: block.variants.map(v => 
+        variants: block.variants.map((v) =>
           v.id === editingVariantId ? { ...v, config: newConfig } : v
         ),
       });
@@ -93,7 +113,7 @@ export function BlockSettings({ block, open, onClose, onUpdate, onUpdateBlock, s
 
   const handleEditVariant = (variantId: string | null) => {
     setEditingVariantId(variantId);
-    setActiveTab("settings");
+    setActiveTab("content");
   };
 
   const handleClose = () => {
@@ -103,7 +123,7 @@ export function BlockSettings({ block, open, onClose, onUpdate, onUpdateBlock, s
 
   return (
     <Sheet open={open} onOpenChange={(isOpen) => !isOpen && handleClose()}>
-      <SheetContent className="w-full max-w-[400px] p-4 sm:p-6" data-testid="block-settings-panel">
+      <SheetContent className="w-full max-w-[420px] p-4 sm:p-6" data-testid="block-settings-panel">
         <SheetHeader>
           <SheetTitle className="capitalize">
             {block.type.replace("-", " ")} Settings
@@ -111,26 +131,40 @@ export function BlockSettings({ block, open, onClose, onUpdate, onUpdateBlock, s
         </SheetHeader>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
           <TabsList className="grid mb-4 grid-cols-3">
-            <TabsTrigger value="settings" data-testid="tab-block-settings">
-              Settings
+            <TabsTrigger value="design" data-testid="tab-block-design">
+              <Palette className="h-4 w-4 mr-1" />
+              Design
             </TabsTrigger>
-            <TabsTrigger value="visibility" data-testid="tab-block-visibility">
-              <Eye className="h-4 w-4 mr-1" />
-              Visibility
+            <TabsTrigger value="content" data-testid="tab-block-content">
+              <Type className="h-4 w-4 mr-1" />
+              Content
             </TabsTrigger>
-            <TabsTrigger value="ab-test" data-testid="tab-block-ab-test">
-              <FlaskConical className="h-4 w-4 mr-1" />
-              A/B Test
+            <TabsTrigger value="interactions" data-testid="tab-block-interactions">
+              <MousePointerClick className="h-4 w-4 mr-1" />
+              Interactions
             </TabsTrigger>
           </TabsList>
           <ScrollArea className="h-[calc(100vh-180px)] pr-4 overflow-hidden">
-            <TabsContent value="settings" className="mt-0">
+            <TabsContent value="design" className="mt-0">
+              {onUpdateBlock ? (
+                <DesignPanel
+                  block={block}
+                  activeBreakpoint={activeBreakpoint}
+                  onChangeBreakpoint={onChangeBreakpoint}
+                  onUpdateBlock={onUpdateBlock}
+                  variantId={editingVariantId ?? undefined}
+                />
+              ) : (
+                <div className="text-sm text-muted-foreground">Design editing unavailable.</div>
+              )}
+            </TabsContent>
+            <TabsContent value="content" className="mt-0">
               {editingVariantId && (
                 <Card className="p-3 mb-4 bg-primary/5">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <Badge variant="outline">{editingLabel}</Badge>
-                      <span className="text-sm">Editing variant settings</span>
+                      <span className="text-sm">Editing variant content</span>
                     </div>
                     <Button
                       variant="ghost"
@@ -143,14 +177,11 @@ export function BlockSettings({ block, open, onClose, onUpdate, onUpdateBlock, s
                   </div>
                 </Card>
               )}
-              {getSettingsComponent(block.type, editingConfig, handleConfigUpdate, storeId, userId)}
+              {getContentSettings(block.type, editingConfig, handleConfigUpdate, storeId, userId)}
             </TabsContent>
-            <TabsContent value="visibility" className="mt-0">
-              <VisibilityPanel block={block} onUpdateBlock={onUpdateBlock} />
-            </TabsContent>
-            <TabsContent value="ab-test" className="mt-0">
-              <ABTestingPanel 
-                block={block} 
+            <TabsContent value="interactions" className="mt-0">
+              <InteractionsPanel
+                block={block}
                 onUpdateBlock={onUpdateBlock}
                 onEditVariant={handleEditVariant}
               />
