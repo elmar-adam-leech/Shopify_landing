@@ -11,6 +11,7 @@ export {
   resolveInherited,
   designToCss,
   blocksToCss,
+  migrateBlocksResponsive,
 } from "@shared/responsive";
 
 function paddingToCss(p: Padding | undefined, prop: "padding" | "margin"): CSSProperties {

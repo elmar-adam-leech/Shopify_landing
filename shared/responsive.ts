@@ -43,6 +43,38 @@ const TEXT_ALIGN_TO_JUSTIFY: Record<string, "start" | "center" | "end"> = {
   right: "end",
 };
 
+/**
+ * Plan for retiring duplicated visual fields in per-block configs
+ * ----------------------------------------------------------------
+ * Phase 3 added a unified `responsive` design field on every block. Several
+ * per-type config schemas in `shared/schema/blocks.ts` still own visual fields
+ * that overlap with that responsive design system:
+ *
+ *   - `containerConfigSchema` / `sectionBlockConfigSchema`:
+ *       direction, gap, alignItems, justifyContent, wrap, padding, background, maxWidth
+ *   - `textBlockConfigSchema`:    textAlign, fontSize
+ *   - `heroBlockConfigSchema`:    textAlign, backgroundImage
+ *   - `buttonBlockConfigSchema`:  alignment (mapped to textAlign / justifyContent)
+ *
+ * `legacyDesignFromBlock` translates those legacy keys into `DesignProps` so old
+ * pages still render correctly. `migrateBlocksResponsive` copies the translated
+ * values into `block.responsive.desktop`, which means once a page has been
+ * loaded and saved post-Phase-4 the `responsive` field is the single source of
+ * truth for those visual properties.
+ *
+ * Retirement steps (future tasks, intentionally NOT done here):
+ *   1. Wait until enough live pages have been re-saved and therefore migrated
+ *      into `responsive.desktop` (run a backfill script if waiting is too slow).
+ *   2. Drop the visual fields from the config schemas above and update the
+ *      per-type Settings panels to stop reading/writing them.
+ *   3. Remove the corresponding branches from `legacyDesignFromBlock` so it can
+ *      eventually be deleted entirely.
+ *   4. Remove `migrateBlocksResponsive` once `legacyDesignFromBlock` is gone —
+ *      the migration is a no-op without legacy fields to translate.
+ *
+ * Until step 1 is complete, both `legacyDesignFromBlock` and the migration are
+ * required so the editor matches what users currently see on their pages.
+ */
 export function legacyDesignFromBlock(block: Block): DesignProps {
   const config = (block.config ?? {}) as Record<string, unknown>;
   const out: DesignProps = {};
@@ -349,6 +381,49 @@ export function designToCss(
   const mobile = designToCssRules(mobileProps);
   if (mobile) parts.push(`@media (max-width:767px){${selector}{${mobile}}}`);
   return parts.join("");
+}
+
+/**
+ * Backfill `block.responsive.desktop` from `legacyDesignFromBlock` for every
+ * block in the tree. Existing keys in `responsive.desktop` win, so this is
+ * non-destructive — it only fills in values that aren't already explicit.
+ *
+ * Used at editor load time so the Design panel reflects each block's actual
+ * current styling on first open instead of showing every desktop value as an
+ * inherited placeholder. Idempotent: running it on already-migrated blocks
+ * returns `changed: false` and the same references.
+ */
+export function migrateBlocksResponsive(
+  blocks: Block[]
+): { blocks: Block[]; changed: boolean } {
+  let changed = false;
+  const migrate = (b: Block): Block => {
+    const migratedChildren = b.children?.map(migrate);
+    const childrenChanged =
+      !!migratedChildren &&
+      (migratedChildren.length !== (b.children?.length ?? 0) ||
+        migratedChildren.some((c, i) => c !== b.children![i]));
+    const legacy = legacyDesignFromBlock(b);
+    const legacyKeys = Object.keys(legacy) as (keyof DesignProps)[];
+    let nextResponsive = b.responsive;
+    if (legacyKeys.length > 0) {
+      const existingDesktop = (b.responsive?.desktop ?? {}) as Record<string, unknown>;
+      const missingKey = legacyKeys.find((k) => existingDesktop[k as string] === undefined);
+      if (missingKey) {
+        const mergedDesktop: DesignProps = { ...legacy, ...(b.responsive?.desktop ?? {}) };
+        nextResponsive = { ...(b.responsive ?? {}), desktop: mergedDesktop };
+        changed = true;
+      }
+    }
+    if (nextResponsive !== b.responsive || childrenChanged) {
+      const out: Block = { ...b, responsive: nextResponsive };
+      if (migratedChildren) out.children = migratedChildren;
+      return out;
+    }
+    return b;
+  };
+  const next = blocks.map(migrate);
+  return { blocks: changed ? next : blocks, changed };
 }
 
 /**

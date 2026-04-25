@@ -17,6 +17,7 @@ import { useStore } from "@/lib/store-context";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { defaultBlockConfigs, defaultPixelSettings, defaultResponsiveFor } from "./editorDefaults";
+import { migrateBlocksResponsive } from "@/lib/responsive";
 import {
   findBlockById,
   findParentOf,
@@ -214,7 +215,8 @@ export function useEditorPage() {
       if (templateBlocks) {
         try {
           const parsed = JSON.parse(templateBlocks) as Block[];
-          setBlocks(parsed);
+          const { blocks: migrated } = migrateBlocksResponsive(parsed);
+          setBlocks(migrated);
           setHasChanges(parsed.length > 0);
           sessionStorage.removeItem("templateBlocks");
         } catch (e) {
@@ -245,12 +247,15 @@ export function useEditorPage() {
 
   useEffect(() => {
     if (pageData && !isNewPage) {
-      setBlocks(pageData.blocks || []);
+      const { blocks: migrated } = migrateBlocksResponsive(pageData.blocks || []);
+      setBlocks(migrated);
       setSections(pageData.sections || []);
       setTitle(pageData.title);
       setSlug(pageData.slug || "");
       setPixelSettings(pageData.pixelSettings || defaultPixelSettings);
       setAllowIndexing(pageData.allowIndexing ?? true);
+      // Backfilled responsive defaults are intentionally not flagged as
+      // changes — they only get persisted when the user makes a real edit.
       setHasChanges(false);
       resetHistory();
     }
@@ -585,7 +590,8 @@ export function useEditorPage() {
 
   const handleApplyTemplate = useCallback((templateBlocks: Block[]) => {
     pushHistory();
-    setBlocks(templateBlocks);
+    const { blocks: migrated } = migrateBlocksResponsive(templateBlocks);
+    setBlocks(migrated);
     setHasChanges(true);
     toast({
       title: "Template applied",
@@ -595,7 +601,8 @@ export function useEditorPage() {
 
   const handleRestore = useCallback((restoredPage: any) => {
     if (restoredPage) {
-      setBlocks(restoredPage.blocks || []);
+      const { blocks: migrated } = migrateBlocksResponsive(restoredPage.blocks || []);
+      setBlocks(migrated);
       setTitle(restoredPage.title);
       setPixelSettings(restoredPage.pixelSettings || defaultPixelSettings);
       setHasChanges(false);
