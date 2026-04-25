@@ -17,6 +17,7 @@ import { FormBlockSettings } from "./settings/FormBlockSettings";
 import { PhoneBlockSettings } from "./settings/PhoneBlockSettings";
 import { ChatBlockSettings } from "./settings/ChatBlockSettings";
 import { ProductBlockSettings } from "./settings/ProductBlockSettings";
+import { ContainerSettings } from "./settings/ContainerSettings";
 import { ABTestingPanel } from "./settings/ABTestingPanel";
 import { VisibilityPanel } from "./settings/VisibilityPanel";
 
@@ -56,6 +57,10 @@ function getSettingsComponent(
       return <PhoneBlockSettings config={config} onUpdate={onUpdate} />;
     case "chat-block":
       return <ChatBlockSettings config={config} onUpdate={onUpdate} />;
+    case "container":
+      return <ContainerSettings config={config} onUpdate={onUpdate} />;
+    case "section":
+      return <ContainerSettings config={config} onUpdate={onUpdate} isSection />;
     default:
       return <div>No settings available</div>;
   }

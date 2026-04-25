@@ -1,15 +1,17 @@
 import { useDraggable } from "@dnd-kit/core";
-import { 
-  Layout, 
-  Grid3X3, 
+import {
+  Layout,
+  Grid3X3,
   Package,
-  Type, 
-  Image, 
-  MousePointer, 
-  FileText, 
-  Phone, 
+  Type,
+  Image,
+  MousePointer,
+  FileText,
+  Phone,
   MessageCircle,
-  GripVertical 
+  GripVertical,
+  Square,
+  LayoutTemplate,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -20,10 +22,24 @@ interface BlockLibraryItem {
   label: string;
   description: string;
   icon: React.ReactNode;
-  category: "content" | "products" | "conversion" | "tracking";
+  category: "layout" | "content" | "products" | "conversion" | "tracking";
 }
 
 const blockLibrary: BlockLibraryItem[] = [
+  {
+    type: "section",
+    label: "Section",
+    description: "Full-width wrapper for grouping rows",
+    icon: <LayoutTemplate className="h-5 w-5" />,
+    category: "layout",
+  },
+  {
+    type: "container",
+    label: "Container",
+    description: "Flex group — row or column with auto-layout",
+    icon: <Square className="h-5 w-5" />,
+    category: "layout",
+  },
   {
     type: "hero-banner",
     label: "Hero Banner",
@@ -90,6 +106,7 @@ const blockLibrary: BlockLibraryItem[] = [
 ];
 
 const categories = [
+  { id: "layout", label: "Layout" },
   { id: "content", label: "Content Blocks" },
   { id: "products", label: "Product Blocks" },
   { id: "conversion", label: "Conversion Blocks" },

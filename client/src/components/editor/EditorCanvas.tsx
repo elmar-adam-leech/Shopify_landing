@@ -2,14 +2,16 @@ import { useDroppable } from "@dnd-kit/core";
 import {
   SortableContext,
   verticalListSortingStrategy,
+  horizontalListSortingStrategy,
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, Settings, Trash2, Copy } from "lucide-react";
-import { memo, useMemo } from "react";
+import { memo, useMemo, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { Block } from "@shared/schema";
+import type { Block, ContainerConfig } from "@shared/schema";
+import { isContainerBlockType } from "@shared/schema";
 import { HeroBlockPreview } from "./blocks/HeroBlockPreview";
 import { ProductGridPreview } from "./blocks/ProductGridPreview";
 import { ProductBlockPreview } from "./blocks/ProductBlockPreview";
@@ -19,6 +21,20 @@ import { ButtonBlockPreview } from "./blocks/ButtonBlockPreview";
 import { FormBlockPreview } from "./blocks/FormBlockPreview";
 import { PhoneBlockPreview } from "./blocks/PhoneBlockPreview";
 import { ChatBlockPreview } from "./blocks/ChatBlockPreview";
+import { ContainerPreview } from "./blocks/ContainerPreview";
+import { SectionPreview } from "./blocks/SectionPreview";
+
+export type DropPosition = "before" | "after" | "inside";
+export type DragIntent = { targetId: string; position: DropPosition } | null;
+
+export const ROOT_DROPPABLE_ID = "editor-canvas";
+export const ROOT_INTENT_ID = "__root__";
+
+export function getContainerDirection(block: Block): "row" | "column" {
+  if (!isContainerBlockType(block.type)) return "column";
+  const direction = (block.config as ContainerConfig).direction;
+  return direction === "row" ? "row" : "column";
+}
 
 interface EditorCanvasProps {
   blocks: Block[];
@@ -28,19 +44,23 @@ interface EditorCanvasProps {
   onDuplicateBlock: (id: string) => void;
   onOpenSettings: (id: string) => void;
   previewMode?: boolean;
+  dragIntent?: DragIntent;
+  activeId?: string | null;
 }
 
-interface SortableBlockProps {
+interface RenderBlockProps {
   block: Block;
-  isSelected: boolean;
-  onSelect: () => void;
-  onDelete: () => void;
-  onDuplicate: () => void;
-  onOpenSettings: () => void;
+  selectedBlockId: string | null;
+  onSelectBlock: (id: string | null) => void;
+  onDeleteBlock: (id: string) => void;
+  onDuplicateBlock: (id: string) => void;
+  onOpenSettings: (id: string) => void;
   previewMode?: boolean;
+  dragIntent?: DragIntent;
+  activeId?: string | null;
 }
 
-function getBlockPreview(block: Block) {
+export function getBlockPreview(block: Block, children?: ReactNode): JSX.Element {
   switch (block.type) {
     case "hero-banner":
       return <HeroBlockPreview config={block.config} />;
@@ -60,20 +80,41 @@ function getBlockPreview(block: Block) {
       return <PhoneBlockPreview config={block.config} />;
     case "chat-block":
       return <ChatBlockPreview config={block.config} />;
+    case "container":
+      return (
+        <ContainerPreview
+          config={block.config}
+          hasChildren={!!children && (block.children?.length ?? 0) > 0}
+        >
+          {children}
+        </ContainerPreview>
+      );
+    case "section":
+      return (
+        <SectionPreview
+          config={block.config}
+          hasChildren={!!children && (block.children?.length ?? 0) > 0}
+        >
+          {children}
+        </SectionPreview>
+      );
     default:
       return <div className="p-4 text-muted-foreground">Unknown block type</div>;
   }
 }
 
-const SortableBlock = memo(function SortableBlock({
+const RenderBlock = memo(function RenderBlock({
   block,
-  isSelected,
-  onSelect,
-  onDelete,
-  onDuplicate,
+  selectedBlockId,
+  onSelectBlock,
+  onDeleteBlock,
+  onDuplicateBlock,
   onOpenSettings,
   previewMode,
-}: SortableBlockProps) {
+  dragIntent,
+  activeId,
+}: RenderBlockProps) {
+  const isContainer = isContainerBlockType(block.type);
   const {
     attributes,
     listeners,
@@ -81,14 +122,52 @@ const SortableBlock = memo(function SortableBlock({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: block.id, disabled: previewMode });
+  } = useSortable({
+    id: block.id,
+    disabled: previewMode,
+    data: { type: "block", isContainer, blockId: block.id },
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
   };
 
-  const blockPreview = useMemo(() => getBlockPreview(block), [block]);
+  const isHorizontal = isContainer && getContainerDirection(block) === "row";
+  const childItemIds = useMemo(
+    () => (block.children ?? []).map((c) => c.id),
+    [block.children]
+  );
+  const isSelected = selectedBlockId === block.id && !previewMode;
+  const intentMatches =
+    !previewMode &&
+    dragIntent?.targetId === block.id &&
+    activeId !== block.id;
+  const showBefore = intentMatches && dragIntent?.position === "before";
+  const showAfter = intentMatches && dragIntent?.position === "after";
+  const showInside = intentMatches && dragIntent?.position === "inside" && isContainer;
+
+  const childrenNodes = isContainer ? (
+    <SortableContext
+      items={childItemIds}
+      strategy={isHorizontal ? horizontalListSortingStrategy : verticalListSortingStrategy}
+    >
+      {(block.children ?? []).map((child) => (
+        <RenderBlock
+          key={child.id}
+          block={child}
+          selectedBlockId={selectedBlockId}
+          onSelectBlock={onSelectBlock}
+          onDeleteBlock={onDeleteBlock}
+          onDuplicateBlock={onDuplicateBlock}
+          onOpenSettings={onOpenSettings}
+          previewMode={previewMode}
+          dragIntent={dragIntent}
+          activeId={activeId}
+        />
+      ))}
+    </SortableContext>
+  ) : null;
 
   if (previewMode) {
     return (
@@ -98,7 +177,7 @@ const SortableBlock = memo(function SortableBlock({
         className="rounded-lg overflow-hidden"
         data-testid={`canvas-block-${block.id}`}
       >
-        {blockPreview}
+        {isContainer ? getBlockPreview(block, childrenNodes) : getBlockPreview(block)}
       </div>
     );
   }
@@ -111,10 +190,28 @@ const SortableBlock = memo(function SortableBlock({
         isSelected
           ? "border-primary ring-2 ring-primary/20"
           : "border-transparent hover:border-border"
-      } ${isDragging ? "opacity-50 scale-[0.98]" : ""}`}
-      onClick={onSelect}
+      } ${isDragging ? "opacity-50 scale-[0.98]" : ""} ${
+        showInside ? "outline outline-2 outline-dashed outline-primary outline-offset-[-2px]" : ""
+      }`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelectBlock(block.id);
+      }}
       data-testid={`canvas-block-${block.id}`}
     >
+      {showBefore && (
+        <div
+          className="absolute -top-1 left-0 right-0 h-0.5 rounded-full bg-primary z-20 pointer-events-none"
+          data-testid={`drop-indicator-before-${block.id}`}
+        />
+      )}
+      {showAfter && (
+        <div
+          className="absolute -bottom-1 left-0 right-0 h-0.5 rounded-full bg-primary z-20 pointer-events-none"
+          data-testid={`drop-indicator-after-${block.id}`}
+        />
+      )}
+
       <div
         className={`absolute -top-3 left-0 right-0 flex items-center justify-between px-2 z-10 transition-opacity ${
           isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
@@ -137,7 +234,7 @@ const SortableBlock = memo(function SortableBlock({
             className="h-7 w-7"
             onClick={(e) => {
               e.stopPropagation();
-              onOpenSettings();
+              onOpenSettings(block.id);
             }}
             data-testid={`button-settings-${block.id}`}
           >
@@ -149,7 +246,7 @@ const SortableBlock = memo(function SortableBlock({
             className="h-7 w-7"
             onClick={(e) => {
               e.stopPropagation();
-              onDuplicate();
+              onDuplicateBlock(block.id);
             }}
             data-testid={`button-duplicate-${block.id}`}
           >
@@ -161,7 +258,7 @@ const SortableBlock = memo(function SortableBlock({
             className="h-7 w-7 text-destructive hover:text-destructive"
             onClick={(e) => {
               e.stopPropagation();
-              onDelete();
+              onDeleteBlock(block.id);
             }}
             data-testid={`button-delete-${block.id}`}
           >
@@ -170,7 +267,7 @@ const SortableBlock = memo(function SortableBlock({
         </div>
       </div>
       <div className="overflow-hidden rounded-lg">
-        {blockPreview}
+        {isContainer ? getBlockPreview(block, childrenNodes) : getBlockPreview(block)}
       </div>
     </div>
   );
@@ -184,13 +281,20 @@ export function EditorCanvas({
   onDuplicateBlock,
   onOpenSettings,
   previewMode = false,
+  dragIntent = null,
+  activeId = null,
 }: EditorCanvasProps) {
   const { setNodeRef, isOver } = useDroppable({
-    id: "editor-canvas",
+    id: ROOT_DROPPABLE_ID,
     disabled: previewMode,
+    data: { type: "root" },
   });
 
   const sortableItems = useMemo(() => blocks.map((b) => b.id), [blocks]);
+  const showRootInside =
+    !previewMode &&
+    dragIntent?.targetId === ROOT_INTENT_ID &&
+    dragIntent.position === "inside";
 
   return (
     <ScrollArea className="flex-1 h-full">
@@ -200,8 +304,12 @@ export function EditorCanvas({
           className={`max-w-5xl mx-auto min-h-[600px] rounded-lg transition-all ${
             blocks.length === 0 && !previewMode
               ? `border-2 border-dashed ${
-                  isOver ? "border-primary bg-primary/5" : "border-border"
+                  isOver || showRootInside ? "border-primary bg-primary/5" : "border-border"
                 }`
+              : ""
+          } ${
+            blocks.length > 0 && showRootInside
+              ? "outline outline-2 outline-dashed outline-primary outline-offset-2"
               : ""
           }`}
           onClick={previewMode ? undefined : () => onSelectBlock(null)}
@@ -225,15 +333,17 @@ export function EditorCanvas({
             >
               <div className="space-y-6 py-4">
                 {blocks.map((block) => (
-                  <SortableBlock
+                  <RenderBlock
                     key={block.id}
                     block={block}
-                    isSelected={selectedBlockId === block.id && !previewMode}
-                    onSelect={() => onSelectBlock(block.id)}
-                    onDelete={() => onDeleteBlock(block.id)}
-                    onDuplicate={() => onDuplicateBlock(block.id)}
-                    onOpenSettings={() => onOpenSettings(block.id)}
+                    selectedBlockId={selectedBlockId}
+                    onSelectBlock={onSelectBlock}
+                    onDeleteBlock={onDeleteBlock}
+                    onDuplicateBlock={onDuplicateBlock}
+                    onOpenSettings={onOpenSettings}
                     previewMode={previewMode}
+                    dragIntent={dragIntent}
+                    activeId={activeId}
                   />
                 ))}
               </div>

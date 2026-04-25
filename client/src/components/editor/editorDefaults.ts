@@ -72,6 +72,23 @@ export const defaultBlockConfigs: Record<BlockType, Record<string, any>> = {
     welcomeMessage: "Hi! How can we help you today?",
     position: "bottom-right",
   },
+  "container": {
+    direction: "row",
+    gap: 16,
+    alignItems: "stretch",
+    justifyContent: "start",
+    wrap: false,
+    padding: { top: 16, right: 16, bottom: 16, left: 16 },
+  },
+  "section": {
+    direction: "column",
+    gap: 24,
+    alignItems: "stretch",
+    justifyContent: "start",
+    wrap: false,
+    padding: { top: 48, right: 24, bottom: 48, left: 24 },
+    maxWidth: "wide",
+  },
 };
 
 export const defaultPixelSettings: PixelSettings = {

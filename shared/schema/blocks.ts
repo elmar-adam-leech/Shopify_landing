@@ -11,9 +11,48 @@ export const blockTypes = [
   "form-block",
   "phone-block",
   "chat-block",
+  "container",
+  "section",
 ] as const;
 
 export type BlockType = (typeof blockTypes)[number];
+
+export const containerBlockTypes: readonly BlockType[] = ["container", "section"];
+
+export function isContainerBlockType(type: BlockType): boolean {
+  return containerBlockTypes.includes(type);
+}
+
+export const paddingSchema = z.object({
+  top: z.number().default(0),
+  right: z.number().default(0),
+  bottom: z.number().default(0),
+  left: z.number().default(0),
+});
+
+export type Padding = z.infer<typeof paddingSchema>;
+
+export const containerConfigSchema = z.object({
+  direction: z.enum(["row", "column"]).default("column"),
+  gap: z.number().min(0).default(16),
+  alignItems: z.enum(["start", "center", "end", "stretch"]).default("stretch"),
+  justifyContent: z
+    .enum(["start", "center", "end", "between", "around"])
+    .default("start"),
+  wrap: z.boolean().default(false),
+  padding: paddingSchema.default({ top: 16, right: 16, bottom: 16, left: 16 }),
+  background: z.string().optional(),
+});
+
+export type ContainerConfig = z.infer<typeof containerConfigSchema>;
+
+export const sectionBlockConfigSchema = containerConfigSchema.extend({
+  maxWidth: z
+    .enum(["narrow", "medium", "wide", "full"])
+    .default("wide"),
+});
+
+export type SectionBlockConfig = z.infer<typeof sectionBlockConfigSchema>;
 
 export const heroBlockConfigSchema = z.object({
   title: z.string().default("Your Headline Here"),
@@ -295,20 +334,34 @@ export const visibilityRulesSchema = z.object({
 
 export type VisibilityRules = z.infer<typeof visibilityRulesSchema>;
 
-export const blockSchema = z.object({
-  id: z.string(),
-  type: z.enum(blockTypes),
-  config: z.record(z.any()),
-  order: z.number(),
-  variants: z.array(blockVariantSchema).optional(),
-  abTestEnabled: z.boolean().optional(),
-  visibilityRules: visibilityRulesSchema.optional(),
-  sectionId: z.string().optional(),
+export type Block = {
+  id: string;
+  type: BlockType;
+  config: Record<string, any>;
+  order: number;
+  variants?: BlockVariant[];
+  abTestEnabled?: boolean;
+  visibilityRules?: VisibilityRules;
+  sectionId?: string;
   /** @deprecated Legacy freeform positioning — see {@link blockPositionSchema}. */
-  position: blockPositionSchema.optional(),
-});
+  position?: BlockPosition;
+  children?: Block[];
+};
 
-export type Block = z.infer<typeof blockSchema>;
+export const blockSchema: z.ZodType<Block, z.ZodTypeDef, any> = z.lazy(() =>
+  z.object({
+    id: z.string(),
+    type: z.enum(blockTypes),
+    config: z.record(z.any()),
+    order: z.number(),
+    variants: z.array(blockVariantSchema).optional(),
+    abTestEnabled: z.boolean().optional(),
+    visibilityRules: visibilityRulesSchema.optional(),
+    sectionId: z.string().optional(),
+    position: blockPositionSchema.optional(),
+    children: z.array(blockSchema).optional(),
+  })
+);
 
 export const utmParamsSchema = z.object({
   utm_source: z.string().optional(),

@@ -613,6 +613,75 @@ function renderChatBlock(config: Record<string, any>, blockId: string): string {
     </script>`;
 }
 
+const justifyMapCss: Record<string, string> = {
+  start: "flex-start",
+  center: "center",
+  end: "flex-end",
+  between: "space-between",
+  around: "space-around",
+};
+
+const alignMapCss: Record<string, string> = {
+  start: "flex-start",
+  center: "center",
+  end: "flex-end",
+  stretch: "stretch",
+};
+
+const sectionMaxWidthMap: Record<string, string> = {
+  narrow: "640px",
+  medium: "768px",
+  wide: "1200px",
+  full: "100%",
+};
+
+function buildContainerStyleString(config: Record<string, any>): string {
+  const direction = config.direction === "row" ? "row" : "column";
+  const gap = typeof config.gap === "number" ? config.gap : 16;
+  const justifyContent = justifyMapCss[config.justifyContent ?? "start"] ?? "flex-start";
+  const alignItems = alignMapCss[config.alignItems ?? "stretch"] ?? "stretch";
+  const wrap = config.wrap ? "wrap" : "nowrap";
+  const padding = config.padding ?? { top: 0, right: 0, bottom: 0, left: 0 };
+  const parts = [
+    "display:flex",
+    `flex-direction:${direction}`,
+    `gap:${gap}px`,
+    `justify-content:${justifyContent}`,
+    `align-items:${alignItems}`,
+    `flex-wrap:${wrap}`,
+    `padding:${padding.top ?? 0}px ${padding.right ?? 0}px ${padding.bottom ?? 0}px ${padding.left ?? 0}px`,
+  ];
+  if (config.background) {
+    parts.push(`background:${config.background}`);
+  }
+  return parts.join(";");
+}
+
+function renderContainerBlock(block: Block, pageId: string): string {
+  const config = block.config || {};
+  const blockId = block.id;
+  const childrenHtml = (block.children ?? [])
+    .map((child) => renderBlock(child, pageId))
+    .join("\n");
+  const style = buildContainerStyleString(config);
+  return `<div class="lp-container-block" data-block-id="${escapeHtml(blockId)}" style="${escapeHtml(style)}">${childrenHtml}</div>`;
+}
+
+function renderSectionBlock(block: Block, pageId: string): string {
+  const config = block.config || {};
+  const blockId = block.id;
+  const childrenHtml = (block.children ?? [])
+    .map((child) => renderBlock(child, pageId))
+    .join("\n");
+  const innerStyle = buildContainerStyleString(config);
+  const maxWidth = sectionMaxWidthMap[config.maxWidth ?? "wide"] ?? "1200px";
+  const outerStyleParts = ["width:100%"];
+  if (config.background) outerStyleParts.push(`background:${config.background}`);
+  const outerStyle = outerStyleParts.join(";");
+  const innerWithMax = `${innerStyle};max-width:${maxWidth};margin-left:auto;margin-right:auto`;
+  return `<section class="lp-section-block" data-block-id="${escapeHtml(blockId)}" style="${escapeHtml(outerStyle)}"><div style="${escapeHtml(innerWithMax)}">${childrenHtml}</div></section>`;
+}
+
 function renderBlock(block: Block, pageId: string): string {
   const config = block.config || {};
   const blockId = block.id;
@@ -636,6 +705,10 @@ function renderBlock(block: Block, pageId: string): string {
       return renderPhoneBlock(config, blockId);
     case "chat-block":
       return renderChatBlock(config, blockId);
+    case "container":
+      return renderContainerBlock(block, pageId);
+    case "section":
+      return renderSectionBlock(block, pageId);
     default:
       return `<section class="lp-block lp-block-unknown" data-block-id="${escapeHtml(blockId)}">Unknown block type: ${escapeHtml(block.type)}</section>`;
   }
