@@ -655,6 +655,187 @@ function applyOnClickAction(block: Block, html: string): string {
   }
 }
 
+function generateVisibilityRuntime(): string {
+  return `<script>
+(function(){
+  function getParam(name){
+    try { return new URLSearchParams(window.location.search).get(name); }
+    catch(e){ return null; }
+  }
+  var referrer = '';
+  try { referrer = document.referrer || ''; } catch(e){}
+  function fieldValue(c){
+    if(c.field === 'referrer') return referrer;
+    if(c.field === 'custom') return c.customField ? getParam(c.customField) : null;
+    return getParam(c.field);
+  }
+  function evalCondition(c){
+    var requiresValue = c.operator !== 'exists' && c.operator !== 'not_exists';
+    if(requiresValue && (!c.value || String(c.value).trim() === '')) return false;
+    if(c.field === 'custom' && (!c.customField || String(c.customField).trim() === '')) return false;
+    var fv = fieldValue(c);
+    var t = (c.value == null ? '' : String(c.value)).toLowerCase();
+    var a = (fv == null ? '' : String(fv)).toLowerCase();
+    switch(c.operator){
+      case 'equals': return a === t;
+      case 'not_equals': return a !== t;
+      case 'contains': return a.indexOf(t) !== -1;
+      case 'not_contains': return a.indexOf(t) === -1;
+      case 'starts_with': return a.indexOf(t) === 0;
+      case 'exists': return fv !== null && fv !== '';
+      case 'not_exists': return fv === null || fv === '';
+      default: return false;
+    }
+  }
+  function shouldShow(rules){
+    if(!rules || !rules.enabled || !rules.conditions || !rules.conditions.length) return true;
+    var valid = rules.conditions.filter(function(c){
+      var rv = c.operator !== 'exists' && c.operator !== 'not_exists';
+      if(rv && (!c.value || String(c.value).trim() === '')) return false;
+      if(c.field === 'custom' && (!c.customField || String(c.customField).trim() === '')) return false;
+      return true;
+    });
+    if(!valid.length) return true;
+    var results = valid.map(evalCondition);
+    switch(rules.logic){
+      case 'show_if_any': return results.some(function(r){ return r; });
+      case 'show_if_all': return results.every(function(r){ return r; });
+      case 'hide_if_any': return !results.some(function(r){ return r; });
+      case 'hide_if_all': return !results.every(function(r){ return r; });
+      default: return true;
+    }
+  }
+  function apply(){
+    var nodes = document.querySelectorAll('[data-visibility-rules]');
+    for(var i=0;i<nodes.length;i++){
+      var el = nodes[i];
+      var raw = el.getAttribute('data-visibility-rules');
+      if(!raw) { el.style.display = ''; continue; }
+      var rules;
+      try { rules = JSON.parse(raw); }
+      catch(e){ el.style.display = ''; continue; }
+      if(shouldShow(rules)){
+        el.style.display = '';
+      } else {
+        el.style.display = 'none';
+        el.setAttribute('aria-hidden','true');
+      }
+    }
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', apply);
+  } else {
+    apply();
+  }
+})();
+</script>`;
+}
+
+function generateAbTestingRuntime(pageId: string): string {
+  return `<script>
+(function(){
+  var PAGE_ID = "${escapeJs(pageId)}";
+  function visitorId(){
+    try {
+      var k = 'pb_visitor_id';
+      var v = window.localStorage ? localStorage.getItem(k) : null;
+      if(!v){
+        v = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2));
+        if(window.localStorage) localStorage.setItem(k, v);
+      }
+      return v;
+    } catch(e){ return ''; }
+  }
+  function storageKey(blockId){
+    return 'pb_ab_variant_' + PAGE_ID + '_' + blockId;
+  }
+  function getAssigned(blockId){
+    try {
+      if(!window.localStorage) return null;
+      var k = storageKey(blockId);
+      var v = localStorage.getItem(k);
+      if(v) return v;
+      // Backwards compatibility with the previous block-only key
+      var legacy = localStorage.getItem('pb_ab_variant_block_' + blockId);
+      if(legacy){
+        try { localStorage.setItem(k, legacy); } catch(e){}
+        return legacy;
+      }
+      return null;
+    } catch(e){ return null; }
+  }
+  function setAssigned(blockId, variantId){
+    try { if(window.localStorage) localStorage.setItem(storageKey(blockId), variantId); }
+    catch(e){}
+  }
+  function group(){
+    var nodes = document.querySelectorAll('[data-ab-block]');
+    var byBlock = {};
+    for(var i=0;i<nodes.length;i++){
+      var el = nodes[i];
+      var id = el.getAttribute('data-ab-block') || '';
+      if(!byBlock[id]) byBlock[id] = [];
+      byBlock[id].push(el);
+    }
+    return byBlock;
+  }
+  function reveal(el){
+    el.removeAttribute('hidden');
+    el.style.display = '';
+  }
+  function pick(variants){
+    var sum = 0;
+    for(var i=0;i<variants.length;i++){
+      sum += parseFloat(variants[i].getAttribute('data-ab-traffic')) || 0;
+    }
+    if(sum <= 0) return variants[0];
+    var r = Math.random() * sum;
+    var cum = 0;
+    for(var j=0;j<variants.length;j++){
+      cum += parseFloat(variants[j].getAttribute('data-ab-traffic')) || 0;
+      if(r <= cum) return variants[j];
+    }
+    return variants[variants.length - 1];
+  }
+  function apply(){
+    visitorId();
+    var groups = group();
+    Object.keys(groups).forEach(function(blockId){
+      var variants = groups[blockId];
+      if(!variants.length) return;
+      var assigned = getAssigned(blockId);
+      var selected = null;
+      if(assigned){
+        for(var i=0;i<variants.length;i++){
+          if(variants[i].getAttribute('data-ab-variant') === assigned){
+            selected = variants[i];
+            break;
+          }
+        }
+      }
+      if(!selected){
+        selected = pick(variants);
+        setAssigned(blockId, selected.getAttribute('data-ab-variant') || '');
+      }
+      for(var k=0;k<variants.length;k++){
+        var v = variants[k];
+        if(v === selected){
+          reveal(v);
+        } else if(v.parentNode){
+          v.parentNode.removeChild(v);
+        }
+      }
+    });
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', apply);
+  } else {
+    apply();
+  }
+})();
+</script>`;
+}
+
 function generateOnClickActionRuntime(): string {
   return `<script>
 (function(){
@@ -699,49 +880,84 @@ function generateOnClickActionRuntime(): string {
 </script>`;
 }
 
-function renderBlock(block: Block, pageId: string): string {
-  const config = block.config || {};
+function renderBlockBody(block: Block, config: Record<string, any>, pageId: string): string {
   const blockId = block.id;
-
-  let inner: string;
   switch (block.type) {
     case "hero-banner":
-      inner = renderHeroBlock(config, blockId);
-      break;
+      return renderHeroBlock(config, blockId);
     case "product-block":
-      inner = renderProductBlock(config, blockId);
-      break;
+      return renderProductBlock(config, blockId);
     case "product-grid":
-      inner = renderProductGridBlock(config, blockId);
-      break;
+      return renderProductGridBlock(config, blockId);
     case "text-block":
-      inner = renderTextBlock(config, blockId);
-      break;
+      return renderTextBlock(config, blockId);
     case "image-block":
-      inner = renderImageBlock(config, blockId);
-      break;
+      return renderImageBlock(config, blockId);
     case "button-block":
-      inner = renderButtonBlock(config, blockId);
-      break;
+      return renderButtonBlock(config, blockId);
     case "form-block":
-      inner = renderFormBlock(config, blockId, pageId);
-      break;
+      return renderFormBlock(config, blockId, pageId);
     case "phone-block":
-      inner = renderPhoneBlock(config, blockId);
-      break;
+      return renderPhoneBlock(config, blockId);
     case "chat-block":
-      inner = renderChatBlock(config, blockId);
-      break;
+      return renderChatBlock(config, blockId);
     case "container":
-      inner = renderContainerBlock(block, pageId);
-      break;
+      return renderContainerBlock(block, pageId);
     case "section":
-      inner = renderSectionBlock(block, pageId);
-      break;
+      return renderSectionBlock(block, pageId);
     default:
-      inner = `<section class="lp-block lp-block-unknown" data-block-id="${escapeHtml(blockId)}">Unknown block type: ${escapeHtml(block.type)}</section>`;
+      return `<section class="lp-block lp-block-unknown" data-block-id="${escapeHtml(blockId)}">Unknown block type: ${escapeHtml(block.type)}</section>`;
   }
-  return applyOnClickAction(block, inner);
+}
+
+function applyVisibilityRules(block: Block, html: string): string {
+  const rules = block.visibilityRules;
+  if (!rules || !rules.enabled || !rules.conditions || rules.conditions.length === 0) {
+    return html;
+  }
+  const validConditions = rules.conditions.filter((c) => {
+    const requiresValue = c.operator !== "exists" && c.operator !== "not_exists";
+    if (requiresValue && (!c.value || c.value.trim() === "")) return false;
+    if (c.field === "custom" && (!c.customField || c.customField.trim() === "")) return false;
+    return true;
+  });
+  if (validConditions.length === 0) return html;
+
+  const payload = JSON.stringify({
+    enabled: true,
+    logic: rules.logic,
+    conditions: validConditions,
+  });
+  return `<div data-visibility-rules="${escapeHtml(payload)}" data-block-visibility-id="${escapeHtml(block.id)}" style="display:none;">${html}</div>`;
+}
+
+function renderBlock(block: Block, pageId: string): string {
+  if (block.abTestEnabled && block.variants && block.variants.length > 0) {
+    const variantSum = block.variants.reduce((s, v) => s + (v.trafficPercentage || 0), 0);
+    const originalTraffic = Math.max(0, 100 - variantSum);
+    const allVariants: Array<{ id: string; config: Record<string, any>; traffic: number }> = [
+      { id: "original", config: block.config || {}, traffic: originalTraffic },
+      ...block.variants.map((v) => ({
+        id: v.id,
+        config: v.config || {},
+        traffic: v.trafficPercentage || 0,
+      })),
+    ];
+    const html = allVariants
+      .map((v) => {
+        const variantBlock: Block = { ...block, config: v.config };
+        const inner = renderBlockBody(variantBlock, v.config, pageId);
+        const wrapped = applyOnClickAction(variantBlock, inner);
+        return `<div data-ab-block="${escapeHtml(block.id)}" data-ab-variant="${escapeHtml(v.id)}" data-ab-traffic="${v.traffic}" hidden style="display:none;">${wrapped}</div>`;
+      })
+      .join("");
+    return applyVisibilityRules(block, html);
+  }
+
+  const config = block.config || {};
+  const inner = renderBlockBody(block, config, pageId);
+  const wrapped = applyOnClickAction(block, inner);
+  return applyVisibilityRules(block, wrapped);
 }
 
 function generateStyles(): string {
@@ -894,6 +1110,8 @@ export async function renderPage(
     ? `<style data-lp-responsive>${responsiveCss}</style>`
     : "";
   const onClickRuntime = generateOnClickActionRuntime();
+  const visibilityRuntime = generateVisibilityRuntime();
+  const abTestingRuntime = generateAbTestingRuntime(page.id);
 
   if (options.useLiquidWrapper) {
     const liquidHtml = `
@@ -904,6 +1122,8 @@ ${responsiveStyleTag}
 ${blocksHtml}
 ${pixelScripts}
 ${hydrationScript}
+${visibilityRuntime}
+${abTestingRuntime}
 ${onClickRuntime}
 </div>
 {{ content_for_layout }}`;
@@ -927,6 +1147,8 @@ ${onClickRuntime}
     ${blocksHtml}
   </main>
   ${hydrationScript}
+  ${visibilityRuntime}
+  ${abTestingRuntime}
   ${onClickRuntime}
 </body>
 </html>`;
