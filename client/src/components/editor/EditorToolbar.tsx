@@ -77,8 +77,8 @@ export function EditorToolbar({
 
   return (
     <TooltipProvider delayDuration={300}>
-      <header className="h-14 border-b flex items-center justify-between gap-4 px-4 flex-shrink-0">
-        <div className="flex items-center gap-3">
+      <header className="h-14 border-b flex items-center justify-between gap-4 px-4 flex-shrink-0 min-w-0 overflow-x-auto">
+        <div className="flex items-center gap-3 flex-shrink-0">
           <Link href={buildHref("/")}>
             <Button variant="ghost" size="sm" className="gap-2" data-testid="button-back">
               <ArrowLeft className="h-4 w-4" />
@@ -90,7 +90,7 @@ export function EditorToolbar({
             id="page-title"
             value={title}
             onChange={(e) => onTitleChange(e.target.value)}
-            className="w-64 font-medium"
+            className="w-64 font-medium flex-shrink-0"
             data-testid="input-page-title"
           />
           <div className="flex items-center border-l pl-3 gap-1">
@@ -128,7 +128,7 @@ export function EditorToolbar({
             </Tooltip>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

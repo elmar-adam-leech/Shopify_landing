@@ -181,7 +181,7 @@ export default function Editor() {
       onDragEnd={editor.handleDragEnd}
       onDragCancel={editor.handleDragCancel}
     >
-      <div className="h-screen flex flex-col bg-background">
+      <div className="h-screen w-full flex flex-col bg-background overflow-hidden">
         {!editor.previewMode && (
           <EditorToolbar
             title={editor.title}
@@ -209,9 +209,9 @@ export default function Editor() {
           />
         )}
 
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 min-w-0 overflow-hidden">
           {!editor.previewMode && (
-            <aside className="w-80 border-r flex-shrink-0 bg-card">
+            <aside className="w-80 border-r flex-shrink-0 bg-card overflow-hidden">
               <EditorSidebar
                 currentPageId={editor.isNewPage ? undefined : editor.pageId}
                 onApplyTemplate={editor.handleApplyTemplate}
@@ -219,7 +219,7 @@ export default function Editor() {
             </aside>
           )}
 
-          <main className="flex-1 overflow-hidden bg-muted/30 flex flex-col">
+          <main className="flex-1 min-w-0 overflow-hidden bg-muted/30 flex flex-col">
             <div className="border-b bg-background px-4 py-2 flex items-start gap-3">
               {!editor.previewMode ? (
                 <>
