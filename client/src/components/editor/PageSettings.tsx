@@ -26,10 +26,10 @@ export function PageSettingsDialog({ open, onClose, slug, onSlugChange, allowInd
           <DialogTitle>Page Settings</DialogTitle>
         </DialogHeader>
         
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           <Card className="p-4">
             <div className="flex items-start gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg mt-0.5">
+              <div className="p-2 bg-primary/10 rounded-lg mt-0.5 shrink-0">
                 <Link2 className="h-5 w-5 text-primary" />
               </div>
               <div className="flex-1 min-w-0">
@@ -37,16 +37,16 @@ export function PageSettingsDialog({ open, onClose, slug, onSlugChange, allowInd
                 <p className="text-sm text-muted-foreground mt-1">
                   Customize the URL slug for this landing page
                 </p>
-                <div className="mt-3 space-y-2">
+                <div className="mt-3 space-y-2 min-w-0">
                   <Label htmlFor="page-slug" className="sr-only">URL Slug</Label>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 min-w-0">
                     <span className="text-sm text-muted-foreground whitespace-nowrap">/p/</span>
                     <Input
                       id="page-slug"
                       value={slug}
                       onChange={(e) => onSlugChange(e.target.value)}
                       placeholder={isNewPage ? "auto-generated-from-title" : "page-slug"}
-                      className="font-mono text-sm"
+                      className="font-mono text-sm min-w-0"
                       data-testid="input-page-slug"
                     />
                   </div>
@@ -60,11 +60,11 @@ export function PageSettingsDialog({ open, onClose, slug, onSlugChange, allowInd
 
           <Card className="p-4">
             <div className="flex items-start justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <div className="p-2 bg-primary/10 rounded-lg mt-0.5">
+              <div className="flex items-start gap-3 flex-1 min-w-0">
+                <div className="p-2 bg-primary/10 rounded-lg mt-0.5 shrink-0">
                   <Search className="h-5 w-5 text-primary" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <h3 className="font-medium">Search Engine Visibility</h3>
                   <p className="text-sm text-muted-foreground mt-1">
                     {allowIndexing 
@@ -77,6 +77,7 @@ export function PageSettingsDialog({ open, onClose, slug, onSlugChange, allowInd
                 checked={allowIndexing}
                 onCheckedChange={onAllowIndexingChange}
                 data-testid="switch-allow-indexing"
+                className="shrink-0"
               />
             </div>
             
