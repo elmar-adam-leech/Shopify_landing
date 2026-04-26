@@ -189,10 +189,10 @@ export function AIPromptBar({ onInsertBlocks }: AIPromptBarProps) {
 
   return (
     <div
-      className="absolute top-3 left-1/2 -translate-x-1/2 z-30 w-[min(640px,calc(100%-2rem))] pointer-events-none"
+      className="w-full max-w-[640px]"
       data-testid="ai-prompt-bar"
     >
-      <div className="pointer-events-auto rounded-full border bg-card/95 backdrop-blur shadow-lg flex items-center pl-4 pr-1.5 py-1.5 gap-2">
+      <div className="rounded-full border bg-card/95 backdrop-blur shadow-sm flex items-center pl-4 pr-1.5 py-1.5 gap-2">
         <Sparkles className="h-4 w-4 text-primary flex-shrink-0" />
         <Input
           ref={inputRef}
@@ -267,7 +267,7 @@ export function AIPromptBar({ onInsertBlocks }: AIPromptBarProps) {
           </Button>
         )}
       </div>
-      <div className="pointer-events-auto mt-2 flex items-center justify-center gap-1.5 flex-wrap">
+      <div className="mt-2 flex items-center justify-center gap-1.5 flex-wrap">
         {EXAMPLE_PROMPTS.map((example) => (
           <button
             key={example}

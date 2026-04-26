@@ -219,17 +219,31 @@ export default function Editor() {
             </aside>
           )}
 
-          <main className="flex-1 overflow-hidden bg-muted/30 flex flex-col relative">
-            <ViewportSwitcher
-              value={editor.viewportSize}
-              onChange={editor.setViewportSize}
-            />
+          <main className="flex-1 overflow-hidden bg-muted/30 flex flex-col">
+            <div className="border-b bg-background px-4 py-2 flex items-start gap-3">
+              {!editor.previewMode ? (
+                <>
+                  <div className="flex-1 min-w-0 flex justify-center">
+                    <AIPromptBar onInsertBlocks={editor.handleInsertGeneratedBlocks} />
+                  </div>
+                  <div className="flex items-center flex-shrink-0 pt-1">
+                    <ViewportSwitcher
+                      value={editor.viewportSize}
+                      onChange={editor.setViewportSize}
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1 flex justify-center">
+                  <ViewportSwitcher
+                    value={editor.viewportSize}
+                    onChange={editor.setViewportSize}
+                  />
+                </div>
+              )}
+            </div>
 
-            {!editor.previewMode && (
-              <AIPromptBar onInsertBlocks={editor.handleInsertGeneratedBlocks} />
-            )}
-
-            <div className="flex-1 overflow-auto flex justify-center py-4 pt-24">
+            <div className="flex-1 overflow-auto flex justify-center py-4">
               <div
                 className={`transition-all duration-300 ${
                   editor.viewportSize === "desktop" ? "w-full max-w-none" :
