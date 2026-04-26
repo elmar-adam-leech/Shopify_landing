@@ -8,10 +8,11 @@ interface ContainerPreviewProps {
   children?: ReactNode;
   /**
    * Resolved design properties for the active breakpoint. Container layout
-   * (display, flex direction, gap, padding, alignment) is now driven entirely
-   * by the responsive design system. The legacy `buildContainerStyle` helper
-   * has been removed; existing pages get their layout values back via
-   * `legacyDesignFromBlock` in `shared/responsive.ts`.
+   * (display, flex direction, gap, padding, alignment) is driven entirely by
+   * the responsive design system; the per-block container config no longer
+   * carries layout fields. Pages saved before the schema cleanup keep their
+   * layout values via the legacy → responsive translation in
+   * `legacyDesignFromBlock` (`shared/responsive.ts`).
    */
   design?: DesignProps;
   /**

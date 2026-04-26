@@ -9,6 +9,27 @@ import { validatePageAccess, requireStoreContext, processFormSubmissionCustomer,
 import { formSubmissionLimiter, storefrontProxyLimiter } from "../middleware/rate-limit";
 import { logError, logWarn, logInfo } from "../lib/logger";
 import { sanitizeProductHtml } from "../lib/sanitize";
+import { migrateBlocksResponsive } from "@shared/responsive";
+import type { Block } from "@shared/schema";
+
+/**
+ * Save-time normalisation for the `blocks` column. Runs the same migration
+ * we run at editor load time, which (a) folds any leftover legacy layout
+ * keys into `responsive.desktop` and (b) strips them from container/section
+ * configs. This guarantees the "responsive is the single source of truth"
+ * invariant from task #75 holds for every write path — not just the AI
+ * generator and the editor — by clearing duplication right before the row
+ * is persisted. Inputs without `blocks` (e.g. metadata-only patches) pass
+ * through unchanged.
+ */
+function normalizePageBlocksForSave<T extends { blocks?: unknown }>(data: T): T {
+  if (!data || !Array.isArray(data.blocks)) return data;
+  const { blocks: migrated, changed } = migrateBlocksResponsive(
+    data.blocks as Block[]
+  );
+  if (!changed) return data;
+  return { ...data, blocks: migrated };
+}
 
 function isPrivateIp(ip: string): boolean {
   if (net.isIPv4(ip)) {
@@ -484,7 +505,9 @@ export function createPageRoutes(): Router {
         return res.status(409).json({ error: `The URL slug "${validatedData.slug}" is already in use. Please choose a different one.` });
       }
 
-      const page = await storage.createPage(validatedData as InsertPage);
+      const page = await storage.createPage(
+        normalizePageBlocksForSave(validatedData) as InsertPage
+      );
       res.status(201).json(page);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -538,7 +561,10 @@ export function createPageRoutes(): Router {
         }
       }
 
-      const page = await storage.updatePage(id, validatedData as UpdatePage);
+      const page = await storage.updatePage(
+        id,
+        normalizePageBlocksForSave(validatedData) as UpdatePage
+      );
       res.json(page);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -849,7 +875,10 @@ export function createPageRoutes(): Router {
         blocks: version.blocks,
         pixelSettings: version.pixelSettings,
       };
-      const updatedPage = await storage.updatePage(pageId, restoreData);
+      const updatedPage = await storage.updatePage(
+        pageId,
+        normalizePageBlocksForSave(restoreData) as UpdatePage
+      );
 
       res.json(updatedPage);
     } catch (error) {

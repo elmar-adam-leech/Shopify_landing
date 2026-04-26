@@ -4,6 +4,26 @@ import type {
   Padding,
   ResponsiveDesign,
 } from "./schema";
+import { isContainerBlockType } from "./schema";
+
+/**
+ * Layout keys that container/section blocks used to carry directly on
+ * `block.config`. They are now expressed exclusively through
+ * `responsive.<bp>` (see `shared/schema/blocks.ts`). Kept here so the
+ * load-time migration can both fold the values into `responsive.desktop`
+ * AND remove them from `config`, which means a freshly-loaded page that
+ * gets saved again no longer round-trips the duplicated layout state.
+ */
+const CONTAINER_LEGACY_LAYOUT_CONFIG_KEYS: readonly string[] = [
+  "direction",
+  "gap",
+  "alignItems",
+  "justifyContent",
+  "wrap",
+  "padding",
+  "background",
+  "maxWidth",
+];
 
 export type Breakpoint = "desktop" | "tablet" | "mobile";
 
@@ -46,34 +66,35 @@ const TEXT_ALIGN_TO_JUSTIFY: Record<string, "start" | "center" | "end"> = {
 /**
  * Plan for retiring duplicated visual fields in per-block configs
  * ----------------------------------------------------------------
- * Phase 3 added a unified `responsive` design field on every block. Several
- * per-type config schemas in `shared/schema/blocks.ts` still own visual fields
- * that overlap with that responsive design system:
+ * Phase 3 added a unified `responsive` design field on every block. The
+ * unified field is now the single source of truth for layout/visual props.
  *
- *   - `containerConfigSchema` / `sectionBlockConfigSchema`:
- *       direction, gap, alignItems, justifyContent, wrap, padding, background, maxWidth
- *   - `textBlockConfigSchema`:    textAlign, fontSize
- *   - `heroBlockConfigSchema`:    textAlign, backgroundImage
- *   - `buttonBlockConfigSchema`:  alignment (mapped to textAlign / justifyContent)
+ * Container/Section schemas (`containerConfigSchema` / `sectionBlockConfigSchema`)
+ * no longer carry layout fields — direction, gap, alignment, justification,
+ * wrap, padding, max-width and background all live exclusively on
+ * `block.responsive.<bp>`. Editor defaults, settings panels and the AI block
+ * generator only write into `responsive`.
  *
- * `legacyDesignFromBlock` translates those legacy keys into `DesignProps` so old
- * pages still render correctly. `migrateBlocksResponsive` copies the translated
- * values into `block.responsive.desktop`, which means once a page has been
- * loaded and saved post-Phase-4 the `responsive` field is the single source of
- * truth for those visual properties.
+ * Three per-type schemas still carry a small number of legacy visual fields
+ * (kept for now because their per-type Settings panels still read them):
+ *   - `textBlockConfigSchema`:   textAlign, fontSize
+ *   - `heroBlockConfigSchema`:   textAlign, backgroundImage
+ *   - `buttonBlockConfigSchema`: alignment (mapped to textAlign / justifyContent)
  *
- * Retirement steps (future tasks, intentionally NOT done here):
- *   1. Wait until enough live pages have been re-saved and therefore migrated
- *      into `responsive.desktop` (run a backfill script if waiting is too slow).
- *   2. Drop the visual fields from the config schemas above and update the
- *      per-type Settings panels to stop reading/writing them.
- *   3. Remove the corresponding branches from `legacyDesignFromBlock` so it can
- *      eventually be deleted entirely.
- *   4. Remove `migrateBlocksResponsive` once `legacyDesignFromBlock` is gone —
- *      the migration is a no-op without legacy fields to translate.
+ * `legacyDesignFromBlock` translates *all* known legacy keys into `DesignProps`
+ * so older persisted pages — including container/section blocks saved before
+ * the layout fields were dropped from their schemas — still render correctly.
+ * `migrateBlocksResponsive` copies the translated values into
+ * `block.responsive.desktop` on load, so once a page has been re-saved the
+ * legacy keys are no longer needed for rendering.
  *
- * Until step 1 is complete, both `legacyDesignFromBlock` and the migration are
- * required so the editor matches what users currently see on their pages.
+ * Remaining retirement steps (future tasks, intentionally NOT done here):
+ *   1. Drop the legacy visual fields from text-block / hero-banner /
+ *      button-block schemas, mirroring what was done for container/section.
+ *   2. Once enough live pages have been re-saved (or after a backfill script),
+ *      remove the corresponding branches from `legacyDesignFromBlock`.
+ *   3. Remove `migrateBlocksResponsive` once `legacyDesignFromBlock` is gone
+ *      — the migration is a no-op without legacy fields to translate.
  */
 export function legacyDesignFromBlock(block: Block): DesignProps {
   const config = (block.config ?? {}) as Record<string, unknown>;
@@ -415,8 +436,34 @@ export function migrateBlocksResponsive(
         changed = true;
       }
     }
-    if (nextResponsive !== b.responsive || childrenChanged) {
-      const out: Block = { ...b, responsive: nextResponsive };
+    // After folding any legacy values into responsive.desktop, also strip
+    // them from container/section configs. This guarantees that the next
+    // save persists a clean config and removes the duplication for good
+    // (the AI write path enforces the same invariant via
+    // `stripContainerLegacyLayoutKeys` in ai-block-generator).
+    let nextConfig = b.config;
+    if (isContainerBlockType(b.type) && b.config && typeof b.config === "object") {
+      const cfg = b.config as Record<string, unknown>;
+      let dropped = false;
+      const cleaned: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(cfg)) {
+        if (CONTAINER_LEGACY_LAYOUT_CONFIG_KEYS.includes(k)) {
+          dropped = true;
+          continue;
+        }
+        cleaned[k] = v;
+      }
+      if (dropped) {
+        nextConfig = cleaned;
+        changed = true;
+      }
+    }
+    if (
+      nextResponsive !== b.responsive ||
+      nextConfig !== b.config ||
+      childrenChanged
+    ) {
+      const out: Block = { ...b, responsive: nextResponsive, config: nextConfig };
       if (migratedChildren) out.children = migratedChildren;
       return out;
     }

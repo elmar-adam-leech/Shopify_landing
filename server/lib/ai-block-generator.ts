@@ -108,8 +108,8 @@ Type-specific config rules (only the fields you need; unknown fields will be dro
   form-block: { title, fields: [ { id, label, type: "text"|"email"|"phone"|"textarea"|"select"|"checkbox", required } ], submitText, successMessage }
   phone-block: { phoneNumber, displayText, trackCalls }
   chat-block: { enabled, welcomeMessage, position: "bottom-right"|"bottom-left" }
-  container: {} - use children[] for inner blocks; layout via responsive.desktop (display:flex, flexDirection, gap, alignItems, justifyContent, padding)
-  section: {} - use children[] for inner blocks; provides outer padding and a max width
+  container: {} - MUST be an empty object. Layout (direction, gap, alignment, justify, wrap, padding, background) goes ONLY in responsive.<bp>; do NOT put "direction"/"alignItems"/"justifyContent"/"wrap"/"gap"/"padding"/"background" inside config.
+  section: {} - MUST be an empty object. Layout AND max width (maxWidth) go ONLY in responsive.<bp>; do NOT put "direction"/"alignItems"/"justifyContent"/"wrap"/"gap"/"padding"/"background"/"maxWidth" inside config.
 
 Hard rules:
 - Output ONLY valid JSON matching the top-level shape. No prose, no markdown.
@@ -468,14 +468,59 @@ function sanitizeOnClickAction(input: unknown): Record<string, unknown> | undefi
 }
 
 /**
+ * Container/section configs are layout-free since task #75: direction, gap,
+ * alignment, justification, wrap, padding, max-width and background all live
+ * exclusively on `responsive.<bp>`. Even though the prompt forbids these
+ * keys, the model occasionally still emits them — strip them at the
+ * sanitisation boundary so we never persist the same layout setting in two
+ * places. We do not migrate the values into `responsive.desktop` here on
+ * purpose: silently moving them would mask "the AI didn't follow the prompt"
+ * mistakes, and the per-type editor defaults already provide sensible
+ * fallbacks.
+ */
+const CONTAINER_LEGACY_LAYOUT_KEYS: ReadonlySet<string> = new Set([
+  "direction",
+  "gap",
+  "alignItems",
+  "justifyContent",
+  "wrap",
+  "padding",
+  "background",
+  "maxWidth",
+]);
+
+function stripContainerLegacyLayoutKeys(
+  config: Record<string, unknown>
+): Record<string, unknown> {
+  const dropped: string[] = [];
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(config)) {
+    if (CONTAINER_LEGACY_LAYOUT_KEYS.has(k)) {
+      dropped.push(k);
+      continue;
+    }
+    out[k] = v;
+  }
+  if (dropped.length > 0) {
+    logWarn("AI container/section legacy layout keys stripped from config", {
+      operation: "ai_generate_blocks",
+      issues: `config: legacy_layout_keys(${dropped.join(",")})`,
+    });
+  }
+  return out;
+}
+
+/**
  * Sanitize a raw AI-emitted block. Returns a new shape with normalised
  * responsive/onClickAction fields and recursively-sanitised children, or
  * `null` if the block's type is not known — that lets callers drop
  * individual bad nodes (at any depth) instead of failing the whole tree.
  *
- * The block's `config` is left untouched here — per-type config schemas have
- * their own `.default()` fallbacks and the canonical `blockSchema` accepts
- * an arbitrary record for `config`.
+ * Container/section configs additionally have any legacy layout keys
+ * (direction, gap, alignment, padding, etc.) stripped here — see
+ * `stripContainerLegacyLayoutKeys`. All other configs are passed through
+ * untouched: per-type config schemas have their own `.default()` fallbacks
+ * and the canonical `blockSchema` accepts an arbitrary record for `config`.
  */
 export function sanitizeAiBlock(raw: unknown): AiBlockShape | null {
   // Use the same `blockType` + `issues` shape as `validateBlockTree` so all
@@ -500,10 +545,14 @@ export function sanitizeAiBlock(raw: unknown): AiBlockShape | null {
     return null;
   }
 
-  const config =
+  let config: Record<string, unknown> =
     src.config && typeof src.config === "object" && !Array.isArray(src.config)
       ? (src.config as Record<string, unknown>)
       : {};
+
+  if (isContainerBlockType(src.type)) {
+    config = stripContainerLegacyLayoutKeys(config);
+  }
 
   const out: AiBlockShape = {
     type: src.type,

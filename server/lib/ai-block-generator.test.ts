@@ -268,6 +268,98 @@ test("parseAndValidateAiResponse: empty blocks array returns empty (not a parse 
   assert(blocks.length === 0, "expected zero blocks");
 });
 
+test("container legacy layout keys in config are stripped (responsive is the single source of truth)", () => {
+  const blocks = sanitizeAndValidateAiBlocks([
+    {
+      type: "container",
+      config: {
+        direction: "row",
+        gap: 12,
+        alignItems: "center",
+        justifyContent: "between",
+        wrap: true,
+        padding: { top: 8, right: 8, bottom: 8, left: 8 },
+        background: "#fafafa",
+        maxWidth: "wide",
+        keepThis: "ok",
+      },
+      responsive: {
+        desktop: { display: "flex", flexDirection: "row", gap: 16 },
+      },
+      children: [],
+    },
+  ]);
+  assert(blocks.length === 1, "expected one block");
+  const cfg = blocks[0].config as Record<string, unknown>;
+  for (const k of [
+    "direction",
+    "gap",
+    "alignItems",
+    "justifyContent",
+    "wrap",
+    "padding",
+    "background",
+    "maxWidth",
+  ]) {
+    assert(!(k in cfg), `expected ${k} stripped from container config`);
+  }
+  assert(cfg.keepThis === "ok", "non-layout config keys should pass through");
+  deepEqual(
+    blocks[0].responsive?.desktop,
+    { display: "flex", flexDirection: "row", gap: 16 },
+    "responsive.desktop should be preserved exactly as authored"
+  );
+});
+
+test("section legacy layout keys in config are stripped", () => {
+  const blocks = sanitizeAndValidateAiBlocks([
+    {
+      type: "section",
+      config: {
+        maxWidth: "wide",
+        padding: { top: 48, right: 24, bottom: 48, left: 24 },
+        background: "#000",
+        title: "Hero section",
+      },
+      responsive: {
+        desktop: {
+          padding: { top: 64, right: 32, bottom: 64, left: 32 },
+          maxWidth: "1200px",
+        },
+      },
+      children: [],
+    },
+  ]);
+  assert(blocks.length === 1, "expected one block");
+  const cfg = blocks[0].config as Record<string, unknown>;
+  for (const k of ["maxWidth", "padding", "background"]) {
+    assert(!(k in cfg), `expected ${k} stripped from section config`);
+  }
+  assert(cfg.title === "Hero section", "non-layout config keys should pass through");
+});
+
+test("non-container blocks keep their config keys (only container/section are stripped)", () => {
+  // A text block uses textAlign / fontSize for legitimate purposes today; the
+  // container/section strip rule must NOT touch other block types.
+  const blocks = sanitizeAndValidateAiBlocks([
+    {
+      type: "text-block",
+      config: {
+        text: "Hello",
+        textAlign: "center",
+        fontSize: 18,
+        padding: { top: 4, right: 4, bottom: 4, left: 4 },
+      },
+    },
+  ]);
+  assert(blocks.length === 1, "expected one block");
+  const cfg = blocks[0].config as Record<string, unknown>;
+  assert(cfg.text === "Hello", "text preserved");
+  assert(cfg.textAlign === "center", "text-block textAlign preserved");
+  assert(cfg.fontSize === 18, "text-block fontSize preserved");
+  assert(cfg.padding !== undefined, "text-block padding preserved");
+});
+
 test("parseAndValidateAiResponse: throws when the top-level shape is wrong", () => {
   let threw = false;
   try {

@@ -32,25 +32,24 @@ export const paddingSchema = z.object({
 
 export type Padding = z.infer<typeof paddingSchema>;
 
-export const containerConfigSchema = z.object({
-  direction: z.enum(["row", "column"]).default("column"),
-  gap: z.number().min(0).default(16),
-  alignItems: z.enum(["start", "center", "end", "stretch"]).default("stretch"),
-  justifyContent: z
-    .enum(["start", "center", "end", "between", "around"])
-    .default("start"),
-  wrap: z.boolean().default(false),
-  padding: paddingSchema.default({ top: 16, right: 16, bottom: 16, left: 16 }),
-  background: z.string().optional(),
-});
+/**
+ * Container/Section configs no longer carry layout fields. Direction, gap,
+ * alignment, justification, wrap, padding, max-width and background all live
+ * on the unified responsive design system (`block.responsive.<bp>`) — see
+ * `shared/responsive.ts`. The schemas are kept as empty records so existing
+ * imports of the type continue to compile, and so future per-type config
+ * additions (non-layout) have a place to land.
+ *
+ * Old persisted pages may still contain the legacy layout keys inside
+ * `config`. They are translated on load by `legacyDesignFromBlock` /
+ * `migrateBlocksResponsive` so the rendering stays the same; nothing in the
+ * editor or AI generator writes those keys anymore.
+ */
+export const containerConfigSchema = z.object({}).passthrough();
 
 export type ContainerConfig = z.infer<typeof containerConfigSchema>;
 
-export const sectionBlockConfigSchema = containerConfigSchema.extend({
-  maxWidth: z
-    .enum(["narrow", "medium", "wide", "full"])
-    .default("wide"),
-});
+export const sectionBlockConfigSchema = z.object({}).passthrough();
 
 export type SectionBlockConfig = z.infer<typeof sectionBlockConfigSchema>;
 

@@ -8,9 +8,10 @@ interface SectionPreviewProps {
   children?: ReactNode;
   /**
    * Resolved design properties for the active breakpoint. Section layout and
-   * width is now driven by the responsive design system. The legacy
-   * `buildContainerStyle` / `maxWidthMap` mapping has been removed; existing
-   * pages get their layout back via `legacyDesignFromBlock`.
+   * width is driven entirely by the responsive design system; the per-block
+   * section config no longer carries layout fields. Pages saved before the
+   * schema cleanup keep their layout values via the legacy → responsive
+   * translation in `legacyDesignFromBlock` (`shared/responsive.ts`).
    */
   design?: DesignProps;
   /**

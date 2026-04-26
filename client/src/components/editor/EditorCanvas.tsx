@@ -10,7 +10,7 @@ import { GripVertical, Settings, Trash2, Copy } from "lucide-react";
 import { memo, useMemo, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { Block, ContainerConfig, DesignProps } from "@shared/schema";
+import type { Block, DesignProps } from "@shared/schema";
 import { isContainerBlockType } from "@shared/schema";
 import { resolveDesign, designToStyle, type Breakpoint } from "@/lib/responsive";
 import { HeroBlockPreview } from "./blocks/HeroBlockPreview";
@@ -33,24 +33,21 @@ export const ROOT_INTENT_ID = "__root__";
 
 /**
  * Resolve the effective flex direction for a container/section at the given
- * breakpoint. Reads the unified responsive design system first (the source of
- * truth for layout) and falls back to the legacy `config.direction` value via
- * `resolveDesign`. Returns "row" for horizontal layouts (including
- * `row-reverse`) and "column" for vertical layouts (including
- * `column-reverse`). Non-container blocks always return "column".
+ * breakpoint. Reads the unified responsive design system, which is the single
+ * source of truth for layout. `resolveDesign` already folds in any legacy
+ * `config.direction` value left over on old persisted pages via
+ * `legacyDesignFromBlock`, so no separate fallback is needed here. Returns
+ * "row" for horizontal layouts (including `row-reverse`) and "column" for
+ * vertical layouts (including `column-reverse`). Non-container blocks always
+ * return "column".
  */
 export function getContainerDirection(
   block: Block,
   breakpoint: Breakpoint = "desktop"
 ): "row" | "column" {
   if (!isContainerBlockType(block.type)) return "column";
-  const resolved = resolveDesign(block, breakpoint);
-  const fd = resolved.flexDirection;
-  if (fd === "row" || fd === "row-reverse") return "row";
-  if (fd === "column" || fd === "column-reverse") return "column";
-  // Fallback to legacy config.direction if the responsive system has nothing.
-  const direction = (block.config as ContainerConfig).direction;
-  return direction === "row" ? "row" : "column";
+  const fd = resolveDesign(block, breakpoint).flexDirection;
+  return fd === "row" || fd === "row-reverse" ? "row" : "column";
 }
 
 interface EditorCanvasProps {
