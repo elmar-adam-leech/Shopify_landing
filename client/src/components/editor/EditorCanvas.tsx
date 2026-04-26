@@ -31,8 +31,24 @@ export type DragIntent = { targetId: string; position: DropPosition } | null;
 export const ROOT_DROPPABLE_ID = "editor-canvas";
 export const ROOT_INTENT_ID = "__root__";
 
-export function getContainerDirection(block: Block): "row" | "column" {
+/**
+ * Resolve the effective flex direction for a container/section at the given
+ * breakpoint. Reads the unified responsive design system first (the source of
+ * truth for layout) and falls back to the legacy `config.direction` value via
+ * `resolveDesign`. Returns "row" for horizontal layouts (including
+ * `row-reverse`) and "column" for vertical layouts (including
+ * `column-reverse`). Non-container blocks always return "column".
+ */
+export function getContainerDirection(
+  block: Block,
+  breakpoint: Breakpoint = "desktop"
+): "row" | "column" {
   if (!isContainerBlockType(block.type)) return "column";
+  const resolved = resolveDesign(block, breakpoint);
+  const fd = resolved.flexDirection;
+  if (fd === "row" || fd === "row-reverse") return "row";
+  if (fd === "column" || fd === "column-reverse") return "column";
+  // Fallback to legacy config.direction if the responsive system has nothing.
   const direction = (block.config as ContainerConfig).direction;
   return direction === "row" ? "row" : "column";
 }
@@ -188,7 +204,8 @@ const RenderBlock = memo(function RenderBlock({
     transition,
   };
 
-  const isHorizontal = isContainer && getContainerDirection(block) === "row";
+  const isHorizontal =
+    isContainer && getContainerDirection(block, activeBreakpoint) === "row";
   const childItemIds = useMemo(
     () => (block.children ?? []).map((c) => c.id),
     [block.children]

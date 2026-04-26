@@ -96,7 +96,7 @@ const defaultDesktopDesign: Partial<Record<BlockType, DesignProps>> = {
   },
   "container": {
     display: "flex",
-    flexDirection: "row",
+    flexDirection: "column",
     gap: 16,
     alignItems: "stretch",
     justifyContent: "start",
