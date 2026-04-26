@@ -2,11 +2,27 @@ import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
 import type OpenAI from "openai";
 import { blockSchema, blockTypes, type Block, type BlockType, isContainerBlockType } from "@shared/schema";
-import { logError } from "./logger";
+import { logError, logWarn } from "./logger";
 
 const MAX_PROMPT_LENGTH = 500;
 const MAX_BLOCKS = 30;
 const REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * The raw AI block shape is intentionally permissive. We do NOT enforce
+ * `type: z.enum(blockTypes)` here because doing so would cause a single
+ * unknown child type (e.g. the model invents "icon-block") to fail the
+ * top-level shape parse and discard *every* block in the response. Instead
+ * we accept any string and let the sanitize stage drop blocks with unknown
+ * types per-node, so the rest of the tree survives.
+ */
+interface RawAiBlock {
+  type: string;
+  config?: unknown;
+  responsive?: unknown;
+  onClickAction?: unknown;
+  children?: unknown;
+}
 
 interface AiBlockShape {
   type: BlockType;
@@ -16,19 +32,25 @@ interface AiBlockShape {
   children?: AiBlockShape[];
 }
 
-const aiBlockShapeSchema: z.ZodType<AiBlockShape> = z.lazy(() =>
-  z.object({
-    type: z.enum(blockTypes),
-    config: z.record(z.unknown()).optional(),
-    responsive: z.unknown().optional(),
-    onClickAction: z.unknown().optional(),
-    children: z.array(aiBlockShapeSchema).optional(),
-  })
-);
-
+/**
+ * The top-level array is parsed as `unknown[]` so a single structurally
+ * malformed item (missing `type`, wrong primitive, etc.) does not sink the
+ * whole response. Per-item validation/dropping happens in `sanitizeAiBlock`.
+ *
+ * `min(0)` (not `min(1)`) so an empty array is funneled into the same
+ * "no usable blocks" path as "all items dropped" — the user-facing message
+ * is then identical regardless of whether the model returned nothing or
+ * returned only garbage.
+ */
 const aiResponseSchema = z.object({
-  blocks: z.array(aiBlockShapeSchema).min(1).max(MAX_BLOCKS),
+  blocks: z.array(z.unknown()).max(MAX_BLOCKS),
 });
+
+const KNOWN_BLOCK_TYPES = new Set<string>(blockTypes);
+
+function isKnownBlockType(t: unknown): t is BlockType {
+  return typeof t === "string" && KNOWN_BLOCK_TYPES.has(t);
+}
 
 const SYSTEM_PROMPT = `You are a landing page block generator for a Shopify-style page editor.
 
@@ -46,11 +68,11 @@ Where each Block is:
 }
 
 DesignProps may include any of:
-  padding/margin: { top, right, bottom, left } (numbers, px),
+  padding/margin: { top, right, bottom, left } (numbers, px) — ALWAYS use this 4-sided object, never a single number,
   display: "block"|"flex"|"grid"|"inline-block"|"none",
-  flexDirection: "row"|"column"|"row-reverse"|"column-reverse",
+  flexDirection: "row"|"column"|"row-reverse"|"column-reverse"  (NEVER "horizontal"/"vertical"),
   gap: number,
-  justifyContent: "start"|"center"|"end"|"between"|"around"|"evenly",
+  justifyContent: "start"|"center"|"end"|"between"|"around"|"evenly"  (NEVER "space-between"/"space-around"),
   alignItems: "start"|"center"|"end"|"stretch"|"baseline",
   flexWrap: "wrap"|"nowrap",
   fontSize: number, fontWeight: number, lineHeight: number, letterSpacing: number,
@@ -59,6 +81,22 @@ DesignProps may include any of:
   backgroundSize: "cover"|"contain"|"auto", backgroundPosition: string,
   borderWidth: number, borderColor: string, borderStyle: "solid"|"dashed"|"dotted"|"double"|"none", borderRadius: number,
   width: string, height: string, maxWidth: string, minHeight: string
+
+A valid responsive object looks EXACTLY like:
+  "responsive": {
+    "desktop": {
+      "padding": { "top": 64, "right": 24, "bottom": 64, "left": 24 },
+      "display": "flex",
+      "flexDirection": "row",
+      "gap": 24,
+      "justifyContent": "center",
+      "alignItems": "center"
+    },
+    "mobile": {
+      "padding": { "top": 32, "right": 16, "bottom": 32, "left": 16 },
+      "flexDirection": "column"
+    }
+  }
 
 Type-specific config rules (only the fields you need; unknown fields will be dropped):
   hero-banner: { title, subtitle, buttonText, buttonUrl, overlayOpacity (0-100), textAlign }
@@ -78,13 +116,14 @@ Hard rules:
 - Use sections at the top level for visually distinct page regions ("section" type).
 - Use containers ("container" type) inside sections to lay out columns and rows.
 - For multi-column layouts, set the parent container's responsive.desktop.flexDirection to "row" and responsive.mobile.flexDirection to "column".
-- Set sensible padding on sections (e.g. desktop padding 64/24/64/24, mobile padding 32/16/32/16).
+- Set sensible padding on sections (e.g. desktop padding {top:64,right:24,bottom:64,left:24}, mobile padding {top:32,right:16,bottom:32,left:16}).
 - Use responsive overrides for tablet and mobile when text size or layout should change.
 - Do NOT invent product IDs — leave productIds empty for product-grid and productId empty for product-block.
 - Do NOT include image URLs you cannot guarantee exist; leave image src "" if you do not have one.
 - Keep total blocks <= ${MAX_BLOCKS}.
 - Never include "id" or "order" — the server assigns those.
-- Never include "children" on leaf block types.`;
+- Never include "children" on leaf block types.
+- Common mistakes to avoid: numeric padding/margin (use the 4-sided object), "horizontal"/"vertical" for flexDirection (use "row"/"column"), "space-between"/"space-around" for justifyContent (use "between"/"around"), unknown enum values like "stack" for display.`;
 
 export interface GeneratedBlocksResult {
   blocks: Block[];
@@ -149,6 +188,343 @@ function resolveModel(tier: AiModelTier | undefined): string {
   return OPENAI_MODELS[t];
 }
 
+// ---------------------------------------------------------------------------
+// Sanitization
+//
+// AI models routinely return _almost_-valid blocks. A single off-spec value
+// (e.g. flexDirection: "horizontal", numeric padding, an unknown enum) deep
+// in the tree would otherwise reject an entire section. The sanitizer walks
+// the AI output and either repairs or strips those fields so the rest of the
+// block survives strict validation.
+// ---------------------------------------------------------------------------
+
+const ALLOWED_DISPLAY = new Set(["block", "flex", "grid", "inline-block", "none"]);
+const ALLOWED_FLEX_DIRECTION = new Set(["row", "column", "row-reverse", "column-reverse"]);
+const ALLOWED_JUSTIFY_CONTENT = new Set([
+  "start",
+  "center",
+  "end",
+  "between",
+  "around",
+  "evenly",
+]);
+const ALLOWED_ALIGN_ITEMS = new Set(["start", "center", "end", "stretch", "baseline"]);
+const ALLOWED_FLEX_WRAP = new Set(["wrap", "nowrap"]);
+const ALLOWED_TEXT_ALIGN = new Set(["left", "center", "right", "justify"]);
+const ALLOWED_BACKGROUND_SIZE = new Set(["cover", "contain", "auto"]);
+const ALLOWED_BORDER_STYLE = new Set(["solid", "dashed", "dotted", "double", "none"]);
+
+// Common synonyms the model emits — remap rather than drop.
+const FLEX_DIRECTION_SYNONYMS: Record<string, string> = {
+  horizontal: "row",
+  vertical: "column",
+  "horizontal-reverse": "row-reverse",
+  "vertical-reverse": "column-reverse",
+};
+
+const JUSTIFY_CONTENT_SYNONYMS: Record<string, string> = {
+  "space-between": "between",
+  "space-around": "around",
+  "space-evenly": "evenly",
+  "flex-start": "start",
+  "flex-end": "end",
+};
+
+const ALIGN_ITEMS_SYNONYMS: Record<string, string> = {
+  "flex-start": "start",
+  "flex-end": "end",
+};
+
+const DISPLAY_SYNONYMS: Record<string, string> = {
+  inline: "inline-block",
+  "inline-flex": "flex",
+  "inline-grid": "grid",
+};
+
+function isFiniteNumber(n: unknown): n is number {
+  return typeof n === "number" && Number.isFinite(n);
+}
+
+/** Coerce a value into a non-negative integer of pixels, or null if unusable. */
+function coercePixel(value: unknown): number | null {
+  if (isFiniteNumber(value)) {
+    return Math.max(0, Math.round(value));
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const match = trimmed.match(/^(-?\d+(?:\.\d+)?)/);
+    if (!match) return null;
+    const n = Number(match[1]);
+    if (!Number.isFinite(n)) return null;
+    return Math.max(0, Math.round(n));
+  }
+  return null;
+}
+
+/** Coerce to a finite number; returns null for NaN/Infinity/non-number strings. */
+function coerceNumber(value: unknown): number | null {
+  if (isFiniteNumber(value)) return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const match = trimmed.match(/^(-?\d+(?:\.\d+)?)/);
+    if (!match) return null;
+    const n = Number(match[1]);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+/** Normalize padding/margin into the canonical { top, right, bottom, left } shape. */
+function sanitizePadding(value: unknown): { top: number; right: number; bottom: number; left: number } | undefined {
+  if (value == null) return undefined;
+  // Numeric or string shorthand: apply to all four sides.
+  const shorthand = coercePixel(value);
+  if (shorthand !== null) {
+    return { top: shorthand, right: shorthand, bottom: shorthand, left: shorthand };
+  }
+  if (Array.isArray(value)) {
+    // CSS-style arrays: [all] / [vert, horiz] / [top, horiz, bottom] / [t,r,b,l]
+    const nums = value.map((v) => coercePixel(v) ?? 0);
+    if (nums.length === 1) return { top: nums[0], right: nums[0], bottom: nums[0], left: nums[0] };
+    if (nums.length === 2) return { top: nums[0], right: nums[1], bottom: nums[0], left: nums[1] };
+    if (nums.length === 3) return { top: nums[0], right: nums[1], bottom: nums[2], left: nums[1] };
+    if (nums.length >= 4) return { top: nums[0], right: nums[1], bottom: nums[2], left: nums[3] };
+    return undefined;
+  }
+  if (typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    return {
+      top: coercePixel(obj.top) ?? 0,
+      right: coercePixel(obj.right) ?? 0,
+      bottom: coercePixel(obj.bottom) ?? 0,
+      left: coercePixel(obj.left) ?? 0,
+    };
+  }
+  return undefined;
+}
+
+function pickEnum(
+  value: unknown,
+  allowed: Set<string>,
+  synonyms?: Record<string, string>
+): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const lower = value.trim().toLowerCase();
+  if (!lower) return undefined;
+  if (allowed.has(lower)) return lower;
+  if (synonyms && synonyms[lower] && allowed.has(synonyms[lower])) {
+    return synonyms[lower];
+  }
+  return undefined;
+}
+
+const DESIGN_PROP_KEYS = new Set([
+  "padding",
+  "margin",
+  "display",
+  "flexDirection",
+  "gap",
+  "justifyContent",
+  "alignItems",
+  "flexWrap",
+  "fontSize",
+  "fontWeight",
+  "lineHeight",
+  "letterSpacing",
+  "color",
+  "textAlign",
+  "backgroundColor",
+  "backgroundImage",
+  "backgroundSize",
+  "backgroundPosition",
+  "borderWidth",
+  "borderColor",
+  "borderStyle",
+  "borderRadius",
+  "width",
+  "height",
+  "maxWidth",
+  "minHeight",
+]);
+
+function sanitizeDesignProps(input: unknown): Record<string, unknown> | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const src = input as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+
+  // Iterate only over known design-prop keys; unknown keys are dropped silently.
+  for (const key of Object.keys(src)) {
+    if (!DESIGN_PROP_KEYS.has(key)) continue;
+    const v = src[key];
+    if (v === undefined || v === null) continue;
+
+    switch (key) {
+      case "padding":
+      case "margin": {
+        const norm = sanitizePadding(v);
+        if (norm) out[key] = norm;
+        break;
+      }
+      case "display": {
+        const e = pickEnum(v, ALLOWED_DISPLAY, DISPLAY_SYNONYMS);
+        if (e) out[key] = e;
+        break;
+      }
+      case "flexDirection": {
+        const e = pickEnum(v, ALLOWED_FLEX_DIRECTION, FLEX_DIRECTION_SYNONYMS);
+        if (e) out[key] = e;
+        break;
+      }
+      case "justifyContent": {
+        const e = pickEnum(v, ALLOWED_JUSTIFY_CONTENT, JUSTIFY_CONTENT_SYNONYMS);
+        if (e) out[key] = e;
+        break;
+      }
+      case "alignItems": {
+        const e = pickEnum(v, ALLOWED_ALIGN_ITEMS, ALIGN_ITEMS_SYNONYMS);
+        if (e) out[key] = e;
+        break;
+      }
+      case "flexWrap": {
+        const e = pickEnum(v, ALLOWED_FLEX_WRAP);
+        if (e) out[key] = e;
+        break;
+      }
+      case "textAlign": {
+        const e = pickEnum(v, ALLOWED_TEXT_ALIGN);
+        if (e) out[key] = e;
+        break;
+      }
+      case "backgroundSize": {
+        const e = pickEnum(v, ALLOWED_BACKGROUND_SIZE);
+        if (e) out[key] = e;
+        break;
+      }
+      case "borderStyle": {
+        const e = pickEnum(v, ALLOWED_BORDER_STYLE);
+        if (e) out[key] = e;
+        break;
+      }
+      case "gap":
+      case "borderWidth":
+      case "borderRadius":
+      case "fontSize":
+      case "fontWeight":
+      case "lineHeight":
+      case "letterSpacing": {
+        const n = coerceNumber(v);
+        if (n === null) break;
+        // Sizes and weights cannot be negative.
+        out[key] = Math.max(0, n);
+        break;
+      }
+      case "color":
+      case "backgroundColor":
+      case "backgroundImage":
+      case "backgroundPosition":
+      case "borderColor":
+      case "width":
+      case "height":
+      case "maxWidth":
+      case "minHeight": {
+        if (typeof v === "string" && v.trim() !== "") out[key] = v;
+        else if (typeof v === "number" && Number.isFinite(v) && (key === "width" || key === "height" || key === "maxWidth" || key === "minHeight")) {
+          // accept bare number as px string
+          out[key] = `${v}px`;
+        }
+        break;
+      }
+    }
+  }
+
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+const RESPONSIVE_BREAKPOINTS = ["desktop", "tablet", "mobile"] as const;
+
+function sanitizeResponsive(input: unknown): Record<string, unknown> | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const src = input as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const bp of RESPONSIVE_BREAKPOINTS) {
+    if (src[bp] !== undefined) {
+      const cleaned = sanitizeDesignProps(src[bp]);
+      if (cleaned) out[bp] = cleaned;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function sanitizeOnClickAction(input: unknown): Record<string, unknown> | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const src = input as Record<string, unknown>;
+  const allowedTypes = new Set(["none", "link", "link-new-tab", "scroll", "open-form"]);
+  const type = typeof src.type === "string" && allowedTypes.has(src.type) ? src.type : "none";
+  const out: Record<string, unknown> = { type };
+  if (typeof src.value === "string") out.value = src.value;
+  return out;
+}
+
+/**
+ * Sanitize a raw AI-emitted block. Returns a new shape with normalised
+ * responsive/onClickAction fields and recursively-sanitised children, or
+ * `null` if the block's type is not known — that lets callers drop
+ * individual bad nodes (at any depth) instead of failing the whole tree.
+ *
+ * The block's `config` is left untouched here — per-type config schemas have
+ * their own `.default()` fallbacks and the canonical `blockSchema` accepts
+ * an arbitrary record for `config`.
+ */
+export function sanitizeAiBlock(raw: unknown): AiBlockShape | null {
+  // Use the same `blockType` + `issues` shape as `validateBlockTree` so all
+  // drop reasons can be searched/filtered uniformly in production logs.
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    const received = raw === null ? "null" : Array.isArray(raw) ? "array" : typeof raw;
+    logWarn("AI block dropped: not an object", {
+      operation: "ai_generate_blocks",
+      blockType: "<unknown>",
+      issues: `<root>: expected_object_received_${received}`,
+    });
+    return null;
+  }
+  const src = raw as RawAiBlock;
+  if (!isKnownBlockType(src.type)) {
+    const t = typeof src.type === "string" ? src.type : "<missing>";
+    logWarn("AI block dropped: unknown type", {
+      operation: "ai_generate_blocks",
+      blockType: t,
+      issues: `type: invalid_block_type(${t})`,
+    });
+    return null;
+  }
+
+  const config =
+    src.config && typeof src.config === "object" && !Array.isArray(src.config)
+      ? (src.config as Record<string, unknown>)
+      : {};
+
+  const out: AiBlockShape = {
+    type: src.type,
+    config,
+  };
+  const responsive = sanitizeResponsive(src.responsive);
+  if (responsive) out.responsive = responsive;
+  const onClick = sanitizeOnClickAction(src.onClickAction);
+  if (onClick) out.onClickAction = onClick;
+
+  if (Array.isArray(src.children) && src.children.length > 0 && isContainerBlockType(src.type)) {
+    const cleanedChildren: AiBlockShape[] = [];
+    for (const child of src.children) {
+      const c = sanitizeAiBlock(child);
+      if (c) cleanedChildren.push(c);
+    }
+    if (cleanedChildren.length > 0) out.children = cleanedChildren;
+  }
+  return out;
+}
+
 function assignIdsAndOrder(blocks: AiBlockShape[]): Block[] {
   const result: Block[] = [];
   blocks.forEach((raw, index) => {
@@ -179,6 +555,86 @@ function countBlocks(blocks: Block[]): number {
     if (b.children) n += countBlocks(b.children);
   }
   return n;
+}
+
+function formatZodIssues(error: z.ZodError): string {
+  return error.issues
+    .slice(0, 5)
+    .map((i) => `${i.path.join(".") || "<root>"}: ${i.code}`)
+    .join("; ");
+}
+
+/**
+ * Bottom-up validation. Children are validated and bad ones removed first, so
+ * a single malformed grandchild doesn't sink the parent section. Returns the
+ * validated block, or null if the block itself fails strict validation even
+ * after sanitization.
+ */
+function validateBlockTree(block: Block): Block | null {
+  // Recurse into children first so we can drop any that fail.
+  if (Array.isArray(block.children) && block.children.length > 0) {
+    const validChildren: Block[] = [];
+    for (const child of block.children) {
+      const v = validateBlockTree(child);
+      if (v) {
+        validChildren.push({ ...v, order: validChildren.length });
+      }
+    }
+    block.children = validChildren.length > 0 ? validChildren : undefined;
+  }
+
+  const result = blockSchema.safeParse(block);
+  if (result.success) return result.data;
+
+  logWarn("AI block dropped after sanitization", {
+    operation: "ai_generate_blocks",
+    blockType: block.type,
+    issues: formatZodIssues(result.error),
+  });
+  return null;
+}
+
+/**
+ * End-to-end pipeline used by both production and tests: sanitize, assign
+ * ids/order, then validate the tree, dropping unrecoverable blocks instead of
+ * failing the whole response. Accepts the loose raw shape so unknown block
+ * types at any depth are dropped per-node rather than aborting the response.
+ */
+export function sanitizeAndValidateAiBlocks(rawBlocks: unknown[]): Block[] {
+  const sanitized: AiBlockShape[] = [];
+  for (const r of rawBlocks) {
+    const cleaned = sanitizeAiBlock(r);
+    if (cleaned) sanitized.push(cleaned);
+    // sanitizeAiBlock already emits a warn log for any node it drops
+    // (top-level OR nested), so we don't double-log here.
+  }
+  const candidates = assignIdsAndOrder(sanitized);
+  const validated: Block[] = [];
+  for (const block of candidates) {
+    const v = validateBlockTree(block);
+    if (v) validated.push({ ...v, order: validated.length });
+  }
+  return validated;
+}
+
+/**
+ * Convert an already-JSON-parsed AI response into validated Block[]. Throws
+ * with a stable message when the top-level shape is wrong (no `blocks`
+ * array). Surfaced as a separate function so the test suite can exercise the
+ * exact pipeline used by `generateBlocksFromPrompt` without going through
+ * the OpenAI client.
+ */
+export function parseAndValidateAiResponse(parsed: unknown): Block[] {
+  const shape = aiResponseSchema.safeParse(parsed);
+  if (!shape.success) {
+    logError(
+      "AI block generator output failed shape validation",
+      { operation: "ai_generate_blocks", issues: formatZodIssues(shape.error) },
+      shape.error
+    );
+    throw new Error("AI output did not match expected shape");
+  }
+  return sanitizeAndValidateAiBlocks(shape.data.blocks);
 }
 
 export interface GenerateBlocksOptions {
@@ -246,31 +702,13 @@ export async function generateBlocksFromPrompt(
     throw new Error("AI returned invalid JSON");
   }
 
-  const shape = aiResponseSchema.safeParse(parsed);
-  if (!shape.success) {
-    logError("AI block generator output failed shape validation", { operation: "ai_generate_blocks" }, shape.error);
-    throw new Error("AI output did not match expected shape");
-  }
+  const validated = parseAndValidateAiResponse(parsed);
 
-  const candidate = assignIdsAndOrder(shape.data.blocks);
-  if (candidate.length === 0) {
-    throw new Error("AI did not produce any blocks");
-  }
-  if (countBlocks(candidate) > MAX_BLOCKS) {
-    throw new Error("AI produced too many blocks");
-  }
-
-  // Final validation against the canonical schema. Anything that fails
-  // strict validation is dropped so we never poison the page with malformed
-  // blocks. If everything fails we surface an error.
-  const validated: Block[] = [];
-  for (const b of candidate) {
-    const result = blockSchema.safeParse(b);
-    if (result.success) validated.push(result.data);
-    else logError("AI block failed schema validation", { operation: "ai_generate_blocks", blockType: b.type }, result.error);
-  }
   if (validated.length === 0) {
-    throw new Error("AI output failed validation");
+    throw new Error("AI returned no usable blocks — try rephrasing the prompt");
+  }
+  if (countBlocks(validated) > MAX_BLOCKS) {
+    throw new Error("AI produced too many blocks");
   }
 
   return { blocks: validated };
