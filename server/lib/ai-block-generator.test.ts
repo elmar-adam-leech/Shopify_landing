@@ -338,9 +338,12 @@ test("section legacy layout keys in config are stripped", () => {
   assert(cfg.title === "Hero section", "non-layout config keys should pass through");
 });
 
-test("non-container blocks keep their config keys (only container/section are stripped)", () => {
-  // A text block uses textAlign / fontSize for legitimate purposes today; the
-  // container/section strip rule must NOT touch other block types.
+test("text-block legacy visual keys (textAlign, fontSize) are stripped from config", () => {
+  // textAlign and fontSize have been retired from the text-block schema and
+  // now live exclusively in `responsive.<bp>`. The AI prompt forbids them,
+  // and any that slip through are stripped at the sanitisation boundary
+  // (mirroring container/section). Non-visual keys like `text` / `padding`
+  // pass through untouched.
   const blocks = sanitizeAndValidateAiBlocks([
     {
       type: "text-block",
@@ -355,9 +358,47 @@ test("non-container blocks keep their config keys (only container/section are st
   assert(blocks.length === 1, "expected one block");
   const cfg = blocks[0].config as Record<string, unknown>;
   assert(cfg.text === "Hello", "text preserved");
-  assert(cfg.textAlign === "center", "text-block textAlign preserved");
-  assert(cfg.fontSize === 18, "text-block fontSize preserved");
+  assert(!("textAlign" in cfg), "text-block textAlign must be stripped");
+  assert(!("fontSize" in cfg), "text-block fontSize must be stripped");
   assert(cfg.padding !== undefined, "text-block padding preserved");
+});
+
+test("hero-banner legacy visual keys (textAlign, backgroundImage) are stripped from config", () => {
+  const blocks = sanitizeAndValidateAiBlocks([
+    {
+      type: "hero-banner",
+      config: {
+        title: "Welcome",
+        subtitle: "Sub",
+        textAlign: "left",
+        backgroundImage: "https://example.com/bg.jpg",
+      },
+    },
+  ]);
+  assert(blocks.length === 1, "expected one block");
+  const cfg = blocks[0].config as Record<string, unknown>;
+  assert(cfg.title === "Welcome", "hero title preserved");
+  assert(cfg.subtitle === "Sub", "hero subtitle preserved");
+  assert(!("textAlign" in cfg), "hero-banner textAlign must be stripped");
+  assert(!("backgroundImage" in cfg), "hero-banner backgroundImage must be stripped");
+});
+
+test("button-block legacy alignment key is stripped from config", () => {
+  const blocks = sanitizeAndValidateAiBlocks([
+    {
+      type: "button-block",
+      config: {
+        text: "Buy",
+        url: "/buy",
+        alignment: "right",
+      },
+    },
+  ]);
+  assert(blocks.length === 1, "expected one block");
+  const cfg = blocks[0].config as Record<string, unknown>;
+  assert(cfg.text === "Buy", "button text preserved");
+  assert(cfg.url === "/buy", "button url preserved");
+  assert(!("alignment" in cfg), "button-block alignment must be stripped");
 });
 
 test("parseAndValidateAiResponse: throws when the top-level shape is wrong", () => {

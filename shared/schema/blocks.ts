@@ -53,15 +53,22 @@ export const sectionBlockConfigSchema = z.object({}).passthrough();
 
 export type SectionBlockConfig = z.infer<typeof sectionBlockConfigSchema>;
 
+/**
+ * Hero block content fields. Visual styling (textAlign, backgroundImage)
+ * lives exclusively in `block.responsive.<bp>` — see `shared/responsive.ts`.
+ * Old persisted pages may still carry `textAlign` / `backgroundImage` inside
+ * `config`; `legacyDesignFromBlock` translates them on load and
+ * `migrateBlocksResponsive` strips them once they have been folded into
+ * `responsive.desktop`. `.passthrough()` keeps unknown legacy keys around
+ * during that load → save cycle so nothing is lost mid-migration.
+ */
 export const heroBlockConfigSchema = z.object({
   title: z.string().default("Your Headline Here"),
   subtitle: z.string().default("Add a compelling subtitle"),
   buttonText: z.string().default("Shop Now"),
   buttonUrl: z.string().default("#"),
-  backgroundImage: z.string().optional(),
   overlayOpacity: z.number().min(0).max(100).default(50),
-  textAlign: z.enum(["left", "center", "right"]).default("center"),
-});
+}).passthrough();
 
 export const productGridConfigSchema = z.object({
   columns: z.number().min(1).max(4).default(3),
@@ -104,11 +111,15 @@ export const productBlockConfigSchema = z.object({
   trackBuyNow: z.boolean().default(true),
 });
 
+/**
+ * Text block content. Visual styling (textAlign, fontSize) lives exclusively
+ * in `block.responsive.<bp>`. See the comment on `heroBlockConfigSchema` for
+ * the legacy-data migration story; `.passthrough()` is kept for the same
+ * reason.
+ */
 export const textBlockConfigSchema = z.object({
   content: z.string().default("Add your text here..."),
-  textAlign: z.enum(["left", "center", "right"]).default("left"),
-  fontSize: z.enum(["small", "medium", "large", "xlarge"]).default("medium"),
-});
+}).passthrough();
 
 export const imageBlockConfigSchema = z.object({
   src: z.string().default(""),
@@ -117,17 +128,22 @@ export const imageBlockConfigSchema = z.object({
   alignment: z.enum(["left", "center", "right"]).default("center"),
 });
 
+/**
+ * Button block content. Visual alignment lives exclusively in
+ * `block.responsive.<bp>` (as `textAlign`, with `justifyContent` derived in
+ * `resolveDesign`'s post-processor). See `heroBlockConfigSchema` for the
+ * legacy-data migration story; `.passthrough()` is kept for the same reason.
+ */
 export const buttonBlockConfigSchema = z.object({
   text: z.string().default("Click Here"),
   url: z.string().default("#"),
   variant: z.enum(["primary", "secondary", "outline"]).default("primary"),
   size: z.enum(["small", "medium", "large"]).default("medium"),
-  alignment: z.enum(["left", "center", "right"]).default("center"),
   trackConversion: z.boolean().default(false),
   conversionEvent: z.enum(pixelEventTypes).default("AddToCart"),
   conversionValue: z.number().optional(),
   customEventIds: z.array(z.string()).default([]),
-});
+}).passthrough();
 
 export const formFieldSchema = z.object({
   id: z.string(),

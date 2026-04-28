@@ -47,6 +47,15 @@ export const HeroBlockPreview = memo(function HeroBlockPreview({
     right: "items-end text-right",
   }[align];
 
+  // Background image lives in `block.responsive.<bp>` (folded in via the
+  // resolved `design` prop). The legacy `config.backgroundImage` field has
+  // been retired from the schema; `legacyDesignFromBlock` translates it for
+  // older persisted blocks so it still surfaces here through `design`.
+  const backgroundImage =
+    typeof design?.backgroundImage === "string" && design.backgroundImage
+      ? design.backgroundImage
+      : undefined;
+
   const update = (patch: Partial<HeroBlockConfig>) => {
     if (onUpdateConfig) onUpdateConfig({ ...config, ...patch });
   };
@@ -56,10 +65,10 @@ export const HeroBlockPreview = memo(function HeroBlockPreview({
       className="relative min-h-[400px] flex flex-col justify-center p-8 bg-gradient-to-br from-slate-800 to-slate-900 overflow-hidden"
       data-testid="hero-block-preview"
     >
-      {settings.backgroundImage && (
+      {backgroundImage && (
         <>
           <img
-            src={settings.backgroundImage}
+            src={backgroundImage}
             alt="Hero background"
             className="absolute inset-0 w-full h-full object-cover"
           />

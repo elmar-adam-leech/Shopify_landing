@@ -99,12 +99,12 @@ A valid responsive object looks EXACTLY like:
   }
 
 Type-specific config rules (only the fields you need; unknown fields will be dropped):
-  hero-banner: { title, subtitle, buttonText, buttonUrl, overlayOpacity (0-100), textAlign }
+  hero-banner: { title, subtitle, buttonText, buttonUrl, overlayOpacity (0-100) } - text alignment AND background image go ONLY in responsive.<bp> (use textAlign, backgroundImage); do NOT put "textAlign"/"backgroundImage" inside config.
   product-grid: { columns (1-4), productIds: string[], showPrice, showTitle, showAddToCart }
   product-block: { productId, layout: "vertical"|"horizontal"|"gallery", imageSize: "small"|"medium"|"large"|"full", maxWidth: "narrow"|"medium"|"wide"|"full", alignment: "left"|"center"|"right" }
-  text-block: { content (string with \\n line breaks ok), textAlign, fontSize: "small"|"medium"|"large"|"xlarge" }
+  text-block: { content (string with \\n line breaks ok) } - text alignment AND font size go ONLY in responsive.<bp> (use textAlign and a numeric fontSize in px); do NOT put "textAlign"/"fontSize" inside config.
   image-block: { src, alt, width: "full"|"large"|"medium"|"small", alignment: "left"|"center"|"right" }
-  button-block: { text, url, variant: "primary"|"secondary"|"outline", size: "small"|"medium"|"large", alignment }
+  button-block: { text, url, variant: "primary"|"secondary"|"outline", size: "small"|"medium"|"large" } - alignment goes ONLY in responsive.<bp> (use textAlign: "left"|"center"|"right"); do NOT put "alignment" inside config.
   form-block: { title, fields: [ { id, label, type: "text"|"email"|"phone"|"textarea"|"select"|"checkbox", required } ], submitText, successMessage }
   phone-block: { phoneNumber, displayText, trackCalls }
   chat-block: { enabled, welcomeMessage, position: "bottom-right"|"bottom-left" }
@@ -489,22 +489,40 @@ const CONTAINER_LEGACY_LAYOUT_KEYS: ReadonlySet<string> = new Set([
   "maxWidth",
 ]);
 
-function stripContainerLegacyLayoutKeys(
-  config: Record<string, unknown>
+/**
+ * Per-type legacy visual keys retired from the text-block / hero-banner /
+ * button-block schemas. They now live exclusively in `responsive.<bp>` and
+ * the AI prompt is told not to emit them; if it does anyway, we strip them
+ * here (mirroring `stripContainerLegacyLayoutKeys` for container/section)
+ * rather than silently migrating them to `responsive`, which would mask
+ * prompt-following mistakes.
+ */
+const PER_TYPE_LEGACY_VISUAL_KEYS: Record<string, ReadonlySet<string>> = {
+  "text-block": new Set(["textAlign", "fontSize"]),
+  "hero-banner": new Set(["textAlign", "backgroundImage"]),
+  "button-block": new Set(["alignment"]),
+};
+
+function stripLegacyConfigKeys(
+  blockType: string,
+  config: Record<string, unknown>,
+  keys: ReadonlySet<string>,
+  reason: string
 ): Record<string, unknown> {
   const dropped: string[] = [];
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(config)) {
-    if (CONTAINER_LEGACY_LAYOUT_KEYS.has(k)) {
+    if (keys.has(k)) {
       dropped.push(k);
       continue;
     }
     out[k] = v;
   }
   if (dropped.length > 0) {
-    logWarn("AI container/section legacy layout keys stripped from config", {
+    logWarn(`AI ${blockType} legacy ${reason} stripped from config`, {
       operation: "ai_generate_blocks",
-      issues: `config: legacy_layout_keys(${dropped.join(",")})`,
+      blockType,
+      issues: `config: legacy_${reason}(${dropped.join(",")})`,
     });
   }
   return out;
@@ -517,10 +535,13 @@ function stripContainerLegacyLayoutKeys(
  * individual bad nodes (at any depth) instead of failing the whole tree.
  *
  * Container/section configs additionally have any legacy layout keys
- * (direction, gap, alignment, padding, etc.) stripped here — see
- * `stripContainerLegacyLayoutKeys`. All other configs are passed through
- * untouched: per-type config schemas have their own `.default()` fallbacks
- * and the canonical `blockSchema` accepts an arbitrary record for `config`.
+ * (direction, gap, alignment, padding, etc.) stripped here, and
+ * text-block / hero-banner / button-block configs have their per-type
+ * legacy visual keys (textAlign, fontSize, backgroundImage, alignment)
+ * stripped — see `stripLegacyConfigKeys`. All other configs are passed
+ * through untouched: per-type config schemas have their own `.default()`
+ * fallbacks and the canonical `blockSchema` accepts an arbitrary record
+ * for `config`.
  */
 export function sanitizeAiBlock(raw: unknown): AiBlockShape | null {
   // Use the same `blockType` + `issues` shape as `validateBlockTree` so all
@@ -551,7 +572,22 @@ export function sanitizeAiBlock(raw: unknown): AiBlockShape | null {
       : {};
 
   if (isContainerBlockType(src.type)) {
-    config = stripContainerLegacyLayoutKeys(config);
+    config = stripLegacyConfigKeys(
+      src.type,
+      config,
+      CONTAINER_LEGACY_LAYOUT_KEYS,
+      "layout_keys"
+    );
+  } else {
+    const perTypeKeys = PER_TYPE_LEGACY_VISUAL_KEYS[src.type];
+    if (perTypeKeys) {
+      config = stripLegacyConfigKeys(
+        src.type,
+        config,
+        perTypeKeys,
+        "visual_keys"
+      );
+    }
   }
 
   const out: AiBlockShape = {

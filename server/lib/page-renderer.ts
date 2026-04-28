@@ -2,7 +2,7 @@ import type { Request } from "express";
 import type { Block, Page, PixelSettings } from "@shared/schema";
 import { escapeHtml, escapeJs } from "@shared/html-utils";
 import { allProviderConfigs } from "@shared/pixels";
-import { blocksToCss } from "@shared/responsive";
+import { blocksToCss, resolveDesign } from "@shared/responsive";
 import { sanitizeInlineHtml } from "./sanitize";
 
 interface Store {
@@ -233,13 +233,20 @@ function generateHydrationScript(store: Store, page: Page): string {
 </script>`;
 }
 
-function renderHeroBlock(config: Record<string, any>, blockId: string): string {
+function renderHeroBlock(block: Block, config: Record<string, any>, blockId: string): string {
   const title = sanitizeInlineHtml(config.title || "Your Headline Here");
   const subtitle = sanitizeInlineHtml(config.subtitle || "Add a compelling subtitle");
   const buttonText = sanitizeInlineHtml(config.buttonText || "Shop Now");
   const buttonUrl = escapeHtml(config.buttonUrl || "#");
   const overlayOpacity = config.overlayOpacity ?? 50;
-  const backgroundImage = config.backgroundImage || "";
+  // Background image lives in `block.responsive.<bp>` (folded in by
+  // `legacyDesignFromBlock` for older persisted hero blocks). The
+  // <img>/overlay is content, so we read it from the resolved desktop
+  // design here; the responsive CSS for backgroundImage on the wrapper
+  // itself is emitted by `blocksToCss` in the page <style> block.
+  const heroDesign = resolveDesign(block, "desktop");
+  const backgroundImage =
+    typeof heroDesign.backgroundImage === "string" ? heroDesign.backgroundImage : "";
 
   return `
     <section class="lp-hero" data-block-id="${escapeHtml(blockId)}">
@@ -884,7 +891,7 @@ function renderBlockBody(block: Block, config: Record<string, any>, pageId: stri
   const blockId = block.id;
   switch (block.type) {
     case "hero-banner":
-      return renderHeroBlock(config, blockId);
+      return renderHeroBlock(block, config, blockId);
     case "product-block":
       return renderProductBlock(config, blockId);
     case "product-grid":

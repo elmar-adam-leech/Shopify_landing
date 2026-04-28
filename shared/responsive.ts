@@ -1,5 +1,6 @@
 import type {
   Block,
+  BlockType,
   DesignProps,
   Padding,
   ResponsiveDesign,
@@ -24,6 +25,21 @@ const CONTAINER_LEGACY_LAYOUT_CONFIG_KEYS: readonly string[] = [
   "background",
   "maxWidth",
 ];
+
+/**
+ * Legacy visual keys per block type that have been retired from each block's
+ * config schema and now live exclusively in `responsive.<bp>`. Mirrors the
+ * `CONTAINER_LEGACY_LAYOUT_CONFIG_KEYS` treatment for container/section.
+ *
+ * `migrateBlocksResponsive` strips these from `config` after folding the
+ * values into `responsive.desktop` via `legacyDesignFromBlock`, so the next
+ * save persists a clean, deduplicated config.
+ */
+const PER_TYPE_LEGACY_VISUAL_CONFIG_KEYS: Partial<Record<BlockType, readonly string[]>> = {
+  "text-block": ["textAlign", "fontSize"],
+  "hero-banner": ["textAlign", "backgroundImage"],
+  "button-block": ["alignment"],
+};
 
 export type Breakpoint = "desktop" | "tablet" | "mobile";
 
@@ -70,30 +86,22 @@ const TEXT_ALIGN_TO_JUSTIFY: Record<string, "start" | "center" | "end"> = {
  * unified field is now the single source of truth for layout/visual props.
  *
  * Container/Section schemas (`containerConfigSchema` / `sectionBlockConfigSchema`)
- * no longer carry layout fields — direction, gap, alignment, justification,
- * wrap, padding, max-width and background all live exclusively on
- * `block.responsive.<bp>`. Editor defaults, settings panels and the AI block
- * generator only write into `responsive`.
- *
- * Three per-type schemas still carry a small number of legacy visual fields
- * (kept for now because their per-type Settings panels still read them):
- *   - `textBlockConfigSchema`:   textAlign, fontSize
- *   - `heroBlockConfigSchema`:   textAlign, backgroundImage
- *   - `buttonBlockConfigSchema`: alignment (mapped to textAlign / justifyContent)
+ * and the text-block / hero-banner / button-block schemas all no longer carry
+ * the legacy visual fields — alignment, font sizing, padding, background image,
+ * etc. all live exclusively on `block.responsive.<bp>`. Editor defaults,
+ * settings panels and the AI block generator only write into `responsive`.
  *
  * `legacyDesignFromBlock` translates *all* known legacy keys into `DesignProps`
- * so older persisted pages — including container/section blocks saved before
- * the layout fields were dropped from their schemas — still render correctly.
+ * so older persisted pages — including blocks saved before the layout fields
+ * were dropped from their schemas — still render correctly.
  * `migrateBlocksResponsive` copies the translated values into
- * `block.responsive.desktop` on load, so once a page has been re-saved the
- * legacy keys are no longer needed for rendering.
+ * `block.responsive.desktop` on load and then strips the legacy keys from
+ * `config`, so once a page has been re-saved the legacy keys are gone for good.
  *
  * Remaining retirement steps (future tasks, intentionally NOT done here):
- *   1. Drop the legacy visual fields from text-block / hero-banner /
- *      button-block schemas, mirroring what was done for container/section.
- *   2. Once enough live pages have been re-saved (or after a backfill script),
+ *   1. Once enough live pages have been re-saved (or after a backfill script),
  *      remove the corresponding branches from `legacyDesignFromBlock`.
- *   3. Remove `migrateBlocksResponsive` once `legacyDesignFromBlock` is gone
+ *   2. Remove `migrateBlocksResponsive` once `legacyDesignFromBlock` is gone
  *      — the migration is a no-op without legacy fields to translate.
  */
 export function legacyDesignFromBlock(block: Block): DesignProps {
@@ -212,6 +220,49 @@ function postProcessByBlockType(block: Block, d: DesignProps): DesignProps {
     if (j) return { ...d, justifyContent: j };
   }
   return d;
+}
+
+/**
+ * Resolve the effective design for an A/B variant of a block.
+ *
+ * Variants represent an alternate styling intent on top of the base block
+ * and *must* win when they explicitly set a value — both via legacy keys
+ * still living in `variant.config` (e.g. `textAlign`, `fontSize`,
+ * `backgroundImage`, `alignment` for the retirement migration) and via
+ * modern `variant.responsive` overrides.
+ *
+ * Precedence (lowest → highest):
+ *   1. Block baseline: `legacyDesignFromBlock(block)` + `block.responsive[bp]`
+ *      (i.e. the same thing `resolveDesign(block, bp)` returns).
+ *   2. Variant legacy keys: `legacyDesignFromBlock` applied to a synthetic
+ *      block that swaps in `variant.config`. This translates retired keys
+ *      so they continue to affect rendering for older A/B pages.
+ *   3. Variant responsive overrides: `variant.responsive[bp]` if defined.
+ *
+ * The lower precedence of block.responsive vs variant intent is the key
+ * fix for the regression: a modern, already-migrated block whose
+ * `responsive.desktop.textAlign = "center"` would otherwise mask a legacy
+ * variant whose only styling lives in `variant.config.textAlign = "right"`.
+ */
+export function resolveVariantDesign(
+  block: Block,
+  variantConfig: Record<string, unknown>,
+  variantResponsive: ResponsiveDesign | undefined,
+  breakpoint: Breakpoint
+): DesignProps {
+  const blockBaseline = resolveDesign(block, breakpoint);
+  const variantLegacy = legacyDesignFromBlock({ ...block, config: variantConfig } as Block);
+  const r = variantResponsive ?? {};
+  let variantResp: DesignProps;
+  if (breakpoint === "desktop") {
+    variantResp = (r.desktop ?? {}) as DesignProps;
+  } else if (breakpoint === "tablet") {
+    variantResp = { ...(r.desktop ?? {}), ...(r.tablet ?? {}) } as DesignProps;
+  } else {
+    variantResp = { ...(r.desktop ?? {}), ...(r.tablet ?? {}), ...(r.mobile ?? {}) } as DesignProps;
+  }
+  const merged: DesignProps = { ...blockBaseline, ...variantLegacy, ...variantResp };
+  return postProcessByBlockType(block, merged);
 }
 
 export function resolveInherited(
@@ -437,25 +488,35 @@ export function migrateBlocksResponsive(
       }
     }
     // After folding any legacy values into responsive.desktop, also strip
-    // them from container/section configs. This guarantees that the next
-    // save persists a clean config and removes the duplication for good
-    // (the AI write path enforces the same invariant via
-    // `stripContainerLegacyLayoutKeys` in ai-block-generator).
+    // them from config. This guarantees that the next save persists a clean
+    // config and removes the duplication for good (the AI write path
+    // enforces the same invariant via the `stripLegacyConfigKeys` helpers in
+    // ai-block-generator). Container/Section blocks share one key list;
+    // text-block / hero-banner / button-block each strip their own per-type
+    // visual keys from `PER_TYPE_LEGACY_VISUAL_CONFIG_KEYS`.
     let nextConfig = b.config;
-    if (isContainerBlockType(b.type) && b.config && typeof b.config === "object") {
-      const cfg = b.config as Record<string, unknown>;
-      let dropped = false;
-      const cleaned: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(cfg)) {
-        if (CONTAINER_LEGACY_LAYOUT_CONFIG_KEYS.includes(k)) {
-          dropped = true;
-          continue;
-        }
-        cleaned[k] = v;
+    if (b.config && typeof b.config === "object") {
+      let legacyKeyList: readonly string[] | undefined;
+      if (isContainerBlockType(b.type)) {
+        legacyKeyList = CONTAINER_LEGACY_LAYOUT_CONFIG_KEYS;
+      } else {
+        legacyKeyList = PER_TYPE_LEGACY_VISUAL_CONFIG_KEYS[b.type];
       }
-      if (dropped) {
-        nextConfig = cleaned;
-        changed = true;
+      if (legacyKeyList && legacyKeyList.length > 0) {
+        const cfg = b.config as Record<string, unknown>;
+        let dropped = false;
+        const cleaned: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(cfg)) {
+          if (legacyKeyList.includes(k)) {
+            dropped = true;
+            continue;
+          }
+          cleaned[k] = v;
+        }
+        if (dropped) {
+          nextConfig = cleaned;
+          changed = true;
+        }
       }
     }
     if (

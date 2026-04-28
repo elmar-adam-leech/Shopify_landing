@@ -1,4 +1,4 @@
-import type { Block, VisibilityCondition, AbTestVariant } from "@shared/schema";
+import type { Block, VisibilityCondition, AbTestVariant, ResponsiveDesign } from "@shared/schema";
 
 export function getOrCreateVisitorId(): string {
   const key = "pb_visitor_id";
@@ -30,41 +30,60 @@ export function setVariantAssignment(testId: string, variantId: string): void {
   localStorage.setItem(key, variantId);
 }
 
-export function getOrAssignBlockVariant(block: Block): { config: Record<string, any>; variantId: string | null; variantName: string } {
+export function getOrAssignBlockVariant(block: Block): {
+  config: Record<string, any>;
+  /**
+   * The chosen variant's *own* responsive overrides (or `undefined` when
+   * the variant has none). Crucially, this does NOT fall back to
+   * `block.responsive` — that inheritance is handled inside
+   * `resolveVariantDesign`, which merges against the block baseline so a
+   * variant whose only styling is a legacy key in `variant.config` still
+   * wins over `block.responsive`. Returning `block.responsive` here would
+   * promote it to the highest-precedence layer in `resolveVariantDesign`
+   * and re-introduce the A/B regression.
+   */
+  responsive: ResponsiveDesign | undefined;
+  variantId: string | null;
+  variantName: string;
+} {
   if (!block.abTestEnabled || !block.variants || block.variants.length === 0) {
-    return { config: block.config, variantId: null, variantName: "Original" };
+    // No A/B test -> variant === original block. Return block.responsive so
+    // the block's own styling continues to apply (resolveVariantDesign will
+    // see it as both baseline and "variant.responsive", which is fine —
+    // identical layers merge to themselves).
+    return { config: block.config, responsive: block.responsive, variantId: null, variantName: "Original" };
   }
 
   const existingAssignment = getVariantAssignment(`block_${block.id}`);
-  
+
   const allVariants = [
-    { id: "original", name: "Original", config: block.config, trafficPercentage: 0 },
+    { id: "original", name: "Original", config: block.config, responsive: block.responsive, trafficPercentage: 0 },
     ...block.variants,
   ];
-  
+
   const variantSum = block.variants.reduce((sum, v) => sum + v.trafficPercentage, 0);
   allVariants[0].trafficPercentage = Math.max(0, 100 - variantSum);
-  
+
   if (existingAssignment) {
     const assigned = allVariants.find(v => v.id === existingAssignment);
     if (assigned) {
-      return { config: assigned.config, variantId: assigned.id, variantName: assigned.name };
+      return { config: assigned.config, responsive: assigned.responsive, variantId: assigned.id, variantName: assigned.name };
     }
   }
-  
+
   const totalPercentage = allVariants.reduce((sum, v) => sum + v.trafficPercentage, 0);
   const random = Math.random() * totalPercentage;
-  
+
   let cumulative = 0;
   for (const variant of allVariants) {
     cumulative += variant.trafficPercentage;
     if (random <= cumulative) {
       setVariantAssignment(`block_${block.id}`, variant.id);
-      return { config: variant.config, variantId: variant.id, variantName: variant.name };
+      return { config: variant.config, responsive: variant.responsive, variantId: variant.id, variantName: variant.name };
     }
   }
-  
-  return { config: block.config, variantId: "original", variantName: "Original" };
+
+  return { config: block.config, responsive: block.responsive, variantId: "original", variantName: "Original" };
 }
 
 export function evaluateBlockVisibility(block: Block): boolean {
