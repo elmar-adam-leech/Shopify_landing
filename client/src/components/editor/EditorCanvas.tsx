@@ -32,6 +32,29 @@ export const ROOT_DROPPABLE_ID = "editor-canvas";
 export const ROOT_INTENT_ID = "__root__";
 
 /**
+ * Suffix appended to a container/section block's id to form the id of the
+ * extra droppable attached to that container's inner body. The body
+ * droppable catches drops on the container's padding, gaps, and end-of-list
+ * whitespace — areas where no child block is under the pointer — and maps
+ * to an "inside, append to children" intent. This is what makes
+ * non-empty containers actually accept drops; without it the per-child
+ * sortable droppables block the parent from ever being the drag target.
+ */
+export const BODY_DROPPABLE_SUFFIX = "__body";
+
+export function getBodyDroppableId(blockId: string): string {
+  return `${blockId}${BODY_DROPPABLE_SUFFIX}`;
+}
+
+export function isBodyDroppableId(id: string): boolean {
+  return id.endsWith(BODY_DROPPABLE_SUFFIX);
+}
+
+export function blockIdFromBodyId(id: string): string {
+  return id.slice(0, -BODY_DROPPABLE_SUFFIX.length);
+}
+
+/**
  * Resolve the effective flex direction for a container/section at the given
  * breakpoint. Reads the unified responsive design system, which is the single
  * source of truth for layout. `resolveDesign` already folds in any legacy
@@ -61,6 +84,14 @@ interface EditorCanvasProps {
   previewMode?: boolean;
   dragIntent?: DragIntent;
   activeId?: string | null;
+  /**
+   * The block currently being dragged (when dragging an existing canvas
+   * block, not a library item). Used to compute the set of containers that
+   * cannot accept the drop (the dragged block itself + its descendants) so
+   * those targets visibly do not light up — making cycle prevention
+   * obvious to editors instead of a silent rejection at drop time.
+   */
+  activeBlock?: Block | null;
   activeBreakpoint?: Breakpoint;
 }
 
@@ -76,6 +107,12 @@ interface RenderBlockProps {
   dragIntent?: DragIntent;
   activeId?: string | null;
   activeBreakpoint: Breakpoint;
+  /**
+   * Set of block ids that must not show as drop candidates because the
+   * drop would create a cycle (the dragged container itself or any of its
+   * descendants).
+   */
+  blockedIds: Set<string>;
 }
 
 interface PreviewOptions {
@@ -93,6 +130,20 @@ interface PreviewOptions {
    * unmistakable while a drag is in progress.
    */
   isDragActive?: boolean;
+  /**
+   * Callback ref forwarded to a container/section preview's inner element.
+   * RenderBlock registers a separate `useDroppable` for the container body
+   * and threads its `setNodeRef` through here so drops on padding, gaps,
+   * and end-of-list whitespace are caught by the parent (not by a child).
+   */
+  bodyRef?: (el: HTMLElement | null) => void;
+  /**
+   * The container block id whose body this preview represents. Emitted as
+   * `data-block-body-id` so `useEditorPage`'s drag-over handler can locate
+   * the body's bounding rect to bias intent toward the parent when the
+   * pointer is near its inner edges.
+   */
+  bodyId?: string;
 }
 
 export function getBlockPreview(
@@ -148,6 +199,8 @@ export function getBlockPreview(
           hasChildren={!!children && (block.children?.length ?? 0) > 0}
           design={design}
           isDragActive={isDragActive}
+          bodyRef={options.bodyRef}
+          bodyId={options.bodyId}
         >
           {children}
         </ContainerPreview>
@@ -159,6 +212,8 @@ export function getBlockPreview(
           hasChildren={!!children && (block.children?.length ?? 0) > 0}
           design={design}
           isDragActive={isDragActive}
+          bodyRef={options.bodyRef}
+          bodyId={options.bodyId}
         >
           {children}
         </SectionPreview>
@@ -166,6 +221,39 @@ export function getBlockPreview(
     default:
       return <div className="p-4 text-muted-foreground">Unknown block type</div>;
   }
+}
+
+/**
+ * Visible "drop at end" target rendered inside every non-empty
+ * container/section while a drag is active. Editors can aim for this bar
+ * to drop a block as the new last child without having to thread the
+ * needle between the last child and the container's bottom edge. The bar
+ * is purely visual — the actual drop hit is caught by the container's
+ * body droppable that wraps it. Lights up when the active intent is
+ * inside-append on this container.
+ */
+function DropAtEndBar({
+  direction,
+  isActive,
+  blockId,
+}: {
+  direction: "row" | "column";
+  isActive: boolean;
+  blockId: string;
+}) {
+  const sizeClass =
+    direction === "row"
+      ? "w-1.5 self-stretch"
+      : "h-1.5 w-full";
+  const colorClass = isActive ? "bg-primary" : "bg-primary/25";
+  return (
+    <div
+      className={`flex-shrink-0 rounded-full transition-colors pointer-events-none ${sizeClass} ${colorClass}`}
+      aria-hidden="true"
+      data-testid={`drop-at-end-${blockId}`}
+      data-active={isActive ? "true" : undefined}
+    />
+  );
 }
 
 const RenderBlock = memo(function RenderBlock({
@@ -180,9 +268,11 @@ const RenderBlock = memo(function RenderBlock({
   dragIntent,
   activeId,
   activeBreakpoint,
+  blockedIds,
 }: RenderBlockProps) {
   const isContainer = isContainerBlockType(block.type);
   const hasChildren = (block.children?.length ?? 0) > 0;
+  const isInBlockedSet = blockedIds.has(block.id);
   const {
     attributes,
     listeners,
@@ -194,6 +284,20 @@ const RenderBlock = memo(function RenderBlock({
     id: block.id,
     disabled: previewMode,
     data: { type: "block", isContainer, hasChildren, blockId: block.id },
+  });
+
+  // Body droppable for containers/sections. Catches pointer hits in the
+  // container's padding, gaps, and end-of-list whitespace where no child
+  // block is under the pointer, and maps to an "inside, append" intent in
+  // `useEditorPage.handleDragOver`. Always called (hooks cannot be
+  // conditional) but disabled for non-containers, while in preview mode,
+  // while this block is itself being dragged, or when accepting a drop
+  // here would create a cycle (the block is the dragged block or one of
+  // its descendants).
+  const { setNodeRef: setBodyNodeRef } = useDroppable({
+    id: getBodyDroppableId(block.id),
+    disabled: previewMode || !isContainer || isDragging || isInBlockedSet,
+    data: { type: "block-body", blockId: block.id },
   });
 
   const sortableStyle = {
@@ -235,36 +339,60 @@ const RenderBlock = memo(function RenderBlock({
   };
 
   const isDragActive = !!activeId && !previewMode;
+  // A container is a candidate drop target while any drag is happening,
+  // unless it is itself being dragged or is in the blocked subtree of the
+  // dragged container (cycle prevention). Used for both the candidate
+  // outline and the visibility of the "drop at end" bar.
+  const isAcceptingDrops =
+    isContainer && isDragActive && !isDragging && !isInBlockedSet;
 
   const previewOptions: PreviewOptions = {
     editable: isSelected && !!onUpdateBlock,
     onUpdateConfig: onUpdateBlock ? handleConfigUpdate : undefined,
     design: resolvedDesign,
     isDragActive,
+    bodyRef: isContainer && !previewMode ? setBodyNodeRef : undefined,
+    bodyId: isContainer && !previewMode ? block.id : undefined,
   };
 
+  // The "drop at end" bar lights up when the active drag intent is this
+  // container's "inside, append". Editors aim at the bar to drop a block
+  // as the new last child of a non-empty container.
+  const isDropAtEndActive =
+    !!intentMatches && dragIntent?.position === "inside";
+
   const childrenNodes = isContainer ? (
-    <SortableContext
-      items={childItemIds}
-      strategy={isHorizontal ? horizontalListSortingStrategy : verticalListSortingStrategy}
-    >
-      {(block.children ?? []).map((child) => (
-        <RenderBlock
-          key={child.id}
-          block={child}
-          selectedBlockId={selectedBlockId}
-          onSelectBlock={onSelectBlock}
-          onDeleteBlock={onDeleteBlock}
-          onDuplicateBlock={onDuplicateBlock}
-          onOpenSettings={onOpenSettings}
-          onUpdateBlock={onUpdateBlock}
-          previewMode={previewMode}
-          dragIntent={dragIntent}
-          activeId={activeId}
-          activeBreakpoint={activeBreakpoint}
+    <>
+      <SortableContext
+        items={childItemIds}
+        strategy={isHorizontal ? horizontalListSortingStrategy : verticalListSortingStrategy}
+      >
+        {(block.children ?? []).map((child) => (
+          <RenderBlock
+            key={child.id}
+            block={child}
+            selectedBlockId={selectedBlockId}
+            onSelectBlock={onSelectBlock}
+            onDeleteBlock={onDeleteBlock}
+            onDuplicateBlock={onDuplicateBlock}
+            onOpenSettings={onOpenSettings}
+            onUpdateBlock={onUpdateBlock}
+            previewMode={previewMode}
+            dragIntent={dragIntent}
+            activeId={activeId}
+            activeBreakpoint={activeBreakpoint}
+            blockedIds={blockedIds}
+          />
+        ))}
+      </SortableContext>
+      {isAcceptingDrops && hasChildren && (
+        <DropAtEndBar
+          direction={isHorizontal ? "row" : "column"}
+          isActive={isDropAtEndActive}
+          blockId={block.id}
         />
-      ))}
-    </SortableContext>
+      )}
+    </>
   ) : null;
 
   if (previewMode) {
@@ -284,11 +412,14 @@ const RenderBlock = memo(function RenderBlock({
   }
 
   // While a drag is in progress, every container/section on the canvas
-  // (other than the dragged block itself) advertises that it accepts drops
-  // with a subtle dashed primary outline + tinted background. The active
-  // intent highlight (`showInside`) layers on top with a thicker outline.
+  // that can legally accept the drop advertises itself with a subtle
+  // dashed primary outline + tinted background. Blocked targets (the
+  // dragged container or any of its descendants) intentionally do NOT
+  // light up so editors can see the cycle prevention visually instead of
+  // having the drop silently rejected. The active intent highlight
+  // (`showInside`) layers on top with a thicker outline.
   const candidateTargetClass =
-    isContainer && isDragActive && !isDragging && !showInside
+    isAcceptingDrops && !showInside
       ? "outline outline-1 outline-dashed outline-primary/40 outline-offset-[-2px] bg-primary/5"
       : "";
 
@@ -297,7 +428,7 @@ const RenderBlock = memo(function RenderBlock({
       ref={setNodeRef}
       style={{ ...sortableStyle, ...designStyle }}
       data-block-id={block.id}
-      data-drop-candidate={isContainer && isDragActive && !isDragging ? "true" : undefined}
+      data-drop-candidate={isAcceptingDrops ? "true" : undefined}
       className={`group relative rounded-lg border-2 transition-all ${
         isSelected
           ? "border-primary ring-2 ring-primary/20"
@@ -400,6 +531,7 @@ export function EditorCanvas({
   previewMode = false,
   dragIntent = null,
   activeId = null,
+  activeBlock = null,
   activeBreakpoint = "desktop",
 }: EditorCanvasProps) {
   const { setNodeRef, isOver } = useDroppable({
@@ -413,6 +545,21 @@ export function EditorCanvas({
     !previewMode &&
     dragIntent?.targetId === ROOT_INTENT_ID &&
     dragIntent.position === "inside";
+
+  // Compute the set of block ids that cannot accept the current drop
+  // because doing so would create a cycle: the dragged block itself plus
+  // every block in its subtree. Recomputed only when the dragged block
+  // changes; an empty set when no drag is in progress.
+  const blockedIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!activeBlock) return ids;
+    const walk = (b: Block) => {
+      ids.add(b.id);
+      b.children?.forEach(walk);
+    };
+    walk(activeBlock);
+    return ids;
+  }, [activeBlock]);
 
   return (
     <ScrollArea className="flex-1 h-full">
@@ -464,6 +611,7 @@ export function EditorCanvas({
                     dragIntent={dragIntent}
                     activeId={activeId}
                     activeBreakpoint={activeBreakpoint}
+                    blockedIds={blockedIds}
                   />
                 ))}
               </div>

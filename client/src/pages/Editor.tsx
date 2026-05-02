@@ -262,6 +262,7 @@ export default function Editor() {
                   previewMode={editor.previewMode}
                   dragIntent={editor.dragIntent}
                   activeId={editor.activeId}
+                  activeBlock={editor.activeBlock}
                   activeBreakpoint={editor.viewportSize}
                 />
               </div>

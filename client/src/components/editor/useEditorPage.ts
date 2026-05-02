@@ -22,6 +22,7 @@ import {
   findBlockById,
   findParentOf,
   insertBlockAt,
+  isDescendantOf,
   moveBlock,
   removeBlockById,
   updateBlockById,
@@ -29,6 +30,9 @@ import {
 import {
   ROOT_DROPPABLE_ID,
   ROOT_INTENT_ID,
+  blockIdFromBodyId,
+  getContainerDirection,
+  isBodyDroppableId,
   type DragIntent,
 } from "./EditorCanvas";
 import type { Page, Block, BlockType, PixelSettings, Section } from "@shared/schema";
@@ -99,7 +103,15 @@ export function useEditorPage() {
   const [activeLibraryType, setActiveLibraryType] = useState<BlockType | null>(null);
   const [dragIntent, setDragIntent] = useState<DragIntent>(null);
   const dragIntentRef = useRef<DragIntent>(null);
-  const pointerYRef = useRef<number | null>(null);
+  /**
+   * Live pointer coordinates (client space) tracked while a drag is in
+   * progress. Used by `handleDragOver` for two things: (1) zone
+   * calculation against the over-block's rect (top half / bottom half)
+   * and (2) edge-bias detection when the pointer is over a child but
+   * within a few pixels of the parent container's inner edge — both
+   * vertical and horizontal direction parents need X and Y.
+   */
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [viewportSize, setViewportSize] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [previewMode, setPreviewMode] = useState(false);
@@ -353,8 +365,15 @@ export function useEditorPage() {
     const id = String(event.active.id);
     setActiveId(id);
     const activator = event.activatorEvent as PointerEvent | MouseEvent | undefined;
-    if (activator && typeof (activator as PointerEvent).clientY === "number") {
-      pointerYRef.current = (activator as PointerEvent).clientY;
+    if (
+      activator &&
+      typeof (activator as PointerEvent).clientY === "number" &&
+      typeof (activator as PointerEvent).clientX === "number"
+    ) {
+      pointerRef.current = {
+        x: (activator as PointerEvent).clientX,
+        y: (activator as PointerEvent).clientY,
+      };
     }
     const data = event.active.data.current;
     if (data?.isLibraryItem) {
@@ -366,16 +385,17 @@ export function useEditorPage() {
     }
   }, [blocks]);
 
-  // Track real pointer Y while a drag is in progress so before/after intent
-  // is computed from the user's pointer (top half / bottom half), not from
-  // the dragged element's translated rect midpoint.
+  // Track real pointer X/Y while a drag is in progress so before/after
+  // intent is computed from the user's pointer (top half / bottom half),
+  // not from the dragged element's translated rect midpoint, and so the
+  // edge-bias toward the parent container can check both axes.
   useEffect(() => {
     if (!activeId) {
-      pointerYRef.current = null;
+      pointerRef.current = null;
       return;
     }
     const onMove = (e: PointerEvent | MouseEvent) => {
-      pointerYRef.current = e.clientY;
+      pointerRef.current = { x: e.clientX, y: e.clientY };
     };
     window.addEventListener("pointermove", onMove, { passive: true });
     window.addEventListener("mousemove", onMove, { passive: true });
@@ -399,6 +419,44 @@ export function useEditorPage() {
       return;
     }
 
+    // Resolve the dragged block (only present when dragging an existing
+    // canvas block — library drags have no source block). Used by the
+    // unified cycle guard below.
+    const draggedBlock = findBlockById(blocks, activeIdStr);
+    const isDraggedContainer =
+      !!draggedBlock && isContainerBlockType(draggedBlock.type);
+
+    // Returns true when inserting *into* the given parent id would
+    // create a cycle: the parent is the dragged block itself, or any
+    // descendant of the dragged block. Applied to the effective
+    // insertion parent of the resolved intent (the target itself for
+    // "inside", or the target's parent for "before"/"after"), so
+    // descendant leaves and descendant containers can never visibly
+    // accept the drop.
+    const wouldCycleAtParent = (parentId: string): boolean => {
+      if (parentId === activeIdStr) return true;
+      if (isDraggedContainer && isDescendantOf(draggedBlock!, parentId)) {
+        return true;
+      }
+      return false;
+    };
+
+    // Container body droppable (id = `<containerId>__body`). The pointer
+    // is over the container's padding, gap between children, or the
+    // end-of-list whitespace — areas no child block covers. Map to
+    // "inside, append" on the container itself, gated by the cycle
+    // guard so dragging a container over its own body / a descendant's
+    // body is silently ignored.
+    if (isBodyDroppableId(overId)) {
+      const containerId = blockIdFromBodyId(overId);
+      if (wouldCycleAtParent(containerId)) {
+        updateDragIntent(null);
+        return;
+      }
+      updateDragIntent({ targetId: containerId, position: "inside" });
+      return;
+    }
+
     if (overId === activeIdStr) {
       updateDragIntent(null);
       return;
@@ -410,21 +468,42 @@ export function useEditorPage() {
     const isContainerTarget = !!overData?.isContainer;
     const overRect = over.rect;
     if (!overRect) {
+      // No rect from dnd-kit yet (rare). Default to "after" the target,
+      // but still validate the effective insertion parent so a hover on
+      // a descendant block does not light up an illegal sibling slot.
+      const parentInfo = findParentOf(blocks, overId);
+      const parentId = parentInfo?.parent?.id ?? null;
+      if (parentId !== null && wouldCycleAtParent(parentId)) {
+        updateDragIntent(null);
+        return;
+      }
       updateDragIntent({ targetId: overId, position: "after" });
       return;
     }
 
-    // Resolve the y coordinate for zone calculation.
-    // Strictly prefer the user's actual pointer Y. Fall back to the
-    // dragged item's translated rect center for keyboard / no-pointer drags.
-    let y = pointerYRef.current;
-    if (y === null) {
+    // Resolve the pointer coordinates for zone calculation.
+    // Strictly prefer the user's actual pointer position. Fall back to
+    // the dragged item's translated rect center for keyboard / no-pointer
+    // drags so intent is still computed sensibly.
+    let py = pointerRef.current?.y ?? null;
+    let px = pointerRef.current?.x ?? null;
+    if (py === null || px === null) {
       const activeRect = active.rect.current.translated;
-      y = activeRect ? activeRect.top + activeRect.height / 2 : overRect.top + overRect.height / 2;
+      if (py === null) {
+        py = activeRect
+          ? activeRect.top + activeRect.height / 2
+          : overRect.top + overRect.height / 2;
+      }
+      if (px === null) {
+        px = activeRect
+          ? activeRect.left + activeRect.width / 2
+          : overRect.left + overRect.width / 2;
+      }
     }
 
-    const relative = (y - overRect.top) / overRect.height;
+    const relative = (py - overRect.top) / overRect.height;
     let position: "before" | "after" | "inside";
+    let effectiveTargetId = overId;
     if (isContainerTarget) {
       // Resolve hasChildren from the live block tree as a source of truth
       // (sortable data is updated on re-render but the tree is authoritative).
@@ -444,26 +523,70 @@ export function useEditorPage() {
         else if (relative > 0.8) position = "after";
         else position = "inside";
       }
-      // Prevent dropping a container into itself / its descendants.
-      if (position === "inside") {
-        const draggedBlock = findBlockById(blocks, activeIdStr);
-        if (draggedBlock && (overId === activeIdStr || isContainerBlockType(draggedBlock.type))) {
-          // moveBlock will further guard descendants; for the visual we
-          // suppress the inside indicator when the target is the dragged
-          // block itself.
-          if (overId === activeIdStr) {
-            updateDragIntent(null);
-            return;
-          }
-        }
-      }
     } else {
       // Leaf blocks: top half before, bottom half after.
       position = relative < 0.5 ? "before" : "after";
     }
 
-    updateDragIntent({ targetId: overId, position });
-  }, [updateDragIntent, blocks]);
+    // Parent-edge bias: when the resolved position is before/after on a
+    // child (whether leaf or nested container/section) and the pointer
+    // sits within a small threshold of the parent container's inner
+    // edge — top/bottom for column layouts, left/right for row layouts —
+    // redirect the intent to the parent's "inside, append". Editors can
+    // hit the parent's padding without threading between the first/last
+    // child and the container's border, and the same affordance works
+    // uniformly for nested Sections inside Sections / Containers.
+    if (position !== "inside") {
+      const parentInfo = findParentOf(blocks, overId);
+      const parent = parentInfo?.parent ?? null;
+      if (
+        parent &&
+        isContainerBlockType(parent.type) &&
+        !wouldCycleAtParent(parent.id)
+      ) {
+        const bodyEl = document.querySelector(
+          `[data-block-body-id="${parent.id}"]`
+        ) as HTMLElement | null;
+        if (bodyEl) {
+          const parentRect = bodyEl.getBoundingClientRect();
+          const EDGE_THRESHOLD_PX = 8;
+          const direction = getContainerDirection(parent, viewportSize);
+          const nearEdge =
+            direction === "row"
+              ? px - parentRect.left < EDGE_THRESHOLD_PX ||
+                parentRect.right - px < EDGE_THRESHOLD_PX
+              : py - parentRect.top < EDGE_THRESHOLD_PX ||
+                parentRect.bottom - py < EDGE_THRESHOLD_PX;
+          if (nearEdge) {
+            effectiveTargetId = parent.id;
+            position = "inside";
+          }
+        }
+      }
+    }
+
+    // Final cycle validation. Compute the effective insertion parent
+    // (the target itself for "inside", the target's parent for
+    // before/after) and reject the intent if that parent is the dragged
+    // block or any of its descendants. This single guard covers every
+    // resolved intent kind, so descendant leaves and descendant
+    // containers never visibly accept the drop instead of being
+    // silently rejected at drop time. Top-level before/after intents
+    // (insertion parent === null) are always allowed.
+    let insertionParentId: string | null;
+    if (position === "inside") {
+      insertionParentId = effectiveTargetId;
+    } else {
+      const parentInfo = findParentOf(blocks, effectiveTargetId);
+      insertionParentId = parentInfo?.parent?.id ?? null;
+    }
+    if (insertionParentId !== null && wouldCycleAtParent(insertionParentId)) {
+      updateDragIntent(null);
+      return;
+    }
+
+    updateDragIntent({ targetId: effectiveTargetId, position });
+  }, [updateDragIntent, blocks, viewportSize]);
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active } = event;
