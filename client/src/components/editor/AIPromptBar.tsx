@@ -1,19 +1,34 @@
-import { useState, useRef, useCallback, useEffect } from "react";
-import { Sparkles, Loader2, X, Send, Zap, Brain, Check, ChevronDown } from "lucide-react";
+import { useState, useRef, useCallback, useEffect, lazy, Suspense } from "react";
+import { Sparkles, Loader2, X, Send, Zap, Brain, Check, ChevronDown, Settings2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import type { Block } from "@shared/schema";
+import type { Block, Store, AiBrandContext } from "@shared/schema";
+import { hasBrandContext } from "@shared/schema";
+
+const AIBrandContextDialog = lazy(() =>
+  import("./AIBrandContextDialog").then((m) => ({ default: m.AIBrandContextDialog }))
+);
 
 interface AIPromptBarProps {
   onInsertBlocks: (blocks: Block[]) => string | null;
+  storeId?: string;
+  pageId?: string;
 }
 
 const EXAMPLE_PROMPTS = [
@@ -62,13 +77,22 @@ function getInitialTier(): ModelTier {
   return "fast";
 }
 
-export function AIPromptBar({ onInsertBlocks }: AIPromptBarProps) {
+export function AIPromptBar({ onInsertBlocks, storeId, pageId }: AIPromptBarProps) {
   const [prompt, setPrompt] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [modelTier, setModelTierState] = useState<ModelTier>(getInitialTier);
+  const [brandDialogOpen, setBrandDialogOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  const { data: storeData } = useQuery<Store>({
+    queryKey: ["/api/stores", storeId],
+    enabled: !!storeId,
+    staleTime: 5 * 60 * 1000,
+  });
+  const brandContext = (storeData?.aiBrandContext as AiBrandContext | null | undefined) ?? null;
+  const contextOn = hasBrandContext(brandContext);
 
   const setModelTier = useCallback((tier: ModelTier) => {
     setModelTierState(tier);
@@ -112,7 +136,12 @@ export function AIPromptBar({ onInsertBlocks }: AIPromptBarProps) {
       const response = await apiRequest(
         "POST",
         "/api/ai/generate-blocks",
-        { prompt: trimmed, modelTier },
+        {
+          prompt: trimmed,
+          modelTier,
+          ...(storeId ? { storeId } : {}),
+          ...(pageId ? { pageId } : {}),
+        },
         { signal: controller.signal }
       );
       const data = (await response.json()) as { blocks?: Block[] };
@@ -173,7 +202,7 @@ export function AIPromptBar({ onInsertBlocks }: AIPromptBarProps) {
       if (abortRef.current === controller) abortRef.current = null;
       setIsLoading(false);
     }
-  }, [prompt, isLoading, onInsertBlocks, toast, modelTier]);
+  }, [prompt, isLoading, onInsertBlocks, toast, modelTier, storeId, pageId]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -186,6 +215,20 @@ export function AIPromptBar({ onInsertBlocks }: AIPromptBarProps) {
     setPrompt(example);
     inputRef.current?.focus();
   };
+
+  const contextSummary = contextOn && brandContext
+    ? [
+        brandContext.brandName && `Brand: ${brandContext.brandName}`,
+        brandContext.productDescription && `Sells: ${brandContext.productDescription}`,
+        brandContext.targetAudience && `Audience: ${brandContext.targetAudience}`,
+        brandContext.toneOfVoice && `Tone: ${brandContext.toneOfVoice}`,
+        brandContext.sellingPoints?.filter((p) => p.trim()).length
+          ? `${brandContext.sellingPoints.filter((p) => p.trim()).length} selling point(s)`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" • ")
+    : "";
 
   return (
     <div
@@ -268,6 +311,44 @@ export function AIPromptBar({ onInsertBlocks }: AIPromptBarProps) {
         )}
       </div>
       <div className="mt-2 flex items-center justify-center gap-1.5 flex-wrap">
+        {storeId && (
+          contextOn ? (
+            <TooltipProvider delayDuration={150}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => setBrandDialogOpen(true)}
+                    className="inline-flex"
+                    data-testid="button-brand-context-on"
+                  >
+                    <Badge variant="secondary" className="gap-1 cursor-pointer hover:bg-secondary/80">
+                      <Sparkles className="h-3 w-3" />
+                      Brand context: on
+                    </Badge>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs text-xs">
+                  <div className="font-medium mb-1">Using brand context</div>
+                  <div className="text-muted-foreground whitespace-pre-wrap">
+                    {contextSummary || "Brand context configured."}
+                  </div>
+                  <div className="mt-1.5 text-muted-foreground">Click to edit</div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setBrandDialogOpen(true)}
+              className="text-xs px-2.5 py-1 rounded-full bg-card/80 backdrop-blur border text-muted-foreground hover:text-foreground hover:bg-card transition-colors inline-flex items-center gap-1"
+              data-testid="button-setup-brand-context"
+            >
+              <Settings2 className="h-3 w-3" />
+              Set up brand context
+            </button>
+          )
+        )}
         {EXAMPLE_PROMPTS.map((example) => (
           <button
             key={example}
@@ -281,6 +362,16 @@ export function AIPromptBar({ onInsertBlocks }: AIPromptBarProps) {
           </button>
         ))}
       </div>
+      {storeId && brandDialogOpen && (
+        <Suspense fallback={null}>
+          <AIBrandContextDialog
+            open={brandDialogOpen}
+            onClose={() => setBrandDialogOpen(false)}
+            storeId={storeId}
+            initial={brandContext}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

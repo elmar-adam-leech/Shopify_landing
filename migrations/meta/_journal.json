@@ -15,6 +15,13 @@
       "when": 1775644706114,
       "tag": "0001_nappy_vance_astro",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778008098957,
+      "tag": "0002_high_epoch",
+      "breakpoints": true
     }
   ]
 }

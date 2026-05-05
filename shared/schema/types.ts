@@ -1,5 +1,6 @@
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { aiBrandContextSchema, AI_PAGE_CONTEXT_MAX } from "./ai-context";
 import {
   stores,
   users,
@@ -17,11 +18,19 @@ import {
   callLogs,
 } from "./tables";
 
-export const insertStoreSchema = createInsertSchema(stores).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
+export const insertStoreSchema = createInsertSchema(stores)
+  .omit({
+    id: true,
+    createdAt: true,
+    updatedAt: true,
+  })
+  .extend({
+    // Generic store create/update should NOT silently accept arbitrary JSON
+    // for brand context. Force callers through the dedicated
+    // PATCH /api/stores/:id/ai-context route by validating with the strict
+    // schema (or null) here too.
+    aiBrandContext: aiBrandContextSchema.nullish(),
+  });
 export const updateStoreSchema = insertStoreSchema.partial();
 
 export const insertUserSchema = createInsertSchema(users).pick({
@@ -29,11 +38,18 @@ export const insertUserSchema = createInsertSchema(users).pick({
   password: true,
 });
 
-export const insertPageSchema = createInsertSchema(pages).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
+export const insertPageSchema = createInsertSchema(pages)
+  .omit({
+    id: true,
+    createdAt: true,
+    updatedAt: true,
+  })
+  .extend({
+    aiPageContext: z
+      .string()
+      .max(AI_PAGE_CONTEXT_MAX, `AI page context must be ${AI_PAGE_CONTEXT_MAX} characters or fewer`)
+      .nullish(),
+  });
 
 export const updatePageSchema = insertPageSchema.partial();
 

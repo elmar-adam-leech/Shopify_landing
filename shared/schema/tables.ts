@@ -3,6 +3,7 @@ import { pgTable, text, varchar, jsonb, boolean, integer, timestamp, uniqueIndex
 import type { Block, Section } from "./blocks";
 import type { PixelSettings } from "./pixels";
 import type { UTMParams } from "./blocks";
+import type { AiBrandContext } from "./ai-context";
 
 export const stores = pgTable("stores", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -20,6 +21,7 @@ export const stores = pgTable("stores", {
   twilioAccountSid: text("twilio_account_sid"),
   twilioAuthToken: text("twilio_auth_token"),
   twilioForwardTo: text("twilio_forward_to"),
+  aiBrandContext: jsonb("ai_brand_context").$type<AiBrandContext>(),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -60,6 +62,7 @@ export const pages = pgTable("pages", {
   pixelSettings: jsonb("pixel_settings").$type<PixelSettings>(),
   status: text("status", { enum: ["draft", "published"] }).notNull().default("draft"),
   allowIndexing: boolean("allow_indexing").notNull().default(true),
+  aiPageContext: text("ai_page_context"),
   shopifyPageId: text("shopify_page_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

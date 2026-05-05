@@ -224,7 +224,11 @@ export default function Editor() {
               {!editor.previewMode ? (
                 <>
                   <div className="flex-1 min-w-0 flex justify-center">
-                    <AIPromptBar onInsertBlocks={editor.handleInsertGeneratedBlocks} />
+                    <AIPromptBar
+                      onInsertBlocks={editor.handleInsertGeneratedBlocks}
+                      storeId={editor.pageData?.storeId || editor.selectedStoreId || undefined}
+                      pageId={editor.isNewPage ? undefined : editor.pageId}
+                    />
                   </div>
                   <div className="flex items-center flex-shrink-0 pt-1">
                     <ViewportSwitcher
@@ -318,6 +322,8 @@ export default function Editor() {
               onSlugChange={editor.handleSlugChange}
               allowIndexing={editor.allowIndexing}
               onAllowIndexingChange={editor.handleAllowIndexingChange}
+              aiPageContext={editor.aiPageContext}
+              onAiPageContextChange={editor.handleAiPageContextChange}
               isNewPage={editor.isNewPage}
             />
           </Suspense>

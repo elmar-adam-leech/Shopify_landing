@@ -45,6 +45,7 @@ interface HistorySnapshot {
   slug: string;
   pixelSettings: PixelSettings;
   allowIndexing: boolean;
+  aiPageContext: string;
 }
 
 const HISTORY_LIMIT = 50;
@@ -93,6 +94,7 @@ export function useEditorPage() {
   const [slug, setSlug] = useState("");
   const [pixelSettings, setPixelSettings] = useState<PixelSettings>(defaultPixelSettings);
   const [allowIndexing, setAllowIndexing] = useState(true);
+  const [aiPageContext, setAiPageContext] = useState("");
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [settingsBlockId, setSettingsBlockId] = useState<string | null>(null);
   const [showPixelSettings, setShowPixelSettings] = useState(false);
@@ -126,6 +128,7 @@ export function useEditorPage() {
     slug,
     pixelSettings,
     allowIndexing,
+    aiPageContext,
   });
 
   useEffect(() => {
@@ -136,8 +139,9 @@ export function useEditorPage() {
       slug,
       pixelSettings,
       allowIndexing,
+      aiPageContext,
     };
-  }, [blocks, sections, title, slug, pixelSettings, allowIndexing]);
+  }, [blocks, sections, title, slug, pixelSettings, allowIndexing, aiPageContext]);
 
   const lastTitlePushRef = useRef<number>(0);
 
@@ -150,6 +154,7 @@ export function useEditorPage() {
       slug: current.slug,
       pixelSettings: current.pixelSettings,
       allowIndexing: current.allowIndexing,
+      aiPageContext: current.aiPageContext,
     };
   }, []);
 
@@ -170,6 +175,7 @@ export function useEditorPage() {
     setSlug(snapshot.slug);
     setPixelSettings(snapshot.pixelSettings);
     setAllowIndexing(snapshot.allowIndexing);
+    setAiPageContext(snapshot.aiPageContext);
     setHasChanges(true);
   }, []);
 
@@ -266,6 +272,7 @@ export function useEditorPage() {
       setSlug(pageData.slug || "");
       setPixelSettings(pageData.pixelSettings || defaultPixelSettings);
       setAllowIndexing(pageData.allowIndexing ?? true);
+      setAiPageContext(pageData.aiPageContext ?? "");
       // Backfilled responsive defaults are intentionally not flagged as
       // changes — they only get persisted when the user makes a real edit.
       setHasChanges(false);
@@ -288,6 +295,7 @@ export function useEditorPage() {
         sections,
         pixelSettings,
         allowIndexing,
+        aiPageContext: aiPageContext || null,
       };
 
       if (isNewPage) {
@@ -727,6 +735,12 @@ export function useEditorPage() {
     setHasChanges(true);
   }, [pushHistory]);
 
+  const handleAiPageContextChange = useCallback((value: string) => {
+    pushHistory();
+    setAiPageContext(value);
+    setHasChanges(true);
+  }, [pushHistory]);
+
   const handleInsertGeneratedBlocks = useCallback(
     (generated: Block[]): string | null => {
       if (generated.length === 0) return null;
@@ -808,6 +822,7 @@ export function useEditorPage() {
     slug,
     pixelSettings,
     allowIndexing,
+    aiPageContext,
     selectedBlockId,
     settingsBlockId,
     selectedBlock,
@@ -851,6 +866,7 @@ export function useEditorPage() {
     handleSlugChange,
     handlePixelSettingsUpdate,
     handleAllowIndexingChange,
+    handleAiPageContextChange,
     handleApplyTemplate,
     handleInsertGeneratedBlocks,
     handleRestore,
