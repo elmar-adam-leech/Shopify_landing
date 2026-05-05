@@ -18,6 +18,8 @@ import { FormBlockSettings } from "./settings/FormBlockSettings";
 import { PhoneBlockSettings } from "./settings/PhoneBlockSettings";
 import { ChatBlockSettings } from "./settings/ChatBlockSettings";
 import { ProductBlockSettings } from "./settings/ProductBlockSettings";
+import { AccordionSettings } from "./settings/AccordionSettings";
+import { ImageSliderSettings } from "./settings/ImageSliderSettings";
 import { DesignPanel } from "./settings/DesignPanel";
 import { InteractionsPanel } from "./settings/InteractionsPanel";
 
@@ -59,6 +61,10 @@ function getContentSettings(
       return <PhoneBlockSettings config={config} onUpdate={onUpdate} />;
     case "chat-block":
       return <ChatBlockSettings config={config} onUpdate={onUpdate} />;
+    case "accordion":
+      return <AccordionSettings config={config} onUpdate={onUpdate} />;
+    case "image-slider":
+      return <ImageSliderSettings config={config} onUpdate={onUpdate} />;
     case "container":
     case "section":
       return (

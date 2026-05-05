@@ -77,6 +77,23 @@ export const defaultBlockConfigs: Record<BlockType, Record<string, any>> = {
   },
   "container": {},
   "section": {},
+  "accordion": {
+    items: [
+      { id: uuidv4(), title: "Question one?", body: "Answer one." },
+      { id: uuidv4(), title: "Question two?", body: "Answer two." },
+      { id: uuidv4(), title: "Question three?", body: "Answer three." },
+    ],
+    allowMultipleOpen: false,
+    defaultOpenIndex: 0,
+  },
+  "image-slider": {
+    images: [],
+    autoplay: false,
+    intervalMs: 4000,
+    showArrows: true,
+    showDots: true,
+    loop: true,
+  },
 };
 
 /**

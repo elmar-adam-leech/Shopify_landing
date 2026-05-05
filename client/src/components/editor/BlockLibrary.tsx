@@ -12,6 +12,8 @@ import {
   GripVertical,
   Square,
   LayoutTemplate,
+  ChevronDown,
+  Images,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -72,6 +74,20 @@ export const blockLibrary: BlockLibraryItem[] = [
     label: "Button",
     description: "Call-to-action button",
     icon: <MousePointer className="h-5 w-5" />,
+    category: "content",
+  },
+  {
+    type: "accordion",
+    label: "Accordion",
+    description: "Collapsible FAQ-style items",
+    icon: <ChevronDown className="h-5 w-5" />,
+    category: "content",
+  },
+  {
+    type: "image-slider",
+    label: "Image Slider",
+    description: "Carousel of images with arrows and dots",
+    icon: <Images className="h-5 w-5" />,
     category: "content",
   },
   {

@@ -13,6 +13,8 @@ export const blockTypes = [
   "chat-block",
   "container",
   "section",
+  "accordion",
+  "image-slider",
 ] as const;
 
 export type BlockType = (typeof blockTypes)[number];
@@ -255,6 +257,42 @@ export type ButtonBlockConfig = z.infer<typeof buttonBlockConfigSchema>;
 export type FormBlockConfig = z.infer<typeof formBlockConfigSchema>;
 export type PhoneBlockConfig = z.infer<typeof phoneBlockConfigSchema>;
 export type ChatBlockConfig = z.infer<typeof chatBlockConfigSchema>;
+
+export const accordionItemSchema = z.object({
+  id: z.string(),
+  title: z.string().default(""),
+  body: z.string().default(""),
+});
+
+export type AccordionItem = z.infer<typeof accordionItemSchema>;
+
+export const accordionConfigSchema = z.object({
+  items: z.array(accordionItemSchema).default([]),
+  allowMultipleOpen: z.boolean().default(false),
+  defaultOpenIndex: z.number().int().nonnegative().optional(),
+}).passthrough();
+
+export type AccordionConfig = z.infer<typeof accordionConfigSchema>;
+
+export const sliderImageSchema = z.object({
+  id: z.string(),
+  src: z.string().default(""),
+  alt: z.string().default(""),
+  caption: z.string().optional(),
+});
+
+export type SliderImage = z.infer<typeof sliderImageSchema>;
+
+export const imageSliderConfigSchema = z.object({
+  images: z.array(sliderImageSchema).default([]),
+  autoplay: z.boolean().default(false),
+  intervalMs: z.number().int().min(1000).max(30000).default(4000),
+  showArrows: z.boolean().default(true),
+  showDots: z.boolean().default(true),
+  loop: z.boolean().default(true),
+}).passthrough();
+
+export type ImageSliderConfig = z.infer<typeof imageSliderConfigSchema>;
 
 export type BlockConfig = 
   | HeroBlockConfig 

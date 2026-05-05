@@ -265,6 +265,68 @@ export function renderBlock(block: Block, storeInfo?: { shopifyDomain: string; c
         </section>
       );
 
+    case "accordion": {
+      const items: Array<{ id: string; title: string; body: string }> = config.items || [];
+      const defaultOpen = typeof config.defaultOpenIndex === "number" ? config.defaultOpenIndex : -1;
+      return (
+        <section
+          key={block.id}
+          data-block-id={block.id}
+          className="py-8 px-6"
+          data-testid={`preview-block-${block.id}`}
+        >
+          <div className="max-w-3xl mx-auto space-y-2">
+            {items.map((item, i) => (
+              <details
+                key={item.id}
+                open={i === defaultOpen}
+                className="border rounded-md bg-card"
+              >
+                <summary className="px-4 py-3 font-medium cursor-pointer">
+                  {item.title || "Untitled"}
+                </summary>
+                <div
+                  className="px-4 pb-4 pt-1 border-t text-sm"
+                  dangerouslySetInnerHTML={{ __html: (item.body || "").replace(/\n/g, "<br />") }}
+                />
+              </details>
+            ))}
+          </div>
+        </section>
+      );
+    }
+
+    case "image-slider": {
+      const images: Array<{ id: string; src: string; alt: string; caption?: string }> =
+        config.images || [];
+      return (
+        <section
+          key={block.id}
+          data-block-id={block.id}
+          className="py-8 px-6"
+          data-testid={`preview-block-${block.id}`}
+        >
+          <div className="max-w-4xl mx-auto">
+            {images.length === 0 ? (
+              <div className="aspect-video bg-muted rounded-lg flex items-center justify-center text-muted-foreground">
+                No images
+              </div>
+            ) : (
+              <div className="relative aspect-video rounded-lg overflow-hidden bg-muted">
+                {images[0].src ? (
+                  <img
+                    src={images[0].src}
+                    alt={images[0].alt || ""}
+                    className="w-full h-full object-cover"
+                  />
+                ) : null}
+              </div>
+            )}
+          </div>
+        </section>
+      );
+    }
+
     case "chat-block":
       if (!config.enabled) return null;
       return (

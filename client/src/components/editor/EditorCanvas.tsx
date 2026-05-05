@@ -19,6 +19,8 @@ import { ProductBlockPreview } from "./blocks/ProductBlockPreview";
 import { TextBlockPreview } from "./blocks/TextBlockPreview";
 import { ImageBlockPreview } from "./blocks/ImageBlockPreview";
 import { ButtonBlockPreview } from "./blocks/ButtonBlockPreview";
+import { AccordionPreview } from "./blocks/AccordionPreview";
+import { ImageSliderPreview } from "./blocks/ImageSliderPreview";
 import { FormBlockPreview } from "./blocks/FormBlockPreview";
 import { PhoneBlockPreview } from "./blocks/PhoneBlockPreview";
 import { ChatBlockPreview } from "./blocks/ChatBlockPreview";
@@ -237,6 +239,22 @@ export function getBlockPreview(
     case "chat-block":
       return (
         <ChatBlockPreview
+          config={block.config}
+          editable={editable}
+          onUpdateConfig={onUpdateConfig}
+        />
+      );
+    case "accordion":
+      return (
+        <AccordionPreview
+          config={block.config}
+          editable={editable}
+          onUpdateConfig={onUpdateConfig}
+        />
+      );
+    case "image-slider":
+      return (
+        <ImageSliderPreview
           config={block.config}
           editable={editable}
           onUpdateConfig={onUpdateConfig}

@@ -1412,6 +1412,129 @@ function generateVariantSelectorRuntime(): string {
 </script>`;
 }
 
+function generateAccordionRuntime(): string {
+  return `<script>
+(function(){
+  function init(){
+    var roots = document.querySelectorAll('.lp-accordion');
+    for(var r=0;r<roots.length;r++){
+      (function(root){
+        var multi = root.getAttribute('data-accordion-multi') === '1';
+        if(multi) return;
+        var items = root.querySelectorAll('details.lp-accordion-item');
+        for(var i=0;i<items.length;i++){
+          items[i].addEventListener('toggle', function(ev){
+            if(!this.open) return;
+            for(var j=0;j<items.length;j++){
+              if(items[j] !== this && items[j].open) items[j].open = false;
+            }
+          });
+        }
+      })(roots[r]);
+    }
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  } else { init(); }
+})();
+</script>`;
+}
+
+function generateSliderRuntime(): string {
+  return `<script>
+(function(){
+  function setActive(slides, dots, index){
+    for(var i=0;i<slides.length;i++){
+      if(i === index) slides[i].setAttribute('data-active','1');
+      else slides[i].removeAttribute('data-active');
+    }
+    if(dots){
+      for(var j=0;j<dots.length;j++){
+        if(j === index) dots[j].classList.add('is-active');
+        else dots[j].classList.remove('is-active');
+      }
+    }
+  }
+  function initOne(root){
+    var slides = root.querySelectorAll('.lp-slider-slide');
+    if(slides.length <= 1) return;
+    var dots = root.querySelectorAll('.lp-slider-dot');
+    var prev = root.querySelector('[data-slider-prev]');
+    var next = root.querySelector('[data-slider-next]');
+    var loop = root.getAttribute('data-slider-loop') === '1';
+    var autoplay = root.getAttribute('data-slider-autoplay') === '1';
+    var interval = parseInt(root.getAttribute('data-slider-interval') || '4000', 10);
+    if(isNaN(interval) || interval < 1000) interval = 4000;
+    var index = 0;
+    var timer = null;
+    var paused = false;
+
+    function go(i){
+      if(i < 0) i = loop ? slides.length - 1 : 0;
+      if(i >= slides.length) i = loop ? 0 : slides.length - 1;
+      index = i;
+      setActive(slides, dots, index);
+    }
+    function start(){
+      if(!autoplay || timer) return;
+      timer = setInterval(function(){
+        if(!paused) go(index + 1);
+      }, interval);
+    }
+    function stop(){
+      if(timer){ clearInterval(timer); timer = null; }
+    }
+    if(prev) prev.addEventListener('click', function(ev){ ev.preventDefault(); go(index - 1); });
+    if(next) next.addEventListener('click', function(ev){ ev.preventDefault(); go(index + 1); });
+    for(var k=0;k<dots.length;k++){
+      (function(i){
+        dots[i].addEventListener('click', function(ev){ ev.preventDefault(); go(i); });
+      })(k);
+    }
+    root.addEventListener('mouseenter', function(){ paused = true; });
+    root.addEventListener('mouseleave', function(){ paused = false; });
+    root.addEventListener('focusin', function(){ paused = true; });
+    root.addEventListener('focusout', function(){ paused = false; });
+    document.addEventListener('visibilitychange', function(){
+      if(document.hidden) stop(); else start();
+    });
+
+    // Swipe via pointer events
+    var startX = null;
+    var viewport = root.querySelector('.lp-slider-viewport') || root;
+    viewport.addEventListener('pointerdown', function(ev){
+      if(ev.pointerType !== 'touch' && ev.pointerType !== 'pen') return;
+      startX = ev.clientX;
+    });
+    viewport.addEventListener('pointerup', function(ev){
+      if(startX === null) return;
+      var dx = ev.clientX - startX;
+      startX = null;
+      if(Math.abs(dx) < 40) return;
+      if(dx < 0) go(index + 1); else go(index - 1);
+    });
+    viewport.addEventListener('pointercancel', function(){ startX = null; });
+
+    // Keyboard
+    root.setAttribute('tabindex', '0');
+    root.addEventListener('keydown', function(ev){
+      if(ev.key === 'ArrowLeft'){ ev.preventDefault(); go(index - 1); }
+      else if(ev.key === 'ArrowRight'){ ev.preventDefault(); go(index + 1); }
+    });
+
+    start();
+  }
+  function init(){
+    var roots = document.querySelectorAll('.lp-slider:not(.lp-slider-empty)');
+    for(var r=0;r<roots.length;r++) initOne(roots[r]);
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  } else { init(); }
+})();
+</script>`;
+}
+
 function generateOnClickActionRuntime(): string {
   return `<script>
 (function(){
@@ -1456,6 +1579,123 @@ function generateOnClickActionRuntime(): string {
 </script>`;
 }
 
+function safeImageSrc(src: unknown): string {
+  if (typeof src !== "string") return "";
+  const trimmed = src.trim();
+  if (!trimmed) return "";
+  if (trimmed.length > 2048) return "";
+  if (trimmed.startsWith("/") || trimmed.startsWith("//")) return trimmed;
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith("http://") || lower.startsWith("https://")) return trimmed;
+  return "";
+}
+
+function renderAccordionBlock(config: Record<string, any>, blockId: string): string {
+  const items = Array.isArray(config.items) ? config.items : [];
+  const allowMultiple = config.allowMultipleOpen === true;
+  const defaultOpen =
+    typeof config.defaultOpenIndex === "number" && config.defaultOpenIndex >= 0
+      ? config.defaultOpenIndex
+      : -1;
+
+  if (items.length === 0) {
+    return `<section class="lp-accordion lp-accordion-empty" data-block-id="${escapeHtml(blockId)}"></section>`;
+  }
+
+  const itemsHtml = items
+    .map((item: any, i: number) => {
+      const itemId = escapeHtml(String(item?.id ?? `item-${i}`));
+      const title = escapeHtml(String(item?.title ?? ""));
+      const body = sanitizeInlineHtml(String(item?.body ?? "").replace(/\n/g, "<br>"));
+      const open = i === defaultOpen ? " open" : "";
+      return `
+        <details class="lp-accordion-item" data-accordion-item="${itemId}"${open}>
+          <summary class="lp-accordion-summary">
+            <span class="lp-accordion-title">${title}</span>
+            <span class="lp-accordion-icon" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 8 10 12 14 8"></polyline></svg>
+            </span>
+          </summary>
+          <div class="lp-accordion-body">${body}</div>
+        </details>`;
+    })
+    .join("");
+
+  return `
+    <section class="lp-accordion" data-block-id="${escapeHtml(blockId)}" data-accordion-multi="${allowMultiple ? "1" : "0"}">
+      <div class="lp-accordion-list">${itemsHtml}</div>
+    </section>`;
+}
+
+function renderImageSliderBlock(config: Record<string, any>, blockId: string): string {
+  const images = Array.isArray(config.images) ? config.images : [];
+  const showArrows = config.showArrows !== false;
+  const showDots = config.showDots !== false;
+  const loop = config.loop !== false;
+  const autoplay = config.autoplay === true;
+  const intervalRaw = typeof config.intervalMs === "number" ? config.intervalMs : 4000;
+  const intervalMs = Math.min(30000, Math.max(1000, Math.floor(intervalRaw)));
+
+  if (images.length === 0) {
+    return `
+      <section class="lp-slider lp-slider-empty" data-block-id="${escapeHtml(blockId)}">
+        <div class="lp-slider-placeholder">No images</div>
+      </section>`;
+  }
+
+  const slidesHtml = images
+    .map((img: any, i: number) => {
+      const src = safeImageSrc(img?.src);
+      const alt = escapeHtml(String(img?.alt ?? ""));
+      const caption = img?.caption ? escapeHtml(String(img.caption)) : "";
+      const isFirst = i === 0;
+      const imgTag = src
+        ? `<img src="${escapeHtml(src)}" alt="${alt}" class="lp-slider-img" ${isFirst ? 'loading="eager"' : 'loading="lazy"'} decoding="async">`
+        : `<div class="lp-slider-img lp-slider-img-missing"></div>`;
+      const captionTag = caption
+        ? `<figcaption class="lp-slider-caption">${caption}</figcaption>`
+        : "";
+      return `
+        <figure class="lp-slider-slide" data-slide-index="${i}"${isFirst ? ' data-active="1"' : ""}>
+          ${imgTag}
+          ${captionTag}
+        </figure>`;
+    })
+    .join("");
+
+  const dotsHtml = showDots && images.length > 1
+    ? `<div class="lp-slider-dots" role="tablist">${images
+        .map(
+          (_img: any, i: number) =>
+            `<button type="button" class="lp-slider-dot${i === 0 ? " is-active" : ""}" data-slider-goto="${i}" aria-label="Go to slide ${i + 1}"></button>`
+        )
+        .join("")}</div>`
+    : "";
+
+  const arrowsHtml = showArrows && images.length > 1
+    ? `
+      <button type="button" class="lp-slider-arrow lp-slider-arrow-prev" data-slider-prev aria-label="Previous slide">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="12 4 6 10 12 16"></polyline></svg>
+      </button>
+      <button type="button" class="lp-slider-arrow lp-slider-arrow-next" data-slider-next aria-label="Next slide">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 4 14 10 8 16"></polyline></svg>
+      </button>`
+    : "";
+
+  return `
+    <section class="lp-slider" data-block-id="${escapeHtml(blockId)}"
+      data-slider-autoplay="${autoplay ? "1" : "0"}"
+      data-slider-interval="${intervalMs}"
+      data-slider-loop="${loop ? "1" : "0"}"
+      data-slider-count="${images.length}">
+      <div class="lp-slider-viewport">
+        <div class="lp-slider-track">${slidesHtml}</div>
+        ${arrowsHtml}
+      </div>
+      ${dotsHtml}
+    </section>`;
+}
+
 function renderBlockBody(block: Block, config: Record<string, any>, pageId: string): string {
   const blockId = block.id;
   switch (block.type) {
@@ -1481,6 +1721,10 @@ function renderBlockBody(block: Block, config: Record<string, any>, pageId: stri
       return renderContainerBlock(block, pageId);
     case "section":
       return renderSectionBlock(block, pageId);
+    case "accordion":
+      return renderAccordionBlock(config, blockId);
+    case "image-slider":
+      return renderImageSliderBlock(config, blockId);
     default:
       return `<section class="lp-block lp-block-unknown" data-block-id="${escapeHtml(blockId)}">Unknown block type: ${escapeHtml(block.type)}</section>`;
   }
@@ -1663,6 +1907,44 @@ body { font-family: system-ui, -apple-system, sans-serif; line-height: 1.6; colo
 .lp-chat-input { display: flex; gap: 0.5rem; padding: 0.75rem; border-top: 1px solid var(--lp-border); }
 .lp-chat-input input { flex: 1; padding: 0.5rem 0.75rem; border: 1px solid var(--lp-border); border-radius: 1rem; }
 .lp-chat-input button { padding: 0.5rem 1rem; background: var(--lp-primary); color: #fff; border: none; border-radius: 0.375rem; cursor: pointer; }
+
+/* Accordion */
+.lp-accordion { padding: 1.5rem 1rem; }
+.lp-accordion-list { max-width: 48rem; margin: 0 auto; display: flex; flex-direction: column; gap: 0.5rem; }
+.lp-accordion-item { border: 1px solid var(--lp-border); border-radius: 0.5rem; background: #fff; overflow: hidden; }
+.lp-accordion-summary { display: flex; align-items: center; gap: 0.75rem; padding: 0.875rem 1rem; cursor: pointer; font-weight: 500; list-style: none; }
+.lp-accordion-summary::-webkit-details-marker { display: none; }
+.lp-accordion-title { flex: 1; min-width: 0; }
+.lp-accordion-icon { flex-shrink: 0; display: inline-flex; transition: transform 0.2s ease; color: var(--lp-text-muted); }
+.lp-accordion-icon svg { width: 1rem; height: 1rem; }
+.lp-accordion-item[open] .lp-accordion-icon { transform: rotate(180deg); }
+.lp-accordion-body { padding: 0 1rem 1rem; border-top: 1px solid var(--lp-border); padding-top: 0.75rem; color: var(--lp-text); font-size: 0.95rem; }
+@media (prefers-reduced-motion: reduce) {
+  .lp-accordion-icon { transition: none; }
+}
+
+/* Image slider */
+.lp-slider { padding: 1.5rem 1rem; }
+.lp-slider-viewport { position: relative; max-width: 64rem; margin: 0 auto; aspect-ratio: 16 / 9; border-radius: 0.5rem; overflow: hidden; background: var(--lp-border); }
+.lp-slider-track { position: relative; width: 100%; height: 100%; }
+.lp-slider-slide { position: absolute; inset: 0; margin: 0; opacity: 0; transition: opacity 0.4s ease; pointer-events: none; }
+.lp-slider-slide[data-active="1"] { opacity: 1; pointer-events: auto; z-index: 1; }
+.lp-slider-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lp-slider-img-missing { width: 100%; height: 100%; background: var(--lp-border); }
+.lp-slider-caption { position: absolute; left: 0; right: 0; bottom: 0; padding: 0.75rem 1rem; background: linear-gradient(transparent, rgba(0,0,0,0.6)); color: #fff; font-size: 0.875rem; }
+.lp-slider-arrow { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.9); border: none; border-radius: 50%; width: 2.25rem; height: 2.25rem; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.15); z-index: 2; color: var(--lp-text); }
+.lp-slider-arrow:hover { background: #fff; }
+.lp-slider-arrow svg { width: 1.1rem; height: 1.1rem; }
+.lp-slider-arrow-prev { left: 0.75rem; }
+.lp-slider-arrow-next { right: 0.75rem; }
+.lp-slider-dots { display: flex; justify-content: center; gap: 0.4rem; margin-top: 0.75rem; max-width: 64rem; margin-left: auto; margin-right: auto; }
+.lp-slider-dot { background: rgba(0,0,0,0.25); border: none; width: 0.5rem; height: 0.5rem; border-radius: 50%; padding: 0; cursor: pointer; transition: all 0.2s ease; }
+.lp-slider-dot.is-active { background: var(--lp-primary); width: 1.5rem; border-radius: 0.25rem; }
+.lp-slider-placeholder { padding: 3rem; text-align: center; color: var(--lp-text-muted); background: var(--lp-border); border-radius: 0.5rem; max-width: 64rem; margin: 0 auto; }
+@media (prefers-reduced-motion: reduce) {
+  .lp-slider-slide { transition: none; }
+  .lp-slider-dot { transition: none; }
+}
 </style>`;
 }
 
@@ -1690,6 +1972,8 @@ export async function renderPage(
   const abTestingRuntime = generateAbTestingRuntime(page.id);
   const cartRuntime = generateCartRuntime();
   const variantSelectorRuntime = generateVariantSelectorRuntime();
+  const accordionRuntime = generateAccordionRuntime();
+  const sliderRuntime = generateSliderRuntime();
   const storeDomainAttr = `data-store-domain="${escapeHtml(store.shopifyDomain || "")}" data-custom-domain="${escapeHtml(store.customDomain || "")}"`;
 
   if (options.useLiquidWrapper) {
@@ -1706,6 +1990,8 @@ ${abTestingRuntime}
 ${onClickRuntime}
 ${cartRuntime}
 ${variantSelectorRuntime}
+${accordionRuntime}
+${sliderRuntime}
 </div>
 {{ content_for_layout }}`;
 
@@ -1733,6 +2019,8 @@ ${variantSelectorRuntime}
   ${onClickRuntime}
   ${cartRuntime}
   ${variantSelectorRuntime}
+  ${accordionRuntime}
+  ${sliderRuntime}
 </body>
 </html>`;
 
