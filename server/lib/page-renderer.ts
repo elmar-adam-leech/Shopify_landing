@@ -433,10 +433,6 @@ function renderProductBlock(config: Record<string, any>, blockId: string): strin
       </section>`;
   }
 
-  const imageHtml = productImage
-    ? `<div class="lp-product-image"><img src="${escapeHtml(productImage)}" alt="${productTitle}" style="max-width:100%;height:auto;object-fit:contain;" loading="lazy" decoding="async" /></div>`
-    : '<div class="lp-product-image-placeholder">Product Image</div>';
-
   const normalizedVariants = normalizeVariantsForRuntime(productData?.variants);
   const initialVariantId =
     (config.shopifyVariantId && String(config.shopifyVariantId)) ||
@@ -446,6 +442,16 @@ function renderProductBlock(config: Record<string, any>, blockId: string): strin
     normalizedVariants.find((v) => v.id === initialVariantId) ||
     normalizedVariants[0];
   const selectedOptions = initialVariant?.options || {};
+
+  const fallbackImage = productImage || null;
+  const initialImage = initialVariant?.image || fallbackImage;
+  const fallbackImageAttr = fallbackImage ? ` data-product-image-fallback="${escapeHtml(fallbackImage)}"` : "";
+  const imageHtml = initialImage
+    ? `<div class="lp-product-image"><img src="${escapeHtml(initialImage)}" alt="${productTitle}" data-product-image${fallbackImageAttr} style="max-width:100%;height:auto;object-fit:contain;" loading="lazy" decoding="async" /></div>`
+    : '<div class="lp-product-image-placeholder">Product Image</div>';
+
+  const initialStockMessage = computeStockMessage(initialVariant);
+  const stockHtml = `<p class="lp-product-stock" data-product-stock style="font-size:0.875rem;margin-top:0.5rem;color:#b45309;${initialStockMessage ? "" : "display:none;"}">${escapeHtml(initialStockMessage)}</p>`;
 
   const variantHtml = normalizedVariants.length > 1
     ? renderVariantSelectors(normalizedVariants, selectedOptions)
@@ -485,6 +491,7 @@ function renderProductBlock(config: Record<string, any>, blockId: string): strin
           ` : ""}
           ${showDescription ? `<p class="lp-product-description" style="word-wrap:break-word;overflow-wrap:break-word;">${productDescription}</p>` : ""}
           ${variantHtml}
+          ${stockHtml}
           <div class="lp-product-actions" style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
             ${showAddToCart ? `<button type="button" class="lp-btn lp-btn-primary lp-add-to-cart" style="flex:1;min-width:0;" data-action="add" data-variant-id="${escapeHtml(buttonVariantId)}" data-product-handle="${escapeHtml(config.productHandle || "")}" data-quantity="1" data-track-conversion="${config.trackAddToCart === false ? "0" : "1"}" data-default-text="${addToCartText}"${disabledAttr}>${addCartLabel}</button>` : ""}
             ${showBuyNow ? `<button type="button" class="lp-btn lp-btn-secondary lp-buy-now" style="flex:1;min-width:0;" data-action="buy" data-variant-id="${escapeHtml(buttonVariantId)}" data-product-handle="${escapeHtml(config.productHandle || "")}" data-quantity="1" data-track-conversion="${config.trackBuyNow === false ? "0" : "1"}" data-default-text="${buyNowText}"${disabledAttr}>${buyNowLabel}</button>` : ""}
@@ -500,6 +507,18 @@ interface NormalizedVariant {
   price: number | null;
   compareAtPrice: number | null;
   available: boolean;
+  image: string | null;
+  inventoryQuantity: number | null;
+}
+
+function computeStockMessage(variant: NormalizedVariant | undefined): string {
+  if (!variant) return "";
+  if (variant.available === false) return "Sold out";
+  const qty = variant.inventoryQuantity;
+  if (typeof qty === "number" && qty > 0 && qty <= 10) {
+    return qty === 1 ? "Only 1 left in stock" : `Only ${qty} left in stock`;
+  }
+  return "";
 }
 
 function parsePriceField(value: any): number | null {
@@ -526,12 +545,25 @@ function normalizeVariantsForRuntime(variants: any): NormalizedVariant[] {
           }
         }
       }
+      let image: string | null = null;
+      if (v?.image) {
+        if (typeof v.image === "string") image = v.image;
+        else if (typeof v.image === "object" && typeof v.image.url === "string") image = v.image.url;
+      }
+      let inventoryQuantity: number | null = null;
+      if (typeof v?.inventoryQuantity === "number") {
+        inventoryQuantity = v.inventoryQuantity;
+      } else if (typeof v?.quantityAvailable === "number") {
+        inventoryQuantity = v.quantityAvailable;
+      }
       return {
         id,
         options,
         price: parsePriceField(v?.price),
         compareAtPrice: parsePriceField(v?.compareAtPrice),
         available: v?.availableForSale !== false,
+        image,
+        inventoryQuantity,
       };
     })
     .filter((v) => v.id);
@@ -1309,6 +1341,33 @@ function generateVariantSelectorRuntime(): string {
       var priceEl = section.querySelector('[data-product-price]');
       var compareEl = section.querySelector('[data-product-compare-price]');
       var savingsEl = section.querySelector('[data-product-savings]');
+      var imageEl = section.querySelector('[data-product-image]');
+      var stockEl = section.querySelector('[data-product-stock]');
+      if(imageEl && match){
+        var nextSrc = (typeof match.image === 'string' && match.image)
+          ? match.image
+          : (imageEl.getAttribute('data-product-image-fallback') || '');
+        if(nextSrc && imageEl.getAttribute('src') !== nextSrc){
+          imageEl.setAttribute('src', nextSrc);
+        }
+      }
+      if(stockEl){
+        var msg = '';
+        if(match){
+          if(match.available === false){
+            msg = 'Sold out';
+          } else if(typeof match.inventoryQuantity === 'number' && match.inventoryQuantity > 0 && match.inventoryQuantity <= 10){
+            msg = match.inventoryQuantity === 1 ? 'Only 1 left in stock' : 'Only ' + match.inventoryQuantity + ' left in stock';
+          }
+        }
+        if(msg){
+          stockEl.textContent = msg;
+          stockEl.style.display = '';
+        } else {
+          stockEl.textContent = '';
+          stockEl.style.display = 'none';
+        }
+      }
       if(match && priceEl && match.price !== null && match.price !== undefined){
         priceEl.textContent = formatMoney(match.price);
       }

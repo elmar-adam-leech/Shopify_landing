@@ -232,6 +232,7 @@ export interface ShopifyProductNode {
         price: string;
         compareAtPrice: string | null;
         availableForSale: boolean;
+        inventoryQuantity: number | null;
         selectedOptions: Array<{
           name: string;
           value: string;
@@ -329,6 +330,7 @@ const PRODUCTS_QUERY = `
                 price
                 compareAtPrice
                 availableForSale
+                inventoryQuantity
                 selectedOptions {
                   name
                   value
