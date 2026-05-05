@@ -346,12 +346,40 @@ function renderProductBlock(config: Record<string, any>, blockId: string): strin
     ? `<div class="lp-product-image"><img src="${escapeHtml(productImage)}" alt="${productTitle}" style="max-width:100%;height:auto;object-fit:contain;" loading="lazy" decoding="async" /></div>`
     : '<div class="lp-product-image-placeholder">Product Image</div>';
 
-  const variantHtml = productData?.variants?.length > 1
-    ? renderVariantSelectors(productData.variants)
+  const normalizedVariants = normalizeVariantsForRuntime(productData?.variants);
+  const initialVariantId =
+    (config.shopifyVariantId && String(config.shopifyVariantId)) ||
+    normalizedVariants[0]?.id ||
+    "";
+  const initialVariant =
+    normalizedVariants.find((v) => v.id === initialVariantId) ||
+    normalizedVariants[0];
+  const selectedOptions = initialVariant?.options || {};
+
+  const variantHtml = normalizedVariants.length > 1
+    ? renderVariantSelectors(normalizedVariants, selectedOptions)
+    : "";
+  const variantsAttr = normalizedVariants.length > 1
+    ? ` data-product-variants="${escapeHtml(JSON.stringify(normalizedVariants))}"`
     : "";
 
+  const buttonVariantId = initialVariant?.id || "";
+  const buttonAvailable = initialVariant ? initialVariant.available !== false : true;
+  const buttonDisabled = !buttonVariantId || !buttonAvailable;
+  const addCartLabel = !buttonVariantId
+    ? "Choose options"
+    : !buttonAvailable
+      ? "Sold out"
+      : addToCartText;
+  const buyNowLabel = !buttonVariantId
+    ? "Choose options"
+    : !buttonAvailable
+      ? "Sold out"
+      : buyNowText;
+  const disabledAttr = buttonDisabled ? ' disabled aria-disabled="true"' : "";
+
   return `
-    <section class="lp-product-block" data-block-id="${escapeHtml(blockId)}" style="max-width:100%;overflow:hidden;">
+    <section class="lp-product-block" data-block-id="${escapeHtml(blockId)}"${variantsAttr} style="max-width:100%;overflow:hidden;">
       <div class="lp-product-card" style="max-width:100%;overflow:hidden;">
         ${showImage ? imageHtml : ""}
         <div class="lp-product-info" style="padding:1.5rem;max-width:100%;overflow:hidden;">
@@ -359,28 +387,74 @@ function renderProductBlock(config: Record<string, any>, blockId: string): strin
           ${showTitle ? `<h2 class="lp-product-title" style="word-wrap:break-word;overflow-wrap:break-word;">${productTitle}</h2>` : ""}
           ${showPrice && formattedPrice ? `
             <div class="lp-product-price">
-              <span class="lp-price-current">${formattedPrice}</span>
-              ${showCompareAtPrice && formattedComparePrice ? `<span class="lp-price-compare" style="text-decoration:line-through;color:#999;margin-left:0.5rem;">${formattedComparePrice}</span>` : ""}
-              ${showCompareAtPrice && savings > 0 ? `<span class="lp-price-savings" style="background:#e8f5e9;color:#2e7d32;padding:0.125rem 0.5rem;border-radius:4px;font-size:0.875rem;margin-left:0.5rem;">Save ${savings}%</span>` : ""}
+              <span class="lp-price-current" data-product-price>${formattedPrice}</span>
+              ${showCompareAtPrice ? `<span class="lp-price-compare" data-product-compare-price style="text-decoration:line-through;color:#999;margin-left:0.5rem;${formattedComparePrice ? "" : "display:none;"}">${formattedComparePrice || ""}</span>` : ""}
+              ${showCompareAtPrice ? `<span class="lp-price-savings" data-product-savings style="background:#e8f5e9;color:#2e7d32;padding:0.125rem 0.5rem;border-radius:4px;font-size:0.875rem;margin-left:0.5rem;${savings > 0 ? "" : "display:none;"}">${savings > 0 ? `Save ${savings}%` : ""}</span>` : ""}
             </div>
           ` : ""}
           ${showDescription ? `<p class="lp-product-description" style="word-wrap:break-word;overflow-wrap:break-word;">${productDescription}</p>` : ""}
           ${variantHtml}
           <div class="lp-product-actions" style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
-            ${showAddToCart ? `<button type="button" class="lp-btn lp-btn-primary lp-add-to-cart" style="flex:1;min-width:0;" data-action="add" data-variant-id="${escapeHtml(config.shopifyVariantId || "")}" data-product-handle="${escapeHtml(config.productHandle || "")}" data-quantity="1" data-track-conversion="${config.trackAddToCart === false ? "0" : "1"}"${!config.shopifyVariantId ? ' disabled aria-disabled="true"' : ""}>${!config.shopifyVariantId ? "Choose options" : addToCartText}</button>` : ""}
-            ${showBuyNow ? `<button type="button" class="lp-btn lp-btn-secondary lp-buy-now" style="flex:1;min-width:0;" data-action="buy" data-variant-id="${escapeHtml(config.shopifyVariantId || "")}" data-product-handle="${escapeHtml(config.productHandle || "")}" data-quantity="1" data-track-conversion="${config.trackBuyNow === false ? "0" : "1"}"${!config.shopifyVariantId ? ' disabled aria-disabled="true"' : ""}>${!config.shopifyVariantId ? "Choose options" : buyNowText}</button>` : ""}
+            ${showAddToCart ? `<button type="button" class="lp-btn lp-btn-primary lp-add-to-cart" style="flex:1;min-width:0;" data-action="add" data-variant-id="${escapeHtml(buttonVariantId)}" data-product-handle="${escapeHtml(config.productHandle || "")}" data-quantity="1" data-track-conversion="${config.trackAddToCart === false ? "0" : "1"}" data-default-text="${addToCartText}"${disabledAttr}>${addCartLabel}</button>` : ""}
+            ${showBuyNow ? `<button type="button" class="lp-btn lp-btn-secondary lp-buy-now" style="flex:1;min-width:0;" data-action="buy" data-variant-id="${escapeHtml(buttonVariantId)}" data-product-handle="${escapeHtml(config.productHandle || "")}" data-quantity="1" data-track-conversion="${config.trackBuyNow === false ? "0" : "1"}" data-default-text="${buyNowText}"${disabledAttr}>${buyNowLabel}</button>` : ""}
           </div>
         </div>
       </div>
     </section>`;
 }
 
-function renderVariantSelectors(variants: any[]): string {
-  const options: Record<string, Set<string>> = {};
-  variants.forEach((v: any) => {
-    v.selectedOptions?.forEach((opt: { name: string; value: string }) => {
-      if (!options[opt.name]) options[opt.name] = new Set();
-      options[opt.name].add(opt.value);
+interface NormalizedVariant {
+  id: string;
+  options: Record<string, string>;
+  price: number | null;
+  compareAtPrice: number | null;
+  available: boolean;
+}
+
+function parsePriceField(value: any): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "object" && value !== null && "amount" in value) {
+    const n = parseFloat(String((value as any).amount));
+    return isNaN(n) ? null : n;
+  }
+  const n = parseFloat(String(value));
+  return isNaN(n) ? null : n;
+}
+
+function normalizeVariantsForRuntime(variants: any): NormalizedVariant[] {
+  if (!Array.isArray(variants)) return [];
+  return variants
+    .map((v: any) => {
+      const rawId = v?.id ? String(v.id) : "";
+      const id = rawId.includes("/") ? rawId.split("/").pop() || "" : rawId;
+      const options: Record<string, string> = {};
+      if (Array.isArray(v?.selectedOptions)) {
+        for (const opt of v.selectedOptions) {
+          if (opt && typeof opt.name === "string" && typeof opt.value === "string") {
+            options[opt.name] = opt.value;
+          }
+        }
+      }
+      return {
+        id,
+        options,
+        price: parsePriceField(v?.price),
+        compareAtPrice: parsePriceField(v?.compareAtPrice),
+        available: v?.availableForSale !== false,
+      };
+    })
+    .filter((v) => v.id);
+}
+
+function renderVariantSelectors(
+  variants: NormalizedVariant[],
+  selected: Record<string, string>
+): string {
+  const options: Record<string, string[]> = {};
+  variants.forEach((v) => {
+    Object.entries(v.options).forEach(([name, value]) => {
+      if (!options[name]) options[name] = [];
+      if (!options[name].includes(value)) options[name].push(value);
     });
   });
 
@@ -389,8 +463,8 @@ function renderVariantSelectors(variants: any[]): string {
   return Object.entries(options).map(([name, values]) => `
     <div class="lp-variant-selector" style="margin-top:1rem;">
       <label style="display:block;font-size:0.875rem;font-weight:500;margin-bottom:0.25rem;">${escapeHtml(name)}</label>
-      <select style="width:100%;padding:0.5rem;border:1px solid #ddd;border-radius:4px;font-size:1rem;">
-        ${Array.from(values).map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("")}
+      <select data-variant-option="${escapeHtml(name)}" style="width:100%;padding:0.5rem;border:1px solid #ddd;border-radius:4px;font-size:1rem;">
+        ${values.map((v) => `<option value="${escapeHtml(v)}"${selected[name] === v ? " selected" : ""}>${escapeHtml(v)}</option>`).join("")}
       </select>
     </div>
   `).join("");
@@ -1077,6 +1151,116 @@ function generateCartRuntime(): string {
 </script>`;
 }
 
+function generateVariantSelectorRuntime(): string {
+  return `<script>
+(function(){
+  function formatMoney(n){
+    if(n === null || n === undefined || isNaN(n)) return '';
+    try {
+      return '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    } catch(e){
+      return '$' + Number(n).toFixed(2);
+    }
+  }
+  function setupSection(section){
+    var raw = section.getAttribute('data-product-variants');
+    if(!raw) return;
+    var variants;
+    try { variants = JSON.parse(raw); } catch(e){ return; }
+    if(!Array.isArray(variants) || !variants.length) return;
+    var selects = section.querySelectorAll('select[data-variant-option]');
+    if(!selects.length) return;
+
+    function currentSelection(){
+      var sel = {};
+      for(var i=0;i<selects.length;i++){
+        var name = selects[i].getAttribute('data-variant-option') || '';
+        sel[name] = selects[i].value;
+      }
+      return sel;
+    }
+    function findVariant(sel){
+      for(var i=0;i<variants.length;i++){
+        var v = variants[i];
+        var ok = true;
+        for(var k in sel){
+          if(Object.prototype.hasOwnProperty.call(sel, k)){
+            if(!v.options || v.options[k] !== sel[k]){ ok = false; break; }
+          }
+        }
+        if(ok) return v;
+      }
+      return null;
+    }
+    function update(){
+      var match = findVariant(currentSelection());
+      var btns = section.querySelectorAll('.lp-add-to-cart, .lp-buy-now');
+      for(var i=0;i<btns.length;i++){
+        var btn = btns[i];
+        var defaultText = btn.getAttribute('data-default-text') || btn.textContent;
+        if(!match){
+          btn.setAttribute('data-variant-id', '');
+          btn.disabled = true;
+          btn.setAttribute('aria-disabled', 'true');
+          btn.textContent = 'Unavailable';
+        } else if(match.available === false){
+          btn.setAttribute('data-variant-id', match.id || '');
+          btn.disabled = true;
+          btn.setAttribute('aria-disabled', 'true');
+          btn.textContent = 'Sold out';
+        } else {
+          btn.setAttribute('data-variant-id', match.id || '');
+          btn.disabled = false;
+          btn.removeAttribute('aria-disabled');
+          btn.textContent = defaultText;
+        }
+      }
+      var priceEl = section.querySelector('[data-product-price]');
+      var compareEl = section.querySelector('[data-product-compare-price]');
+      var savingsEl = section.querySelector('[data-product-savings]');
+      if(match && priceEl && match.price !== null && match.price !== undefined){
+        priceEl.textContent = formatMoney(match.price);
+      }
+      if(compareEl){
+        if(match && match.compareAtPrice !== null && match.compareAtPrice !== undefined){
+          compareEl.textContent = formatMoney(match.compareAtPrice);
+          compareEl.style.display = '';
+        } else {
+          compareEl.textContent = '';
+          compareEl.style.display = 'none';
+        }
+      }
+      if(savingsEl){
+        var p = match ? match.price : null;
+        var c = match ? match.compareAtPrice : null;
+        if(p !== null && p !== undefined && c !== null && c !== undefined && c > p){
+          var pct = Math.round((1 - p / c) * 100);
+          savingsEl.textContent = 'Save ' + pct + '%';
+          savingsEl.style.display = '';
+        } else {
+          savingsEl.textContent = '';
+          savingsEl.style.display = 'none';
+        }
+      }
+    }
+    for(var i=0;i<selects.length;i++){
+      selects[i].addEventListener('change', update, false);
+    }
+    update();
+  }
+  function init(){
+    var sections = document.querySelectorAll('[data-product-variants]');
+    for(var i=0;i<sections.length;i++) setupSection(sections[i]);
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>`;
+}
+
 function generateOnClickActionRuntime(): string {
   return `<script>
 (function(){
@@ -1354,6 +1538,7 @@ export async function renderPage(
   const visibilityRuntime = generateVisibilityRuntime();
   const abTestingRuntime = generateAbTestingRuntime(page.id);
   const cartRuntime = generateCartRuntime();
+  const variantSelectorRuntime = generateVariantSelectorRuntime();
   const storeDomainAttr = `data-store-domain="${escapeHtml(store.shopifyDomain || "")}" data-custom-domain="${escapeHtml(store.customDomain || "")}"`;
 
   if (options.useLiquidWrapper) {
@@ -1369,6 +1554,7 @@ ${visibilityRuntime}
 ${abTestingRuntime}
 ${onClickRuntime}
 ${cartRuntime}
+${variantSelectorRuntime}
 </div>
 {{ content_for_layout }}`;
 
@@ -1395,6 +1581,7 @@ ${cartRuntime}
   ${abTestingRuntime}
   ${onClickRuntime}
   ${cartRuntime}
+  ${variantSelectorRuntime}
 </body>
 </html>`;
 
