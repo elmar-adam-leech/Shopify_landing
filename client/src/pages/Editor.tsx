@@ -6,9 +6,10 @@ import {
   closestCenter,
   type CollisionDetection,
 } from "@dnd-kit/core";
-import { Loader2, Eye } from "lucide-react";
+import { Loader2, Eye, Globe, X } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { ImportFromUrlDialog, type ImportFromUrlResponse } from "@/components/editor/ImportFromUrlDialog";
 import { EditorSidebar } from "@/components/editor/EditorSidebar";
 import {
   EditorCanvas,
@@ -84,6 +85,36 @@ const collisionDetection: CollisionDetection = (args) => {
 export default function Editor() {
   const editor = useEditorPage();
   const [showCloneDialog, setShowCloneDialog] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [reimportDialogOpen, setReimportDialogOpen] = useState(false);
+  // Badge dismissal is per-source-URL and per-tab. The badge re-appears
+  // automatically if the page is re-imported from a different URL (or
+  // re-imported from the same URL after the merchant cleared the dismiss).
+  const [badgeDismissedFor, setBadgeDismissedFor] = useState<string | null>(null);
+  const showBadge =
+    !!editor.importedFromUrl &&
+    !editor.previewMode &&
+    badgeDismissedFor !== editor.importedFromUrl;
+
+  const handleImportSuccess = (result: ImportFromUrlResponse) => {
+    // The editor's hook already manages blocks + import metadata in local
+    // state, so we can just hand it over directly — no navigation or
+    // sessionStorage round-trip needed. The "Save" button persists the
+    // page (creating a row if this is a new draft).
+    editor.handleApplyImport({
+      blocks: result.blocks,
+      importedFromUrl: result.importedFromUrl,
+      importedAt: result.importedAt,
+    });
+    if (editor.isNewPage && (!editor.title || editor.title === "Untitled Page")) {
+      try {
+        const host = new URL(result.importedFromUrl).hostname.replace(/^www\./, "");
+        editor.handleTitleChange(`Imported from ${host}`);
+      } catch {
+        /* ignore — leave default title */
+      }
+    }
+  };
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -245,6 +276,16 @@ export default function Editor() {
                       <PackagePlus className="h-4 w-4" />
                       Clone from product
                     </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 flex-shrink-0"
+                      onClick={() => setImportDialogOpen(true)}
+                      data-testid="button-open-import-from-url"
+                    >
+                      <Globe className="h-4 w-4" />
+                      Import from URL
+                    </Button>
                   </div>
                   <div className="flex items-center flex-shrink-0 pt-1">
                     <ViewportSwitcher
@@ -262,6 +303,47 @@ export default function Editor() {
                 </div>
               )}
             </div>
+
+            {showBadge && editor.importedFromUrl && (
+              <div
+                className="border-b bg-primary/5 text-primary px-4 py-1.5 text-xs flex items-center gap-2"
+                data-testid="badge-imported-from"
+              >
+                <Globe className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate flex-1 min-w-0">
+                  Inspired by{" "}
+                  <a
+                    href={editor.importedFromUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline hover:no-underline"
+                    data-testid="link-imported-source"
+                  >
+                    {(() => {
+                      try {
+                        return new URL(editor.importedFromUrl).hostname.replace(/^www\./, "");
+                      } catch {
+                        return editor.importedFromUrl;
+                      }
+                    })()}
+                  </a>
+                  {editor.importedAt && (
+                    <span className="text-muted-foreground ml-1">
+                      · {new Date(editor.importedAt).toLocaleDateString()}
+                    </span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setBadgeDismissedFor(editor.importedFromUrl)}
+                  className="h-5 w-5 inline-flex items-center justify-center rounded hover:bg-primary/10 shrink-0"
+                  aria-label="Dismiss imported-from badge"
+                  data-testid="button-dismiss-imported-badge"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
 
             <div className="flex-1 overflow-auto flex justify-center py-4">
               <div
@@ -345,6 +427,12 @@ export default function Editor() {
               pageId={editor.isNewPage ? undefined : editor.pageId}
               clonedFromProductHandle={editor.pageData?.clonedFromProductHandle ?? null}
               clonedAt={editor.pageData?.clonedAt ?? null}
+              importedFromUrl={editor.importedFromUrl}
+              importedAt={editor.importedAt}
+              onReimport={() => {
+                editor.setShowPageSettings(false);
+                setReimportDialogOpen(true);
+              }}
             />
           </Suspense>
         )}
@@ -358,6 +446,23 @@ export default function Editor() {
             />
           </Suspense>
         )}
+
+        <ImportFromUrlDialog
+          open={importDialogOpen}
+          onClose={() => setImportDialogOpen(false)}
+          onImported={handleImportSuccess}
+          isReplace={!editor.isNewPage && (editor.blocks.length > 0 || !!editor.importedFromUrl)}
+          storeId={editor.pageData?.storeId || editor.selectedStoreId || undefined}
+        />
+
+        <ImportFromUrlDialog
+          open={reimportDialogOpen}
+          onClose={() => setReimportDialogOpen(false)}
+          onImported={handleImportSuccess}
+          isReplace
+          initialUrl={editor.importedFromUrl ?? ""}
+          storeId={editor.pageData?.storeId || editor.selectedStoreId || undefined}
+        />
 
         {!editor.isNewPage && editor.pageId && editor.showVersionHistory && (
           <Suspense fallback={null}>

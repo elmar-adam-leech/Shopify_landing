@@ -4,7 +4,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
-import { Search, Eye, EyeOff, Link2, Sparkles, PackagePlus, RefreshCw } from "lucide-react";
+import { Search, Eye, EyeOff, Link2, Sparkles, PackagePlus, Globe, RefreshCw } from "lucide-react";
 import { AI_PAGE_CONTEXT_MAX } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { useMutation } from "@tanstack/react-query";
@@ -24,9 +24,12 @@ interface PageSettingsProps {
   pageId?: string;
   clonedFromProductHandle?: string | null;
   clonedAt?: Date | string | null;
+  importedFromUrl?: string | null;
+  importedAt?: string | null;
+  onReimport?: () => void;
 }
 
-export function PageSettingsDialog({ open, onClose, slug, onSlugChange, allowIndexing, onAllowIndexingChange, aiPageContext, onAiPageContextChange, isNewPage, pageId, clonedFromProductHandle, clonedAt }: PageSettingsProps) {
+export function PageSettingsDialog({ open, onClose, slug, onSlugChange, allowIndexing, onAllowIndexingChange, aiPageContext, onAiPageContextChange, isNewPage, pageId, clonedFromProductHandle, clonedAt, importedFromUrl, importedAt, onReimport }: PageSettingsProps) {
   const { toast } = useToast();
   const resyncMutation = useMutation({
     mutationFn: async () => {
@@ -197,6 +200,47 @@ export function PageSettingsDialog({ open, onClose, slug, onSlugChange, allowInd
               </div>
             </div>
           </Card>
+
+          {importedFromUrl && (
+            <Card className="p-4" data-testid="card-imported-from">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-primary/10 rounded-lg mt-0.5 shrink-0">
+                  <Globe className="h-5 w-5 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-medium">Imported from URL</h3>
+                  <p className="text-sm text-muted-foreground mt-1 break-all">
+                    <a
+                      href={importedFromUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline hover:no-underline"
+                      data-testid="link-imported-from-source"
+                    >
+                      {importedFromUrl}
+                    </a>
+                  </p>
+                  {importedAt && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Imported {new Date(importedAt).toLocaleString()}
+                    </p>
+                  )}
+                  {onReimport && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3 gap-1.5"
+                      onClick={onReimport}
+                      data-testid="button-reimport-from-source"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      Re-import from source
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </Card>
+          )}
         </div>
       </DialogContent>
     </Dialog>

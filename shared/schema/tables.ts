@@ -63,6 +63,8 @@ export const pages = pgTable("pages", {
   status: text("status", { enum: ["draft", "published"] }).notNull().default("draft"),
   allowIndexing: boolean("allow_indexing").notNull().default(true),
   aiPageContext: text("ai_page_context"),
+  importedFromUrl: text("imported_from_url"),
+  importedAt: timestamp("imported_at"),
   shopifyPageId: text("shopify_page_id"),
   clonedFromProductHandle: text("cloned_from_product_handle"),
   clonedAt: timestamp("cloned_at"),

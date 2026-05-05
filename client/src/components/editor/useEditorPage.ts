@@ -95,6 +95,8 @@ export function useEditorPage() {
   const [pixelSettings, setPixelSettings] = useState<PixelSettings>(defaultPixelSettings);
   const [allowIndexing, setAllowIndexing] = useState(true);
   const [aiPageContext, setAiPageContext] = useState("");
+  const [importedFromUrl, setImportedFromUrl] = useState<string | null>(null);
+  const [importedAt, setImportedAt] = useState<string | null>(null);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [settingsBlockId, setSettingsBlockId] = useState<string | null>(null);
   const [showPixelSettings, setShowPixelSettings] = useState(false);
@@ -241,6 +243,29 @@ export function useEditorPage() {
           console.error("Failed to parse template blocks:", e);
         }
       }
+      // The "Import from URL" flow stashes the AI result here so the
+      // navigation to /editor/new can pick it up. Includes blocks plus
+      // source metadata that we want persisted with the page.
+      const importPayload = sessionStorage.getItem("importPayload");
+      if (importPayload) {
+        try {
+          const parsed = JSON.parse(importPayload) as {
+            blocks: Block[];
+            importedFromUrl: string;
+            importedAt: string;
+            title?: string;
+          };
+          const { blocks: migrated } = migrateBlocksResponsive(parsed.blocks);
+          setBlocks(migrated);
+          setImportedFromUrl(parsed.importedFromUrl);
+          setImportedAt(parsed.importedAt);
+          if (parsed.title) setTitle(parsed.title);
+          setHasChanges(true);
+          sessionStorage.removeItem("importPayload");
+        } catch (e) {
+          console.error("Failed to parse import payload:", e);
+        }
+      }
       resetHistory();
     }
   }, [isNewPage, resetHistory]);
@@ -273,6 +298,9 @@ export function useEditorPage() {
       setPixelSettings(pageData.pixelSettings || defaultPixelSettings);
       setAllowIndexing(pageData.allowIndexing ?? true);
       setAiPageContext(pageData.aiPageContext ?? "");
+      setImportedFromUrl((pageData as Page & { importedFromUrl?: string | null }).importedFromUrl ?? null);
+      const importedAtRaw = (pageData as Page & { importedAt?: string | Date | null }).importedAt;
+      setImportedAt(importedAtRaw ? new Date(importedAtRaw).toISOString() : null);
       // Backfilled responsive defaults are intentionally not flagged as
       // changes — they only get persisted when the user makes a real edit.
       setHasChanges(false);
@@ -296,6 +324,8 @@ export function useEditorPage() {
         pixelSettings,
         allowIndexing,
         aiPageContext: aiPageContext || null,
+        importedFromUrl: importedFromUrl ?? null,
+        importedAt: importedAt ?? null,
       };
 
       if (isNewPage) {
@@ -814,6 +844,22 @@ export function useEditorPage() {
     [blocks, selectedBlockId, pushHistory]
   );
 
+  const handleApplyImport = useCallback(
+    (payload: { blocks: Block[]; importedFromUrl: string; importedAt: string }) => {
+      pushHistory();
+      const { blocks: migrated } = migrateBlocksResponsive(payload.blocks);
+      setBlocks(migrated);
+      setImportedFromUrl(payload.importedFromUrl);
+      setImportedAt(payload.importedAt);
+      setHasChanges(true);
+      toast({
+        title: "Import applied",
+        description: "The page blocks have been replaced with the imported version.",
+      });
+    },
+    [pushHistory, toast]
+  );
+
   const handleApplyTemplate = useCallback((templateBlocks: Block[]) => {
     pushHistory();
     const { blocks: migrated } = migrateBlocksResponsive(templateBlocks);
@@ -853,6 +899,8 @@ export function useEditorPage() {
     pixelSettings,
     allowIndexing,
     aiPageContext,
+    importedFromUrl,
+    importedAt,
     selectedBlockId,
     settingsBlockId,
     selectedBlock,
@@ -899,6 +947,7 @@ export function useEditorPage() {
     handleAllowIndexingChange,
     handleAiPageContextChange,
     handleApplyTemplate,
+    handleApplyImport,
     handleInsertGeneratedBlocks,
     handleRestore,
   };

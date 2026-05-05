@@ -2,7 +2,7 @@ import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
 import type OpenAI from "openai";
 import { blockSchema, blockTypes, type Block, type BlockType, isContainerBlockType, type AiBrandContext, hasBrandContext, AI_PAGE_CONTEXT_MAX } from "@shared/schema";
-import { logError, logWarn } from "./logger";
+import { logError, logWarn, logInfo } from "./logger";
 
 /**
  * Strip control characters and normalise newlines so a merchant cannot
@@ -800,6 +800,150 @@ export interface GenerateBlocksOptions {
   modelTier?: AiModelTier;
   brandContext?: AiBrandContext | null;
   pageContext?: string | null;
+}
+
+const IMPORT_SYSTEM_PROMPT = `You are a landing page importer for a Shopify-style page editor.
+
+You will receive a structured digest (and optionally screenshot images) of a public landing page from another company. Your job is to map that source into our block tree so the merchant can edit and rebrand it.
+
+Output STRICT JSON in the same shape as the block generator:
+{
+  "blocks": [ Block, Block, ... ],
+  "warnings": [ "human-readable note", ... ]   // optional, top-level
+}
+
+Where each Block follows EXACTLY the schema rules below. The schema rules and
+type-specific config rules are AUTHORITATIVE — even if the source page does
+something we don't model, map it to the closest block we have rather than
+inventing types or fields.
+
+${"<<SCHEMA_RULES>>"}
+
+Importer-specific rules:
+- Mirror the SOURCE'S section order top-to-bottom. Each visually-distinct region of the page becomes a top-level "section".
+- Inside sections, use "container" with responsive flexDirection to express the source's column layout.
+- Translate hero areas to "hero-banner". Translate feature/benefit grids into a section with a row container of equal-width text/image children. Translate testimonials into text blocks (or stacked containers). Translate accordions to "accordion" if available; otherwise use stacked text blocks. Translate sliders/carousels to "image-slider" if available; otherwise use the first 1–2 images as image-blocks and add a warning.
+- Use the source's actual headlines, body copy, button text, and image URLs from the digest. Do NOT invent product IDs. Leave product-grid productIds empty and product-block productId empty.
+- Re-write copy in the merchant's tone of voice when store context is provided, but keep meaning, structure, and section order true to the source.
+- For each notable piece of the source you could NOT represent (video, custom widget, chat, configurator), add a short string to the top-level "warnings" array. Examples: "Source had a video in the hero — not imported." / "Detected a 3D configurator widget — replaced with placeholder text."
+- Keep total blocks <= ${MAX_BLOCKS}.`;
+
+export interface ImportSource {
+  url: string;
+  digest: unknown;
+  screenshots?: Array<{ breakpoint: string; mimeType: string; base64: string }>;
+  notes?: string;
+}
+
+export interface GenerateFromImportOptions {
+  source: ImportSource;
+  signal?: AbortSignal;
+  modelTier?: AiModelTier;
+  brandContext?: AiBrandContext | null;
+}
+
+export interface GeneratedImportResult {
+  blocks: Block[];
+  warnings: string[];
+}
+
+/**
+ * Run the URL importer's AI mapping. Same sanitize/validate pipeline as
+ * `generateBlocksFromPrompt`, with an additional `warnings` array drained
+ * from the model's top-level response (and merged with any warnings the
+ * digest extractor produced).
+ */
+export async function generateBlocksFromImportSource(
+  options: GenerateFromImportOptions
+): Promise<GeneratedImportResult> {
+  const client = await getAiClient();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  if (options.signal) {
+    if (options.signal.aborted) controller.abort();
+    else options.signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+  const model = resolveModel(options.modelTier ?? "smart");
+  const contextSection = formatBrandContextForPrompt(
+    options.brandContext ?? null,
+    null
+  );
+  const baseSystem = IMPORT_SYSTEM_PROMPT.replace("<<SCHEMA_RULES>>", SYSTEM_PROMPT);
+  const systemContent = contextSection ? `${baseSystem}\n\n${contextSection}` : baseSystem;
+
+  // Compose the user message. Always include the JSON digest. When
+  // screenshots are present and the model supports vision, include them as
+  // image content parts. Notes from the merchant get appended verbatim.
+  const userParts: Array<Record<string, unknown>> = [];
+  const digestJson = JSON.stringify(options.source.digest, null, 2).slice(0, 60_000);
+  const notes = (options.source.notes ?? "").trim().slice(0, 1000);
+  const intro = `Source URL: ${options.source.url}\n\nStructured digest of the source page (JSON):\n\`\`\`json\n${digestJson}\n\`\`\`${notes ? `\n\nMerchant notes:\n${notes}` : ""}\n\nProduce the JSON block tree now. Remember: only the top-level keys "blocks" and (optional) "warnings" are allowed in your output.`;
+  userParts.push({ type: "text", text: intro });
+  if (options.source.screenshots && options.source.screenshots.length > 0) {
+    for (const shot of options.source.screenshots.slice(0, 2)) {
+      userParts.push({
+        type: "image_url",
+        image_url: { url: `data:${shot.mimeType};base64,${shot.base64}` },
+      });
+    }
+  }
+
+  let raw: string;
+  try {
+    const completion = await client.chat.completions.create(
+      {
+        model,
+        max_tokens: 6144,
+        temperature: 0.5,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemContent },
+          { role: "user", content: userParts as unknown as string },
+        ],
+      },
+      { signal: controller.signal }
+    );
+    raw = completion?.choices?.[0]?.message?.content ?? "";
+    // Cost / usage logging — surfaces token spend per import so an
+    // operator can correlate cost with imports in the application logs.
+    const usage = (completion as { usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } } | null | undefined)?.usage;
+    logInfo("AI URL importer usage", {
+      operation: "ai_import_url",
+      issues: `model=${model} prompt=${usage?.prompt_tokens ?? "?"} completion=${usage?.completion_tokens ?? "?"} total=${usage?.total_tokens ?? "?"} screenshots=${options.source.screenshots?.length ?? 0}`,
+    });
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (controller.signal.aborted && !options.signal?.aborted) {
+      throw new Error("AI import timed out");
+    }
+    throw error;
+  }
+  clearTimeout(timeoutId);
+  if (!raw) throw new Error("AI returned an empty response");
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    logError("AI import generator returned non-JSON", { operation: "ai_import_url" }, e);
+    throw new Error("AI returned invalid JSON");
+  }
+
+  const validated = parseAndValidateAiResponse(parsed);
+  const warnings: string[] = [];
+  if (parsed && typeof parsed === "object" && Array.isArray((parsed as { warnings?: unknown }).warnings)) {
+    for (const w of (parsed as { warnings: unknown[] }).warnings) {
+      if (typeof w === "string" && w.trim()) warnings.push(w.trim().slice(0, 280));
+      if (warnings.length >= 10) break;
+    }
+  }
+  if (validated.length === 0) {
+    throw new Error("AI returned no usable blocks from the source page");
+  }
+  if (countBlocks(validated) > MAX_BLOCKS) {
+    throw new Error("AI produced too many blocks");
+  }
+  return { blocks: validated, warnings };
 }
 
 export async function generateBlocksFromPrompt(

@@ -49,6 +49,11 @@ export const insertPageSchema = createInsertSchema(pages)
       .string()
       .max(AI_PAGE_CONTEXT_MAX, `AI page context must be ${AI_PAGE_CONTEXT_MAX} characters or fewer`)
       .nullish(),
+    // Source URL of an AI URL-import. Stored as text; client sends a string.
+    importedFromUrl: z.string().url().max(2048).nullish(),
+    // Timestamp of the import. Accept ISO strings from the client and
+    // coerce to Date so drizzle's timestamp column receives the right type.
+    importedAt: z.coerce.date().nullish(),
   });
 
 export const updatePageSchema = insertPageSchema.partial();
