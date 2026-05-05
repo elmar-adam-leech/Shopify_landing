@@ -4,8 +4,12 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
-import { Search, Eye, EyeOff, Link2, Sparkles } from "lucide-react";
+import { Search, Eye, EyeOff, Link2, Sparkles, PackagePlus, RefreshCw } from "lucide-react";
 import { AI_PAGE_CONTEXT_MAX } from "@shared/schema";
+import { Button } from "@/components/ui/button";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface PageSettingsProps {
   open: boolean;
@@ -17,9 +21,45 @@ interface PageSettingsProps {
   aiPageContext: string;
   onAiPageContextChange: (value: string) => void;
   isNewPage: boolean;
+  pageId?: string;
+  clonedFromProductHandle?: string | null;
+  clonedAt?: Date | string | null;
 }
 
-export function PageSettingsDialog({ open, onClose, slug, onSlugChange, allowIndexing, onAllowIndexingChange, aiPageContext, onAiPageContextChange, isNewPage }: PageSettingsProps) {
+export function PageSettingsDialog({ open, onClose, slug, onSlugChange, allowIndexing, onAllowIndexingChange, aiPageContext, onAiPageContextChange, isNewPage, pageId, clonedFromProductHandle, clonedAt }: PageSettingsProps) {
+  const { toast } = useToast();
+  const resyncMutation = useMutation({
+    mutationFn: async () => {
+      if (!pageId) throw new Error("Missing page id");
+      return apiRequest("POST", `/api/pages/${pageId}/resync-product`, {});
+    },
+    onSuccess: async (response) => {
+      const data = await response.json();
+      if (pageId) queryClient.setQueryData(["/api/pages", pageId], data);
+      queryClient.invalidateQueries({ queryKey: ["/api/pages/list"] });
+      toast({
+        title: "Product data refreshed",
+        description: "Title, price, images, description, and related products were updated. Reload the page to see changes.",
+      });
+    },
+    onError: (error: Error) => {
+      let description = "Could not re-sync product data.";
+      try {
+        const jsonPart = error.message.substring(error.message.indexOf("{"));
+        const parsed = JSON.parse(jsonPart);
+        if (parsed.message) description = parsed.message;
+        else if (parsed.error) description = parsed.error;
+      } catch {
+        if (error.message) description = error.message;
+      }
+      toast({ title: "Re-sync failed", description, variant: "destructive" });
+    },
+  });
+
+  const clonedAtDate = clonedAt ? new Date(clonedAt) : null;
+  const clonedAtLabel = clonedAtDate && !Number.isNaN(clonedAtDate.getTime())
+    ? clonedAtDate.toLocaleString()
+    : null;
   const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
   const previewUrl = `${baseUrl}/p/${slug || "your-page-slug"}`;
 
@@ -99,6 +139,34 @@ export function PageSettingsDialog({ open, onClose, slug, onSlugChange, allowInd
               )}
             </div>
           </Card>
+
+          {clonedFromProductHandle && pageId && (
+            <Card className="p-4" data-testid="card-cloned-from-product">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-primary/10 rounded-lg mt-0.5 shrink-0">
+                  <PackagePlus className="h-5 w-5 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-medium">Cloned from product</h3>
+                  <p className="text-sm text-muted-foreground mt-1 break-all">
+                    /{clonedFromProductHandle}
+                    {clonedAtLabel ? ` · last synced ${clonedAtLabel}` : ""}
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3 gap-2"
+                    onClick={() => resyncMutation.mutate()}
+                    disabled={resyncMutation.isPending}
+                    data-testid="button-resync-product"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${resyncMutation.isPending ? "animate-spin" : ""}`} />
+                    {resyncMutation.isPending ? "Re-syncing…" : "Re-sync product data"}
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          )}
 
           <Card className="p-4">
             <div className="flex items-start gap-3">

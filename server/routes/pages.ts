@@ -11,6 +11,16 @@ import { logError, logWarn, logInfo } from "../lib/logger";
 import { sanitizeProductHtml } from "../lib/sanitize";
 import { migrateBlocksResponsive } from "@shared/responsive";
 import type { Block } from "@shared/schema";
+import { getShopifyConfigForStore } from "../lib/shopify";
+import {
+  fetchShopifyProductDetail,
+  fetchProductErrorToHttp,
+} from "../lib/shopify-product-detail";
+import {
+  buildPageFromProduct,
+  resyncBlocksFromProduct,
+} from "../lib/clone-product-page";
+import { validateStoreOwnership } from "../lib/store-ownership";
 
 /**
  * Save-time normalisation for the `blocks` column. Runs the same migration
@@ -501,6 +511,149 @@ export function createPageRoutes(): Router {
     } catch (error) {
       logError("Public form submission failed", { endpoint: "POST /api/public/submit-form", storeId: req.body?.storeId, pageId: req.body?.pageId }, error);
       res.status(500).json({ error: "Failed to submit form" });
+    }
+  });
+
+  router.post("/api/pages/clone-from-product", async (req, res) => {
+    try {
+      const storeId = req.storeContext?.storeId || (req.body?.storeId as string | undefined);
+      if (!storeId) {
+        return res
+          .status(400)
+          .json({ error: "Store context required to clone a page" });
+      }
+
+      const ownership = validateStoreOwnership(req, storeId);
+      if (!ownership.valid) {
+        return res
+          .status(ownership.statusCode || 403)
+          .json({ error: ownership.error });
+      }
+
+      const handle = (req.body?.productHandle as string | undefined)?.trim();
+      if (!handle) {
+        return res.status(400).json({ error: "productHandle is required" });
+      }
+
+      const config = await getShopifyConfigForStore(storeId);
+      if (!config) {
+        return res.status(400).json({
+          error: "Reconnect Shopify",
+          message:
+            "Shopify is not connected for this store. Please reconnect from Settings.",
+        });
+      }
+
+      const result = await fetchShopifyProductDetail(config, handle);
+      if (!result.ok) {
+        const { status, body } = fetchProductErrorToHttp(result.error);
+        return res.status(status).json(body);
+      }
+
+      const built = buildPageFromProduct({ product: result.product });
+
+      let slug = built.slug || handle;
+      let attempt = 0;
+      while (await storage.getPageBySlug(slug, storeId)) {
+        attempt += 1;
+        slug = `${built.slug}-${attempt}`;
+        if (attempt > 50) {
+          return res.status(409).json({ error: "Could not generate a unique slug" });
+        }
+      }
+
+      const insertData: InsertPage = {
+        storeId,
+        title: built.title,
+        slug,
+        blocks: built.blocks,
+        sections: [],
+        status: "draft",
+        allowIndexing: true,
+        clonedFromProductHandle: result.product.handle,
+        clonedAt: new Date(),
+      } as InsertPage;
+
+      const page = await storage.createPage(
+        normalizePageBlocksForSave(insertData) as InsertPage
+      );
+      logInfo("Cloned page from product", {
+        endpoint: "POST /api/pages/clone-from-product",
+        storeId,
+        pageId: page.id,
+        productHandle: result.product.handle,
+      });
+      res.status(201).json(page);
+    } catch (error) {
+      logError(
+        "Failed to clone page from product",
+        { endpoint: "POST /api/pages/clone-from-product", storeId: req.storeContext?.storeId },
+        error
+      );
+      res.status(500).json({ error: "Failed to clone page from product" });
+    }
+  });
+
+  router.post("/api/pages/:id/resync-product", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const storeId = req.storeContext?.storeId;
+
+      const existingPage = await storage.getPage(id);
+      if (!existingPage) {
+        return res.status(404).json({ error: "Page not found" });
+      }
+      const access = validatePageAccess(existingPage, storeId);
+      if (!access.valid) {
+        return res
+          .status(access.statusCode || 403)
+          .json({ error: access.error });
+      }
+
+      const handle = existingPage.clonedFromProductHandle;
+      if (!handle || !existingPage.storeId) {
+        return res.status(400).json({
+          error: "Not a cloned page",
+          message: "This page was not cloned from a Shopify product.",
+        });
+      }
+
+      const config = await getShopifyConfigForStore(existingPage.storeId);
+      if (!config) {
+        return res.status(400).json({
+          error: "Reconnect Shopify",
+          message: "Shopify is not connected for this store.",
+        });
+      }
+
+      const result = await fetchShopifyProductDetail(config, handle);
+      if (!result.ok) {
+        const { status, body } = fetchProductErrorToHttp(result.error);
+        return res.status(status).json(body);
+      }
+
+      const updatedBlocks = resyncBlocksFromProduct(
+        (existingPage.blocks as Block[]) || [],
+        result.product
+      );
+
+      const updateData: UpdatePage = {
+        blocks: updatedBlocks,
+        clonedAt: new Date(),
+      };
+
+      const page = await storage.updatePage(
+        id,
+        normalizePageBlocksForSave(updateData) as UpdatePage
+      );
+      res.json(page);
+    } catch (error) {
+      logError(
+        "Failed to re-sync page from product",
+        { endpoint: "POST /api/pages/:id/resync-product", pageId: req.params.id },
+        error
+      );
+      res.status(500).json({ error: "Failed to re-sync page" });
     }
   });
 

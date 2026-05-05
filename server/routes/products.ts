@@ -6,6 +6,11 @@ import { getShopifyConfigForStore } from "../lib/shopify";
 import { syncProductsForStore } from "../lib/sync-service";
 import { validateUserAccess, sanitizeZodError } from "./helpers";
 import { logError } from "../lib/logger";
+import {
+  fetchShopifyProductDetail,
+  fetchProductErrorToHttp,
+  searchShopifyProducts,
+} from "../lib/shopify-product-detail";
 
 const syncSettingsSchema = z.object({
   syncSchedule: z.enum(["manual", "hourly", "daily", "weekly"]),
@@ -108,6 +113,120 @@ export function createProductRoutes(): Router {
     } catch (error) {
       logError("Failed to lookup product", { endpoint: "GET /api/stores/:storeId/products/lookup", storeId: req.params.storeId }, error);
       res.status(500).json({ error: "Failed to lookup product" });
+    }
+  });
+
+  router.get("/api/stores/:storeId/shopify/products", async (req, res) => {
+    try {
+      const { storeId } = req.params;
+
+      const ownership = validateStoreOwnership(req, storeId);
+      if (!ownership.valid) {
+        return res
+          .status(ownership.statusCode || 403)
+          .json({ error: ownership.error });
+      }
+
+      const query = (req.query.query as string | undefined) ?? "";
+      const config = await getShopifyConfigForStore(storeId);
+      if (!config) {
+        return res.status(400).json({
+          error: "Reconnect Shopify",
+          message:
+            "Shopify is not connected for this store. Please reconnect from Settings.",
+        });
+      }
+
+      const result = await searchShopifyProducts(config, query, 20);
+      if (!result.ok) {
+        const { status, body } = fetchProductErrorToHttp(result.error);
+        return res.status(status).json(body);
+      }
+      res.json({ products: result.products });
+    } catch (error) {
+      logError(
+        "Failed to live-search Shopify products",
+        { endpoint: "GET /api/stores/:storeId/shopify/products", storeId: req.params.storeId },
+        error
+      );
+      res.status(500).json({ error: "Failed to search products" });
+    }
+  });
+
+  router.get("/api/stores/:storeId/shopify/products/:handle", async (req, res) => {
+    try {
+      const { storeId, handle } = req.params;
+
+      const ownership = validateStoreOwnership(req, storeId);
+      if (!ownership.valid) {
+        return res
+          .status(ownership.statusCode || 403)
+          .json({ error: ownership.error });
+      }
+
+      const config = await getShopifyConfigForStore(storeId);
+      if (!config) {
+        return res.status(400).json({
+          error: "Reconnect Shopify",
+          message:
+            "Shopify is not connected for this store. Please reconnect from Settings.",
+        });
+      }
+
+      const result = await fetchShopifyProductDetail(config, handle);
+      if (!result.ok) {
+        const { status, body } = fetchProductErrorToHttp(result.error);
+        return res.status(status).json(body);
+      }
+      res.json(result.product);
+    } catch (error) {
+      logError(
+        "Failed to fetch live product detail by handle",
+        { endpoint: "GET /api/stores/:storeId/shopify/products/:handle", storeId: req.params.storeId, handle: req.params.handle },
+        error
+      );
+      res.status(500).json({ error: "Failed to fetch product" });
+    }
+  });
+
+  router.get("/api/stores/:storeId/shopify/product-detail", async (req, res) => {
+    try {
+      const { storeId } = req.params;
+
+      const ownership = validateStoreOwnership(req, storeId);
+      if (!ownership.valid) {
+        return res
+          .status(ownership.statusCode || 403)
+          .json({ error: ownership.error });
+      }
+
+      const handle = (req.query.handle as string | undefined)?.trim();
+      if (!handle) {
+        return res.status(400).json({ error: "handle is required" });
+      }
+
+      const config = await getShopifyConfigForStore(storeId);
+      if (!config) {
+        return res.status(400).json({
+          error: "Reconnect Shopify",
+          message:
+            "Shopify is not connected for this store. Please reconnect from Settings.",
+        });
+      }
+
+      const result = await fetchShopifyProductDetail(config, handle);
+      if (!result.ok) {
+        const { status, body } = fetchProductErrorToHttp(result.error);
+        return res.status(status).json(body);
+      }
+      res.json(result.product);
+    } catch (error) {
+      logError(
+        "Failed to fetch live product detail",
+        { endpoint: "GET /api/stores/:storeId/shopify/product-detail", storeId: req.params.storeId },
+        error
+      );
+      res.status(500).json({ error: "Failed to fetch product" });
     }
   });
 

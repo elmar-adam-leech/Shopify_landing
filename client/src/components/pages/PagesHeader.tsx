@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { FileText, Plus, FlaskConical, Store } from "lucide-react";
+import { FileText, Plus, FlaskConical, Store, PackagePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { StoreSelector } from "@/components/StoreSelector";
@@ -9,9 +9,10 @@ interface PagesHeaderProps {
   isEmbedded: boolean;
   selectedStoreId: string | null;
   onNewPage: () => void;
+  onCloneFromProduct?: () => void;
 }
 
-export function PagesHeader({ isEmbedded, selectedStoreId, onNewPage }: PagesHeaderProps) {
+export function PagesHeader({ isEmbedded, selectedStoreId, onNewPage, onCloneFromProduct }: PagesHeaderProps) {
   const { buildHref } = useEmbeddedNavigation();
 
   return (
@@ -42,6 +43,18 @@ export function PagesHeader({ isEmbedded, selectedStoreId, onNewPage }: PagesHea
             </Button>
           </Link>
           <ThemeToggle />
+          {onCloneFromProduct && (
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={onCloneFromProduct}
+              disabled={!selectedStoreId}
+              data-testid="button-clone-from-product"
+            >
+              <PackagePlus className="h-4 w-4" />
+              Clone from product
+            </Button>
+          )}
           <Button
             className="gap-2"
             onClick={onNewPage}

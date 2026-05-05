@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -18,6 +18,7 @@ import {
 import { EditorToolbar } from "@/components/editor/EditorToolbar";
 import { ViewportSwitcher } from "@/components/editor/ViewportSwitcher";
 import { AIPromptBar } from "@/components/editor/AIPromptBar";
+import { PackagePlus } from "lucide-react";
 import { useEditorPage } from "@/components/editor/useEditorPage";
 import { defaultBlockConfigs, defaultResponsiveFor } from "@/components/editor/editorDefaults";
 import type { Block } from "@shared/schema";
@@ -33,6 +34,9 @@ const PageSettingsDialog = lazy(() =>
 );
 const VersionHistory = lazy(() =>
   import("@/components/editor/VersionHistory").then((m) => ({ default: m.VersionHistory }))
+);
+const CloneFromProductDialog = lazy(() =>
+  import("@/components/editor/CloneFromProductDialog").then((m) => ({ default: m.CloneFromProductDialog }))
 );
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -79,6 +83,7 @@ const collisionDetection: CollisionDetection = (args) => {
 
 export default function Editor() {
   const editor = useEditorPage();
+  const [showCloneDialog, setShowCloneDialog] = useState(false);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -223,12 +228,23 @@ export default function Editor() {
             <div className="border-b bg-background px-4 py-2 flex items-start gap-3">
               {!editor.previewMode ? (
                 <>
-                  <div className="flex-1 min-w-0 flex justify-center">
+                  <div className="flex-1 min-w-0 flex justify-center items-center gap-2">
                     <AIPromptBar
                       onInsertBlocks={editor.handleInsertGeneratedBlocks}
                       storeId={editor.pageData?.storeId || editor.selectedStoreId || undefined}
                       pageId={editor.isNewPage ? undefined : editor.pageId}
                     />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2 flex-shrink-0"
+                      onClick={() => setShowCloneDialog(true)}
+                      disabled={!(editor.pageData?.storeId || editor.selectedStoreId)}
+                      data-testid="button-editor-clone-from-product"
+                    >
+                      <PackagePlus className="h-4 w-4" />
+                      Clone from product
+                    </Button>
                   </div>
                   <div className="flex items-center flex-shrink-0 pt-1">
                     <ViewportSwitcher
@@ -326,6 +342,19 @@ export default function Editor() {
               aiPageContext={editor.aiPageContext}
               onAiPageContextChange={editor.handleAiPageContextChange}
               isNewPage={editor.isNewPage}
+              pageId={editor.isNewPage ? undefined : editor.pageId}
+              clonedFromProductHandle={editor.pageData?.clonedFromProductHandle ?? null}
+              clonedAt={editor.pageData?.clonedAt ?? null}
+            />
+          </Suspense>
+        )}
+
+        {showCloneDialog && (
+          <Suspense fallback={null}>
+            <CloneFromProductDialog
+              open={showCloneDialog}
+              onClose={() => setShowCloneDialog(false)}
+              storeId={editor.pageData?.storeId || editor.selectedStoreId || null}
             />
           </Suspense>
         )}

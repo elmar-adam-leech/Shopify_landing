@@ -4,6 +4,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 const TemplateLibrary = lazy(() =>
   import("@/components/editor/TemplateLibrary").then((m) => ({ default: m.TemplateLibrary }))
 );
+const CloneFromProductDialog = lazy(() =>
+  import("@/components/editor/CloneFromProductDialog").then((m) => ({ default: m.CloneFromProductDialog }))
+);
 import { useEmbeddedNavigation } from "@/hooks/use-embedded-navigation";
 import { usePages } from "@/components/pages/usePages";
 import { PagesHeader } from "@/components/pages/PagesHeader";
@@ -17,6 +20,7 @@ export default function PagesList() {
   const { navigate } = useEmbeddedNavigation();
   const [deletePageId, setDeletePageId] = useState<string | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showCloneDialog, setShowCloneDialog] = useState(false);
 
   const {
     pages,
@@ -44,6 +48,7 @@ export default function PagesList() {
         isEmbedded={isEmbedded}
         selectedStoreId={selectedStoreId}
         onNewPage={() => setShowTemplates(true)}
+        onCloneFromProduct={() => setShowCloneDialog(true)}
       />
 
       <main className="max-w-6xl mx-auto px-6 py-8">
@@ -119,6 +124,16 @@ export default function PagesList() {
               sessionStorage.setItem("templateBlocks", JSON.stringify(blocks));
               navigate("/editor/new");
             }}
+          />
+        </Suspense>
+      )}
+
+      {showCloneDialog && (
+        <Suspense fallback={null}>
+          <CloneFromProductDialog
+            open={showCloneDialog}
+            onClose={() => setShowCloneDialog(false)}
+            storeId={selectedStoreId}
           />
         </Suspense>
       )}

@@ -64,6 +64,8 @@ export const pages = pgTable("pages", {
   allowIndexing: boolean("allow_indexing").notNull().default(true),
   aiPageContext: text("ai_page_context"),
   shopifyPageId: text("shopify_page_id"),
+  clonedFromProductHandle: text("cloned_from_product_handle"),
+  clonedAt: timestamp("cloned_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
