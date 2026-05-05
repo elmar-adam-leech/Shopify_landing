@@ -58,6 +58,7 @@ export function createProxyRoutes(): Router {
           id: store.id,
           name: store.name,
           shopifyDomain: store.shopifyDomain,
+          customDomain: store.customDomain,
           storefrontAccessToken: store.storefrontAccessToken,
         },
         { useLiquidWrapper }
@@ -102,12 +103,14 @@ export function createProxyRoutes(): Router {
             id: store.id,
             name: store.name,
             shopifyDomain: store.shopifyDomain,
+            customDomain: store.customDomain,
             storefrontAccessToken: store.storefrontAccessToken,
           }
         : {
             id: page.storeId || "",
             name: "Page",
             shopifyDomain: "",
+            customDomain: null,
             storefrontAccessToken: null,
           };
 
@@ -177,12 +180,14 @@ export function createProxyRoutes(): Router {
             id: store.id,
             name: store.name,
             shopifyDomain: store.shopifyDomain,
+            customDomain: store.customDomain,
             storefrontAccessToken: store.storefrontAccessToken,
           }
         : {
             id: page.storeId || "",
             name: "Preview",
             shopifyDomain: "",
+            customDomain: null,
             storefrontAccessToken: null,
           };
       const { html, contentType } = await renderPage(req, page, storeInfo);

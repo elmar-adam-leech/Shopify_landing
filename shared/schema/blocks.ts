@@ -83,6 +83,8 @@ export const productGridConfigSchema = z.object({
 export const productBlockConfigSchema = z.object({
   productId: z.string().optional(),
   productHandle: z.string().optional(),
+  shopifyProductId: z.string().optional(),
+  shopifyVariantId: z.string().optional(),
   dynamic: z.boolean().default(false),
   showImage: z.boolean().default(true),
   showTitle: z.boolean().default(true),

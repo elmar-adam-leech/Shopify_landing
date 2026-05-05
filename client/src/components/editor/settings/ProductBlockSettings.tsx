@@ -21,10 +21,17 @@ export function ProductBlockSettings({
   userId?: string;
 }) {
   const handleProductSelect = useCallback((product: ShopifyProduct) => {
+    type ProductDataShape = { variants?: Array<{ id?: string }> };
+    const productData = product.productData as ProductDataShape | undefined;
+    const firstVariantGid = productData?.variants?.[0]?.id;
+    const shopifyVariantId = firstVariantGid
+      ? firstVariantGid.split("/").pop() || undefined
+      : undefined;
     onUpdate({
       ...config,
       productId: product.id,
       shopifyProductId: product.shopifyProductId,
+      shopifyVariantId,
       productHandle: product.handle,
       productTitle: product.title,
       productImage: product.featuredImageUrl,

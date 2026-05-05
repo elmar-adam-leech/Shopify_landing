@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ShoppingCart, Zap, Package, Minus, Plus } from "lucide-react";
 import { InlineEditable } from "../InlineEditable";
+import { useToast } from "@/hooks/use-toast";
 
 interface ProductBlockPreviewProps {
   config: Record<string, any>;
@@ -21,6 +22,17 @@ export const ProductBlockPreview = memo(function ProductBlockPreview({
 }: ProductBlockPreviewProps) {
   const settings = config as ProductBlockConfig;
   const [quantity, setQuantity] = useState(1);
+  const { toast } = useToast();
+
+  const handlePreviewCartClick = (action: "add" | "buy") => {
+    toast({
+      title: "Preview only",
+      description:
+        action === "buy"
+          ? "Buy Now will redirect customers to checkout on the published page."
+          : "Add to Cart works on the published landing page.",
+    });
+  };
   
   const {
     showImage = true,
@@ -333,7 +345,15 @@ export const ProductBlockPreview = memo(function ProductBlockPreview({
             
             <div className="flex gap-3 flex-wrap pt-2">
               {showAddToCart && (
-                <Button className="flex-1 gap-2" data-testid="button-add-to-cart" asChild={editable && !!onUpdateConfig}>
+                <Button
+                  className="flex-1 gap-2"
+                  data-testid="button-add-to-cart"
+                  asChild={editable && !!onUpdateConfig}
+                  onClick={editable && onUpdateConfig ? undefined : (e) => {
+                    e.stopPropagation();
+                    handlePreviewCartClick("add");
+                  }}
+                >
                   {editable && onUpdateConfig ? (
                     <span>
                       <ShoppingCart className="h-4 w-4" />
@@ -355,7 +375,16 @@ export const ProductBlockPreview = memo(function ProductBlockPreview({
                 </Button>
               )}
               {showBuyNow && (
-                <Button variant="secondary" className="flex-1 gap-2" data-testid="button-buy-now" asChild={editable && !!onUpdateConfig}>
+                <Button
+                  variant="secondary"
+                  className="flex-1 gap-2"
+                  data-testid="button-buy-now"
+                  asChild={editable && !!onUpdateConfig}
+                  onClick={editable && onUpdateConfig ? undefined : (e) => {
+                    e.stopPropagation();
+                    handlePreviewCartClick("buy");
+                  }}
+                >
                   {editable && onUpdateConfig ? (
                     <span>
                       <Zap className="h-4 w-4" />

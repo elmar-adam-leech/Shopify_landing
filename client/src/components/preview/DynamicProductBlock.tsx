@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import DOMPurify from "dompurify";
 import { formatPrice } from "@/lib/shopify";
+import { addToShopifyCart } from "@/lib/preview/cart";
 import type { Block } from "@shared/schema";
 import type { StorefrontProduct, ProductResult } from "@/lib/shopify";
 
@@ -29,11 +30,13 @@ export function DynamicProductBlock({
   block, 
   config, 
   storeDomain, 
+  customDomain,
   pageId 
 }: { 
   block: Block; 
   config: Record<string, any>;
   storeDomain?: string;
+  customDomain?: string;
   pageId?: string;
 }) {
   const [product, setProduct] = useState<StorefrontProduct | null>(null);
@@ -43,6 +46,8 @@ export function DynamicProductBlock({
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [addingToCart, setAddingToCart] = useState(false);
+  const [cartError, setCartError] = useState<string | null>(null);
+  const [addedFlash, setAddedFlash] = useState(false);
 
   useEffect(() => {
     const sku = window.location.hash.slice(1);
@@ -100,19 +105,28 @@ export function DynamicProductBlock({
   const selectedVariant = product?.variants.find(v => v.id === selectedVariantId);
   const currentPrice = selectedVariant?.price || product?.priceRange.minVariantPrice;
 
-  const handleAddToCart = async () => {
+  const handleAddToCart = async (action: "add" | "buy" = "add") => {
     if (!selectedVariantId || !product) return;
     setAddingToCart(true);
+    setCartError(null);
     try {
-      const variantGid = selectedVariantId;
-      const numericId = variantGid.split("/").pop();
-      await fetch("/cart/add.js", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: numericId, quantity }),
+      const trackConversion =
+        action === "add" ? config.trackAddToCart !== false : config.trackBuyNow !== false;
+      await addToShopifyCart({
+        variantId: selectedVariantId,
+        quantity,
+        productHandle: product.handle,
+        storeDomain,
+        customDomain,
+        action,
+        trackConversion,
       });
+      if (action === "add") {
+        setAddedFlash(true);
+        setTimeout(() => setAddedFlash(false), 1800);
+      }
     } catch (err) {
-      console.error("Add to cart failed:", err);
+      setCartError(err instanceof Error ? err.message : "Could not add to cart");
     } finally {
       setAddingToCart(false);
     }
@@ -267,8 +281,9 @@ export function DynamicProductBlock({
               {config.showAddToCart !== false && (
                 <button 
                   className="flex-1 py-3 px-6 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg flex items-center justify-center gap-2 disabled:opacity-50"
-                  onClick={handleAddToCart}
+                  onClick={() => handleAddToCart("add")}
                   disabled={addingToCart || !selectedVariant?.availableForSale}
+                  aria-busy={addingToCart}
                   data-testid="button-product-add-cart"
                 >
                   {addingToCart ? (
@@ -278,19 +293,32 @@ export function DynamicProductBlock({
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
                     </svg>
                   )}
-                  {config.addToCartText || "Add to Cart"}
+                  {!selectedVariant?.availableForSale
+                    ? "Sold out"
+                    : addedFlash
+                    ? "Added \u2713"
+                    : config.addToCartText || "Add to Cart"}
                 </button>
               )}
               {config.showBuyNow && (
-                <button 
-                  className="flex-1 py-3 px-6 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 font-medium rounded-lg flex items-center justify-center gap-2"
+                <button
+                  type="button"
+                  className="flex-1 py-3 px-6 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 font-medium rounded-lg flex items-center justify-center gap-2 disabled:opacity-50"
+                  onClick={() => handleAddToCart("buy")}
+                  disabled={addingToCart || !selectedVariant?.availableForSale}
+                  aria-busy={addingToCart}
                   data-testid="button-product-buy-now"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
-                  {config.buyNowText || "Buy Now"}
+                  {!selectedVariant?.availableForSale ? "Sold out" : config.buyNowText || "Buy Now"}
                 </button>
+              )}
+              {cartError && (
+                <div className="basis-full text-sm text-red-600" data-testid="text-cart-error">
+                  {cartError}
+                </div>
               )}
             </div>
           </div>

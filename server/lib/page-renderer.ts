@@ -9,6 +9,7 @@ interface Store {
   id: string;
   name: string;
   shopifyDomain: string;
+  customDomain?: string | null;
   storefrontAccessToken?: string | null;
 }
 
@@ -136,6 +137,19 @@ function generateHydrationScript(store: Store, page: Page): string {
         descDiv.innerHTML = product.descriptionHtml;
       }
 
+      var numericVariantId = (variant && variant.id) ? String(variant.id).split('/').pop() : '';
+      var safeNumericVariantId = escapeHtml(numericVariantId);
+      var safeHandle = escapeHtml(product.handle || '');
+      var addToCartText = escapeHtml(el.getAttribute('data-add-to-cart-text') || 'Add to Cart');
+      var buyNowText = escapeHtml(el.getAttribute('data-buy-now-text') || 'Buy Now');
+      var showAdd = el.getAttribute('data-show-add-to-cart') !== '0';
+      var showBuy = el.getAttribute('data-show-buy-now') === '1';
+      var trackAdd = el.getAttribute('data-track-add-to-cart') !== '0' ? '1' : '0';
+      var trackBuy = el.getAttribute('data-track-buy-now') !== '0' ? '1' : '0';
+      var availableForSale = variant ? variant.availableForSale !== false : true;
+      var soldOutAttr = availableForSale ? '' : ' disabled aria-disabled="true"';
+      var soldOutText = availableForSale ? '' : 'Sold out';
+
       el.innerHTML = \`
         <div class="lp-product-dynamic">
           \${safeImage ? '<img src="' + safeImage + '" alt="' + safeTitle + '" class="lp-product-image" loading="lazy">' : ''}
@@ -144,12 +158,14 @@ function generateHydrationScript(store: Store, page: Page): string {
           <div class="lp-product-price">
             <span class="lp-price-current">\${formatter.format(price)}</span>
           </div>
-          <button class="lp-add-to-cart" data-variant-id="\${safeVariantId}" data-product-id="\${safeProductId}">
-            Add to Cart
-          </button>
+          <div class="lp-product-actions" style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
+            \${showAdd ? '<button type="button" class="lp-btn lp-btn-primary lp-add-to-cart" data-action="add" data-variant-id="' + safeNumericVariantId + '" data-product-handle="' + safeHandle + '" data-quantity="1" data-track-conversion="' + trackAdd + '"' + soldOutAttr + '>' + (soldOutText || addToCartText) + '</button>' : ''}
+            \${showBuy ? '<button type="button" class="lp-btn lp-btn-secondary lp-buy-now" data-action="buy" data-variant-id="' + safeNumericVariantId + '" data-product-handle="' + safeHandle + '" data-quantity="1" data-track-conversion="' + trackBuy + '"' + soldOutAttr + '>' + buyNowText + '</button>' : ''}
+          </div>
         </div>
       \`;
-      el.querySelector('.lp-product-dynamic').insertBefore(descDiv, el.querySelector('.lp-add-to-cart'));
+      var firstBtn = el.querySelector('.lp-add-to-cart, .lp-buy-now, .lp-product-actions');
+      el.querySelector('.lp-product-dynamic').insertBefore(descDiv, el.querySelector('.lp-product-actions'));
     });
 
     window.dispatchEvent(new CustomEvent('lp:product-loaded', { detail: { product, sku } }));
@@ -183,6 +199,19 @@ function generateHydrationScript(store: Store, page: Page): string {
       descDiv.innerHTML = product.descriptionHtml;
     }
 
+    var numericVariantId2 = (variant && variant.id) ? String(variant.id).split('/').pop() : '';
+    var safeNumericVariantId2 = escapeHtml(numericVariantId2);
+    var safeHandle2 = escapeHtml(product.handle || '');
+    var addToCartText2 = escapeHtml(el.getAttribute('data-add-to-cart-text') || 'Add to Cart');
+    var buyNowText2 = escapeHtml(el.getAttribute('data-buy-now-text') || 'Buy Now');
+    var showAdd2 = el.getAttribute('data-show-add-to-cart') !== '0';
+    var showBuy2 = el.getAttribute('data-show-buy-now') === '1';
+    var trackAdd2 = el.getAttribute('data-track-add-to-cart') !== '0' ? '1' : '0';
+    var trackBuy2 = el.getAttribute('data-track-buy-now') !== '0' ? '1' : '0';
+    var availableForSale2 = variant ? variant.availableForSale !== false : true;
+    var soldOutAttr2 = availableForSale2 ? '' : ' disabled aria-disabled="true"';
+    var soldOutText2 = availableForSale2 ? '' : 'Sold out';
+
     el.innerHTML = \`
       <div class="lp-product-dynamic">
         \${safeImage ? '<img src="' + safeImage + '" alt="' + safeTitle + '" class="lp-product-image" loading="lazy">' : ''}
@@ -191,12 +220,13 @@ function generateHydrationScript(store: Store, page: Page): string {
         <div class="lp-product-price">
           <span class="lp-price-current">\${formatter.format(price)}</span>
         </div>
-        <button class="lp-add-to-cart" data-variant-id="\${safeVariantId}" data-product-id="\${safeProductId}">
-          Add to Cart
-        </button>
+        <div class="lp-product-actions" style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
+          \${showAdd2 ? '<button type="button" class="lp-btn lp-btn-primary lp-add-to-cart" data-action="add" data-variant-id="' + safeNumericVariantId2 + '" data-product-handle="' + safeHandle2 + '" data-quantity="1" data-track-conversion="' + trackAdd2 + '"' + soldOutAttr2 + '>' + (soldOutText2 || addToCartText2) + '</button>' : ''}
+          \${showBuy2 ? '<button type="button" class="lp-btn lp-btn-secondary lp-buy-now" data-action="buy" data-variant-id="' + safeNumericVariantId2 + '" data-product-handle="' + safeHandle2 + '" data-quantity="1" data-track-conversion="' + trackBuy2 + '"' + soldOutAttr2 + '>' + buyNowText2 + '</button>' : ''}
+        </div>
       </div>
     \`;
-    el.querySelector('.lp-product-dynamic').insertBefore(descDiv, el.querySelector('.lp-add-to-cart'));
+    el.querySelector('.lp-product-dynamic').insertBefore(descDiv, el.querySelector('.lp-product-actions'));
   }
 
   async function init() {
@@ -298,7 +328,13 @@ function renderProductBlock(config: Record<string, any>, blockId: string): strin
   if (isDynamic) {
     return `
       <section class="lp-product-block" data-block-id="${escapeHtml(blockId)}" data-dynamic-sku="true"
-        ${config.shopifyProductId ? `data-default-product-id="${escapeHtml(config.shopifyProductId)}"` : ""}>
+        ${config.shopifyProductId ? `data-default-product-id="${escapeHtml(config.shopifyProductId)}"` : ""}
+        data-add-to-cart-text="${addToCartText}"
+        data-buy-now-text="${buyNowText}"
+        data-show-add-to-cart="${showAddToCart ? "1" : "0"}"
+        data-show-buy-now="${showBuyNow ? "1" : "0"}"
+        data-track-add-to-cart="${config.trackAddToCart === false ? "0" : "1"}"
+        data-track-buy-now="${config.trackBuyNow === false ? "0" : "1"}">
         <div class="lp-product-loading">
           <div class="lp-spinner"></div>
           <p>Loading product...</p>
@@ -331,8 +367,8 @@ function renderProductBlock(config: Record<string, any>, blockId: string): strin
           ${showDescription ? `<p class="lp-product-description" style="word-wrap:break-word;overflow-wrap:break-word;">${productDescription}</p>` : ""}
           ${variantHtml}
           <div class="lp-product-actions" style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
-            ${showAddToCart ? `<button class="lp-btn lp-btn-primary lp-add-to-cart" style="flex:1;min-width:0;">${addToCartText}</button>` : ""}
-            ${showBuyNow ? `<button class="lp-btn lp-btn-secondary lp-buy-now" style="flex:1;min-width:0;">${buyNowText}</button>` : ""}
+            ${showAddToCart ? `<button type="button" class="lp-btn lp-btn-primary lp-add-to-cart" style="flex:1;min-width:0;" data-action="add" data-variant-id="${escapeHtml(config.shopifyVariantId || "")}" data-product-handle="${escapeHtml(config.productHandle || "")}" data-quantity="1" data-track-conversion="${config.trackAddToCart === false ? "0" : "1"}"${!config.shopifyVariantId ? ' disabled aria-disabled="true"' : ""}>${!config.shopifyVariantId ? "Choose options" : addToCartText}</button>` : ""}
+            ${showBuyNow ? `<button type="button" class="lp-btn lp-btn-secondary lp-buy-now" style="flex:1;min-width:0;" data-action="buy" data-variant-id="${escapeHtml(config.shopifyVariantId || "")}" data-product-handle="${escapeHtml(config.productHandle || "")}" data-quantity="1" data-track-conversion="${config.trackBuyNow === false ? "0" : "1"}"${!config.shopifyVariantId ? ' disabled aria-disabled="true"' : ""}>${!config.shopifyVariantId ? "Choose options" : buyNowText}</button>` : ""}
           </div>
         </div>
       </div>
@@ -843,6 +879,145 @@ function generateAbTestingRuntime(pageId: string): string {
 </script>`;
 }
 
+function generateCartRuntime(): string {
+  return `<script>
+(function(){
+  function getStoreDomain(){
+    var el = document.querySelector('[data-store-domain]');
+    return el ? (el.getAttribute('data-store-domain') || '') : '';
+  }
+  function getCustomDomain(){
+    var el = document.querySelector('[data-custom-domain]');
+    return el ? (el.getAttribute('data-custom-domain') || '') : '';
+  }
+  function normalizeHost(h){ return (h || '').toLowerCase().replace(/^www\\./, ''); }
+  function isShopifyOrigin(storeDomain){
+    var h = normalizeHost(window.location.hostname);
+    if(/\\.myshopify\\.com$/.test(h)) return true;
+    if(storeDomain && h === normalizeHost(storeDomain)) return true;
+    var custom = normalizeHost(getCustomDomain());
+    if(custom && h === custom) return true;
+    return false;
+  }
+  function trackAddToCart(variantId, quantity){
+    try {
+      var w = window;
+      if(w.fbq) w.fbq('track', 'AddToCart', { content_ids: [variantId], num_items: quantity });
+      if(w.ttq && w.ttq.track) w.ttq.track('AddToCart', { content_id: variantId, quantity: quantity });
+      if(w.pintrk) w.pintrk('track', 'addtocart');
+      if(w.gtag) w.gtag('event', 'add_to_cart', { items: [{ id: variantId, quantity: quantity }] });
+      if(w.dataLayer) w.dataLayer.push({ event: 'add_to_cart', variant_id: variantId, quantity: quantity });
+    } catch(e){}
+  }
+  function showInlineError(btn, msg){
+    var parent = btn.parentNode;
+    if(!parent) return;
+    var inline = parent.querySelector('.lp-cart-error');
+    if(!inline){
+      inline = document.createElement('div');
+      inline.className = 'lp-cart-error';
+      inline.style.cssText = 'color:#dc2626;font-size:0.875rem;margin-top:0.5rem;flex-basis:100%;';
+      parent.appendChild(inline);
+    }
+    inline.textContent = msg;
+  }
+  function clearInlineError(btn){
+    var parent = btn.parentNode;
+    if(!parent) return;
+    var inline = parent.querySelector('.lp-cart-error');
+    if(inline) inline.parentNode.removeChild(inline);
+  }
+  async function ajaxAdd(variantId, quantity){
+    var res = await fetch('/cart/add.js', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ id: variantId, quantity: quantity })
+    });
+    if(!res.ok){
+      var data = {};
+      try { data = await res.json(); } catch(e){}
+      var msg = data.description || data.message || ('Could not add to cart (' + res.status + ')');
+      throw new Error(msg);
+    }
+    return res.json();
+  }
+  function permalink(storeDomain, variantId, quantity, checkout){
+    var base = 'https://' + storeDomain + '/cart/' + encodeURIComponent(variantId) + ':' + (quantity || 1);
+    return checkout ? base + '?checkout' : base;
+  }
+  document.addEventListener('click', async function(ev){
+    var btn = ev.target && ev.target.closest ? ev.target.closest('.lp-add-to-cart, .lp-buy-now') : null;
+    if(!btn) return;
+    if(btn.disabled) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    var storeDomain = getStoreDomain();
+    var variantId = btn.getAttribute('data-variant-id') || '';
+    var handle = btn.getAttribute('data-product-handle') || '';
+    var quantity = parseInt(btn.getAttribute('data-quantity') || '1', 10) || 1;
+    var action = btn.getAttribute('data-action') || 'add';
+    var origText = btn.textContent;
+
+    if(!variantId){
+      ev.preventDefault();
+      if(handle && storeDomain){
+        var productUrl = 'https://' + storeDomain + '/products/' + encodeURIComponent(handle);
+        var link = document.createElement('a');
+        link.href = productUrl;
+        link.target = '_top';
+        link.rel = 'noopener';
+        link.className = btn.className;
+        link.style.cssText = btn.style.cssText + ';text-decoration:none;display:inline-flex;align-items:center;justify-content:center;';
+        link.textContent = 'Choose options';
+        link.setAttribute('data-testid', 'link-product-choose-options');
+        if(btn.parentNode) btn.parentNode.replaceChild(link, btn);
+      } else {
+        btn.disabled = true;
+        btn.setAttribute('aria-disabled', 'true');
+        btn.textContent = 'Choose options';
+        showInlineError(btn, 'No product variant selected. Please choose options in the editor.');
+      }
+      return;
+    }
+    var trackThis = btn.getAttribute('data-track-conversion') !== '0';
+
+    clearInlineError(btn);
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
+
+    try {
+      if(isShopifyOrigin(storeDomain)){
+        await ajaxAdd(variantId, quantity);
+        if(trackThis) trackAddToCart(variantId, quantity);
+        if(action === 'buy'){
+          window.location.href = '/checkout';
+          return;
+        }
+        btn.textContent = 'Added \u2713';
+        setTimeout(function(){
+          btn.textContent = origText;
+          btn.disabled = false;
+          btn.removeAttribute('aria-busy');
+        }, 1800);
+      } else {
+        if(!storeDomain){
+          throw new Error('Store domain not configured');
+        }
+        if(trackThis) trackAddToCart(variantId, quantity);
+        window.location.href = permalink(storeDomain, variantId, quantity, action === 'buy');
+      }
+    } catch (err) {
+      btn.disabled = false;
+      btn.removeAttribute('aria-busy');
+      btn.textContent = origText;
+      showInlineError(btn, (err && err.message) || 'Could not add to cart');
+    }
+  }, false);
+})();
+</script>`;
+}
+
 function generateOnClickActionRuntime(): string {
   return `<script>
 (function(){
@@ -1119,11 +1294,13 @@ export async function renderPage(
   const onClickRuntime = generateOnClickActionRuntime();
   const visibilityRuntime = generateVisibilityRuntime();
   const abTestingRuntime = generateAbTestingRuntime(page.id);
+  const cartRuntime = generateCartRuntime();
+  const storeDomainAttr = `data-store-domain="${escapeHtml(store.shopifyDomain || "")}" data-custom-domain="${escapeHtml(store.customDomain || "")}"`;
 
   if (options.useLiquidWrapper) {
     const liquidHtml = `
 {{ content_for_header }}
-<div id="app-proxy-content">
+<div id="app-proxy-content" ${storeDomainAttr}>
 ${styles}
 ${responsiveStyleTag}
 ${blocksHtml}
@@ -1132,6 +1309,7 @@ ${hydrationScript}
 ${visibilityRuntime}
 ${abTestingRuntime}
 ${onClickRuntime}
+${cartRuntime}
 </div>
 {{ content_for_layout }}`;
 
@@ -1149,7 +1327,7 @@ ${onClickRuntime}
   ${responsiveStyleTag}
   ${pixelScripts}
 </head>
-<body>
+<body ${storeDomainAttr}>
   <main class="lp-page">
     ${blocksHtml}
   </main>
@@ -1157,6 +1335,7 @@ ${onClickRuntime}
   ${visibilityRuntime}
   ${abTestingRuntime}
   ${onClickRuntime}
+  ${cartRuntime}
 </body>
 </html>`;
 

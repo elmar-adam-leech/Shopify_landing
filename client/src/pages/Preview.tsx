@@ -78,7 +78,7 @@ export default function Preview() {
     }
   }, [abTestData, pageId, setLocation]);
 
-  const { data: page, isLoading, error } = useQuery<Page & { storeInfo?: { shopifyDomain: string } }>({
+  const { data: page, isLoading, error } = useQuery<Page & { storeInfo?: { shopifyDomain: string; customDomain?: string | null } }>({
     queryKey: ["/api/public/pages", pageId],
     enabled: !!pageId,
     staleTime: 5 * 60 * 1000,
