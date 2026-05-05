@@ -105,6 +105,40 @@ export function DynamicProductBlock({
   const selectedVariant = product?.variants.find(v => v.id === selectedVariantId);
   const currentPrice = selectedVariant?.price || product?.priceRange.minVariantPrice;
 
+  const variantImageIndex = (() => {
+    if (!product || !selectedVariant?.image?.url) return null;
+    const idx = product.images.findIndex(img => img.url === selectedVariant.image!.url);
+    return idx >= 0 ? idx : null;
+  })();
+
+  useEffect(() => {
+    if (variantImageIndex !== null && variantImageIndex !== currentImageIndex) {
+      setCurrentImageIndex(variantImageIndex);
+    }
+  }, [variantImageIndex]);
+
+  const displayImage = (() => {
+    if (selectedVariant?.image?.url) {
+      return {
+        url: selectedVariant.image.url,
+        altText: selectedVariant.image.altText ?? product?.title ?? "",
+      };
+    }
+    const img = product?.images[currentImageIndex];
+    if (img) return { url: img.url, altText: img.altText || product?.title || "" };
+    return null;
+  })();
+
+  const stockMessage = (() => {
+    if (!selectedVariant) return "";
+    if (selectedVariant.availableForSale === false) return "Sold out";
+    const qty = selectedVariant.inventoryQuantity;
+    if (typeof qty === "number" && qty > 0 && qty <= 10) {
+      return qty === 1 ? "Only 1 left in stock" : `Only ${qty} left in stock`;
+    }
+    return "";
+  })();
+
   const handleAddToCart = async (action: "add" | "buy" = "add") => {
     if (!selectedVariantId || !product) return;
     setAddingToCart(true);
@@ -174,14 +208,17 @@ export function DynamicProductBlock({
     >
       <div className={`${productMaxWidthClasses[config.maxWidth] || productMaxWidthClasses.medium} mx-auto border rounded-lg overflow-hidden bg-white dark:bg-gray-900`}>
         <div className="flex flex-col md:flex-row">
-          {config.showImage !== false && product.images.length > 0 && (
+          {config.showImage !== false && (product.images.length > 0 || displayImage) && (
             <div className="md:w-1/2">
               <div className="aspect-square bg-gray-100 dark:bg-gray-800 relative overflow-hidden">
-                <img
-                  src={product.images[currentImageIndex]?.url}
-                  alt={product.images[currentImageIndex]?.altText || product.title}
-                  className="w-full h-full object-contain"
-                />
+                {displayImage && (
+                  <img
+                    src={displayImage.url}
+                    alt={displayImage.altText || product.title}
+                    className="w-full h-full object-contain"
+                    data-testid={`img-product-${block.id}`}
+                  />
+                )}
               </div>
               {product.images.length > 1 && (
                 <div className="flex gap-2 p-3 justify-center overflow-x-auto">
@@ -258,6 +295,15 @@ export function DynamicProductBlock({
               </div>
             )}
             
+            {stockMessage && (
+              <p
+                className="text-sm text-amber-700 dark:text-amber-500"
+                data-testid={`text-product-stock-${block.id}`}
+              >
+                {stockMessage}
+              </p>
+            )}
+
             {config.showQuantitySelector !== false && (
               <div className="flex items-center gap-3">
                 <span className="text-sm font-medium">Quantity:</span>

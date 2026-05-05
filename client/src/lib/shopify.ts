@@ -27,6 +27,9 @@ export interface StorefrontProduct {
     sku: string | null;
     availableForSale: boolean;
     price: { amount: string; currencyCode: string };
+    compareAtPrice?: { amount: string; currencyCode: string } | null;
+    image?: { url: string; altText?: string | null } | null;
+    inventoryQuantity?: number | null;
     selectedOptions: Array<{ name: string; value: string }>;
   }>;
   metafields: Array<{
