@@ -1,53 +1,30 @@
 import { getOrAssignBlockVariant } from "@/lib/preview/ab-testing";
 import { DynamicProductBlock } from "./DynamicProductBlock";
-import type { Block, DesignProps } from "@shared/schema";
-import { resolveVariantDesign } from "@shared/responsive";
-
-const TEXT_ALIGN_VALUES = new Set(["left", "center", "right"]);
-
-function pickTextAlign(
-  design: DesignProps,
-  fallback: "left" | "center" | "right"
-): "left" | "center" | "right" {
-  const ta = design.textAlign;
-  return TEXT_ALIGN_VALUES.has(ta as string)
-    ? (ta as "left" | "center" | "right")
-    : fallback;
-}
+import type { Block } from "@shared/schema";
 
 export function renderBlock(block: Block, storeInfo?: { shopifyDomain: string }, pageId?: string) {
-  const { config: variantConfig, responsive: variantResponsive } = getOrAssignBlockVariant(block);
+  const { config: variantConfig } = getOrAssignBlockVariant(block);
   const { type } = block;
   const config = variantConfig;
 
   switch (type) {
     case "hero-banner": {
-      // Visual styling (textAlign, backgroundImage) lives in
-      // `block.responsive.<bp>`. `resolveVariantDesign` layers the chosen
-      // A/B variant's overrides — both legacy keys still in `variant.config`
-      // and modern `variant.responsive` — on top of the block baseline so
-      // variant intent wins over inherited block-level styling.
-      const heroDesign = resolveVariantDesign(block, variantConfig, variantResponsive, "desktop");
-      const heroAlign = pickTextAlign(heroDesign, "center");
-      const heroBgImage =
-        typeof heroDesign.backgroundImage === "string" && heroDesign.backgroundImage
-          ? heroDesign.backgroundImage
-          : undefined;
+      // Visual styling and per-breakpoint overlay visibility are emitted as
+      // CSS in the page <style> tag by `Preview.tsx`. The overlay div is
+      // always rendered here; it gets shown/hidden per breakpoint via the
+      // `[data-hero-overlay]` selector against the resolved hero design.
+      const overlayOpacity = (config.overlayOpacity ?? 50) / 100;
       return (
         <section
           key={block.id}
-          className="min-h-[400px] flex flex-col justify-center items-center relative overflow-hidden"
-          style={{
-            textAlign: heroAlign,
-            backgroundImage: heroBgImage ? `url(${heroBgImage})` : undefined,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-          }}
+          data-block-id={block.id}
+          className="min-h-[400px] flex flex-col justify-center items-center relative overflow-hidden bg-cover bg-center bg-gradient-to-br from-slate-900 to-slate-800"
           data-testid={`preview-block-${block.id}`}
         >
           <div
-            className="absolute inset-0 bg-gradient-to-br from-slate-900 to-slate-800"
-            style={{ opacity: heroBgImage ? (config.overlayOpacity || 50) / 100 : 1 }}
+            data-hero-overlay
+            className="absolute inset-0 bg-black"
+            style={{ opacity: overlayOpacity }}
           />
           <div className="relative z-10 p-8 max-w-4xl mx-auto">
             <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
@@ -70,24 +47,15 @@ export function renderBlock(block: Block, storeInfo?: { shopifyDomain: string },
     }
 
     case "text-block": {
-      // textAlign + fontSize live in `block.responsive.<bp>`. fontSize is
-      // numeric (px); old persisted text-blocks used a t-shirt enum which
-      // `legacyDesignFromBlock` translates into a numeric value.
-      // `resolveVariantDesign` makes per-variant legacy keys win over the
-      // block baseline (so an A/B variant whose only styling is a legacy
-      // `config.textAlign` keeps overriding the block's own responsive).
-      const textDesign = resolveVariantDesign(block, variantConfig, variantResponsive, "desktop");
-      const textAlign = pickTextAlign(textDesign, "left");
-      const fontSize =
-        typeof textDesign.fontSize === "number" ? `${textDesign.fontSize}px` : undefined;
+      // Visual styling (textAlign, fontSize) is emitted as CSS by Preview.tsx.
       return (
         <section
           key={block.id}
+          data-block-id={block.id}
           className="py-8 px-6"
-          style={{ textAlign }}
           data-testid={`preview-block-${block.id}`}
         >
-          <div className="max-w-4xl mx-auto" style={{ fontSize }}>
+          <div className="max-w-4xl mx-auto">
             {config.content || ""}
           </div>
         </section>
@@ -109,6 +77,7 @@ export function renderBlock(block: Block, storeInfo?: { shopifyDomain: string },
       return (
         <section
           key={block.id}
+          data-block-id={block.id}
           className="py-8 px-6"
           data-testid={`preview-block-${block.id}`}
         >
@@ -141,19 +110,13 @@ export function renderBlock(block: Block, storeInfo?: { shopifyDomain: string },
         secondary: "bg-gray-500 hover:bg-gray-600 text-white",
         outline: "border-2 border-blue-500 text-blue-500 hover:bg-blue-50",
       };
-      // Alignment lives in `block.responsive.<bp>` as `textAlign`. The
-      // legacy `config.alignment` field has been retired from the schema;
-      // `legacyDesignFromBlock` maps it onto `textAlign` for older blocks
-      // (including A/B variants that may still carry it).
-      // `resolveVariantDesign` ensures variant intent — modern or legacy —
-      // wins over inherited block-level styling.
-      const buttonDesign = resolveVariantDesign(block, variantConfig, variantResponsive, "desktop");
-      const buttonAlign = pickTextAlign(buttonDesign, "center");
+      // Alignment lives in `block.responsive.<bp>.textAlign` and is emitted
+      // as CSS by Preview.tsx; no inline style needed here.
       return (
         <section
           key={block.id}
+          data-block-id={block.id}
           className="py-8 px-6"
-          style={{ textAlign: buttonAlign }}
           data-testid={`preview-block-${block.id}`}
         >
           <a
@@ -177,6 +140,7 @@ export function renderBlock(block: Block, storeInfo?: { shopifyDomain: string },
       return (
         <section
           key={block.id}
+          data-block-id={block.id}
           className="py-8 px-6"
           data-testid={`preview-block-${block.id}`}
         >
@@ -237,11 +201,13 @@ export function renderBlock(block: Block, storeInfo?: { shopifyDomain: string },
       const isProductHorizontal = productLayout === "horizontal";
       const isProductGallery = productLayout === "gallery";
       
+      // Alignment lives in `block.responsive.<bp>` and is emitted as CSS
+      // by Preview.tsx; no inline `text-align` here.
       return (
         <section
           key={block.id}
+          data-block-id={block.id}
           className="py-8 px-6"
-          style={{ textAlign: config.alignment || "center" }}
           data-testid={`preview-block-${block.id}`}
         >
           <div className={`${productMaxWidthClasses[config.maxWidth] || productMaxWidthClasses.medium} mx-auto border rounded-lg overflow-hidden bg-white dark:bg-gray-900`}>
@@ -375,6 +341,7 @@ export function renderBlock(block: Block, storeInfo?: { shopifyDomain: string },
       return (
         <section
           key={block.id}
+          data-block-id={block.id}
           className="py-8 px-6"
           data-testid={`preview-block-${block.id}`}
         >
@@ -419,6 +386,7 @@ export function renderBlock(block: Block, storeInfo?: { shopifyDomain: string },
       return (
         <section
           key={block.id}
+          data-block-id={block.id}
           className="py-8 px-6 text-center"
           data-testid={`preview-block-${block.id}`}
         >
@@ -443,6 +411,7 @@ export function renderBlock(block: Block, storeInfo?: { shopifyDomain: string },
       return (
         <div
           key={block.id}
+          data-block-id={block.id}
           className={`fixed bottom-4 ${config.position === "bottom-left" ? "left-4" : "right-4"} z-50`}
           data-testid={`preview-block-${block.id}`}
         >

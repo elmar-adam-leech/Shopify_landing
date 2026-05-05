@@ -127,7 +127,7 @@ export function DynamicProductBlock({
 
   if (loading) {
     return (
-      <section className="py-8 px-6" data-testid={`preview-block-${block.id}`}>
+      <section data-block-id={block.id} className="py-8 px-6" data-testid={`preview-block-${block.id}`}>
         <div className={`${productMaxWidthClasses[config.maxWidth] || productMaxWidthClasses.medium} mx-auto border rounded-lg overflow-hidden bg-white dark:bg-gray-900 p-8`}>
           <div className="flex items-center justify-center gap-2">
             <Loader2 className="w-6 h-6 animate-spin" />
@@ -140,7 +140,7 @@ export function DynamicProductBlock({
 
   if (error || !product) {
     return (
-      <section className="py-8 px-6" data-testid={`preview-block-${block.id}`}>
+      <section data-block-id={block.id} className="py-8 px-6" data-testid={`preview-block-${block.id}`}>
         <div className={`${productMaxWidthClasses[config.maxWidth] || productMaxWidthClasses.medium} mx-auto border rounded-lg overflow-hidden bg-white dark:bg-gray-900 p-8`}>
           <div className="text-center text-red-500">
             <p className="font-medium">{error || "Product not found"}</p>
@@ -154,8 +154,8 @@ export function DynamicProductBlock({
   return (
     <section
       key={block.id}
+      data-block-id={block.id}
       className="py-8 px-6"
-      style={{ textAlign: config.alignment || "center" }}
       data-testid={`preview-block-${block.id}`}
     >
       <div className={`${productMaxWidthClasses[config.maxWidth] || productMaxWidthClasses.medium} mx-auto border rounded-lg overflow-hidden bg-white dark:bg-gray-900`}>

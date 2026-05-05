@@ -8,7 +8,24 @@ import { getOrAssignBlockVariant, getVariantAssignment, setVariantAssignment, se
 import { trackEvent } from "@/lib/preview/analytics";
 import { renderBlock } from "@/components/preview/BlockRenderer";
 import { FormBlockPreview } from "@/components/preview/FormBlockPreview";
-import type { Page, Block, AbTest, AbTestVariant } from "@shared/schema";
+import { blocksToCss, resolveVariantDesign, type Breakpoint } from "@shared/responsive";
+import type { Page, Block, AbTest, AbTestVariant, ResponsiveDesign } from "@shared/schema";
+
+// Build an "effective" block with `responsive.{desktop,tablet,mobile}` already
+// resolved against the assigned variant, with `config` cleared so blocksToCss
+// won't double-apply legacy keys via `legacyDesignFromBlock`.
+function effectiveBlockForCss(block: Block): Block {
+  const { config: variantConfig, responsive: variantResponsive } =
+    getOrAssignBlockVariant(block);
+  const desktop = resolveVariantDesign(block, variantConfig, variantResponsive, "desktop");
+  const tablet = resolveVariantDesign(block, variantConfig, variantResponsive, "tablet");
+  const mobile = resolveVariantDesign(block, variantConfig, variantResponsive, "mobile");
+  return {
+    ...block,
+    config: {},
+    responsive: { desktop, tablet, mobile },
+  };
+}
 
 export default function Preview() {
   const [, params] = useRoute("/preview/:id");
@@ -240,6 +257,33 @@ export default function Preview() {
 
   const sortedBlocks = [...(page.blocks || [])].sort((a, b) => a.order - b.order);
   const pixelScripts = generatePixelInitCode(page.pixelSettings);
+  // Mirror SSR (`server/lib/page-renderer.ts`): emit one page-wide responsive
+  // <style> tag built from variant-aware effective blocks.
+  const effectiveBlocks = sortedBlocks.map(effectiveBlockForCss);
+  const responsiveCss = blocksToCss(effectiveBlocks);
+
+  // Per-breakpoint visibility for hero overlays — show the overlay only at
+  // breakpoints where the resolved hero design has a background image. This
+  // matches SSR `renderHeroBlock` and extends it across all three breakpoints.
+  const hasBgImageAt = (responsive: ResponsiveDesign | undefined, bp: Breakpoint) => {
+    const bg = responsive?.[bp]?.backgroundImage;
+    return typeof bg === "string" && bg.length > 0;
+  };
+  const heroOverlayCss = effectiveBlocks
+    .filter((b) => b.type === "hero-banner")
+    .flatMap((b) => {
+      const sel = `[data-block-id="${b.id}"] [data-hero-overlay]`;
+      const r = b.responsive;
+      const rules: string[] = [];
+      if (!hasBgImageAt(r, "desktop")) rules.push(`${sel}{display:none}`);
+      const tabletDisplay = hasBgImageAt(r, "tablet") ? "block" : "none";
+      rules.push(`@media (max-width:1023px){${sel}{display:${tabletDisplay}}}`);
+      const mobileDisplay = hasBgImageAt(r, "mobile") ? "block" : "none";
+      rules.push(`@media (max-width:767px){${sel}{display:${mobileDisplay}}}`);
+      return rules;
+    })
+    .join("");
+  const pageCss = (responsiveCss || "") + heroOverlayCss;
 
   const renderBlockWithTracking = (block: Block) => {
     if (block.type === "form-block") {
@@ -279,6 +323,9 @@ export default function Preview() {
 
   return (
     <div className="min-h-screen bg-white text-gray-900" data-testid="preview-page">
+      {pageCss && (
+        <style data-lp-responsive dangerouslySetInnerHTML={{ __html: pageCss }} />
+      )}
       {pixelScripts && (
         <script dangerouslySetInnerHTML={{ __html: pixelScripts }} />
       )}

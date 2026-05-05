@@ -53,6 +53,7 @@ export function FormBlockPreview({
     return (
       <section
         key={block.id}
+        data-block-id={block.id}
         className="py-8 px-6"
         data-testid={`preview-block-${block.id}`}
       >
@@ -302,6 +303,7 @@ export function FormBlockPreview({
     return (
       <section
         key={block.id}
+        data-block-id={block.id}
         className="py-8 px-6"
         data-testid={`preview-block-${block.id}`}
       >
@@ -412,6 +414,7 @@ export function FormBlockPreview({
   return (
     <section
       key={block.id}
+      data-block-id={block.id}
       className="py-8 px-6"
       data-testid={`preview-block-${block.id}`}
     >
