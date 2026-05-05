@@ -20,6 +20,8 @@ export const defaultBlockConfigs: Record<BlockType, Record<string, any>> = {
     showPrice: true,
     showTitle: true,
     showAddToCart: true,
+    heading: "",
+    addToCartText: "Add to Cart",
   },
   "product-block": {
     productId: "",

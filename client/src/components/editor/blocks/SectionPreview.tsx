@@ -1,6 +1,7 @@
 import { memo, type ReactNode } from "react";
-import type { DesignProps } from "@shared/schema";
+import type { BlockType, DesignProps } from "@shared/schema";
 import { designToStyle } from "@/lib/responsive";
+import { AddBlockPopover } from "./AddBlockPopover";
 
 interface SectionPreviewProps {
   config: Record<string, any>;
@@ -35,6 +36,12 @@ interface SectionPreviewProps {
    * bounding rect when biasing intent toward the parent near its edges.
    */
   bodyId?: string;
+  /**
+   * When provided, an inline "Add block here" popover is rendered inside
+   * empty sections. See {@link ContainerPreview}'s matching prop for the
+   * full integration contract.
+   */
+  onAddBlock?: (type: BlockType) => void;
 }
 
 export const SectionPreview = memo(function SectionPreview({
@@ -44,6 +51,7 @@ export const SectionPreview = memo(function SectionPreview({
   isDragActive = false,
   bodyRef,
   bodyId,
+  onAddBlock,
 }: SectionPreviewProps) {
   const style = {
     minHeight: hasChildren ? 60 : 120,
@@ -77,14 +85,20 @@ export const SectionPreview = memo(function SectionPreview({
       data-block-body-id={bodyId}
     >
       <div
-        className={`flex-1 flex items-center justify-center min-h-[120px] transition-all ${
+        className={`flex-1 flex flex-col items-center justify-center gap-3 min-h-[120px] transition-all ${
           isDragActive
             ? "text-base font-medium text-primary"
             : "text-xs italic text-muted-foreground/70"
         }`}
         data-testid="section-empty-drop-hint"
       >
-        Drop blocks here
+        <span>Drop blocks here</span>
+        {onAddBlock && !isDragActive && (
+          <AddBlockPopover
+            onAddBlock={onAddBlock}
+            testId="button-add-block-here-section"
+          />
+        )}
       </div>
     </section>
   );

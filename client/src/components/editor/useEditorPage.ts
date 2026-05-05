@@ -700,6 +700,36 @@ export function useEditorPage() {
     setHasChanges(true);
   }, [pushHistory]);
 
+  /**
+   * Append a new default-config block as the last child of `parentId`.
+   * Backs the inline "Add block here" affordance on empty Container/Section
+   * previews — going through the same `pushHistory` + `insertBlockAt`
+   * path as drag-drop so undo/redo and autosave behave identically.
+   * The newly-inserted block is selected so editors land in its
+   * inline-edit context immediately.
+   */
+  const handleAddBlockInside = useCallback(
+    (parentId: string, type: BlockType) => {
+      pushHistory();
+      setBlocks((prev) => {
+        const parent = findBlockById(prev, parentId);
+        const insertIndex = parent?.children?.length ?? 0;
+        const newBlock: Block = {
+          id: uuidv4(),
+          type,
+          order: insertIndex,
+          config: { ...defaultBlockConfigs[type] },
+          responsive: defaultResponsiveFor(type),
+          children: isContainerBlockType(type) ? [] : undefined,
+        };
+        setSelectedBlockId(newBlock.id);
+        return insertBlockAt(prev, parentId, insertIndex, newBlock);
+      });
+      setHasChanges(true);
+    },
+    [pushHistory]
+  );
+
   const selectedBlock = settingsBlockId
     ? findBlockById(blocks, settingsBlockId)
     : null;
@@ -862,6 +892,7 @@ export function useEditorPage() {
     handleDuplicateBlock,
     handleUpdateBlockConfig,
     handleUpdateBlock,
+    handleAddBlockInside,
     handleTitleChange,
     handleSlugChange,
     handlePixelSettingsUpdate,

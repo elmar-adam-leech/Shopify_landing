@@ -17,7 +17,7 @@ import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { BlockType } from "@shared/schema";
 
-interface BlockLibraryItem {
+export interface BlockLibraryItem {
   type: BlockType;
   label: string;
   description: string;
@@ -25,7 +25,13 @@ interface BlockLibraryItem {
   category: "layout" | "content" | "products" | "conversion" | "tracking";
 }
 
-const blockLibrary: BlockLibraryItem[] = [
+/**
+ * Catalog of every block type available in the editor. Exported so the
+ * inline "Add block here" popover (rendered inside empty containers) can
+ * reuse the exact same set of choices, labels, and icons as the sidebar
+ * library — keeping a single source of truth and preventing drift.
+ */
+export const blockLibrary: BlockLibraryItem[] = [
   {
     type: "section",
     label: "Section",

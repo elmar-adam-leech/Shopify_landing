@@ -76,7 +76,9 @@ export const productGridConfigSchema = z.object({
   showPrice: z.boolean().default(true),
   showTitle: z.boolean().default(true),
   showAddToCart: z.boolean().default(true),
-});
+  heading: z.string().default(""),
+  addToCartText: z.string().default("Add to Cart"),
+}).passthrough();
 
 export const productBlockConfigSchema = z.object({
   productId: z.string().optional(),
@@ -109,7 +111,15 @@ export const productBlockConfigSchema = z.object({
   buyNowText: z.string().default("Buy Now"),
   trackAddToCart: z.boolean().default(true),
   trackBuyNow: z.boolean().default(true),
-});
+  /**
+   * Optional editor override for the product heading. When set, takes
+   * precedence over the dynamic `productTitle` pulled from Shopify so
+   * editors can rename the product locally on this page without
+   * affecting the storefront. Empty string falls back to the dynamic
+   * title.
+   */
+  titleOverride: z.string().default(""),
+}).passthrough();
 
 /**
  * Text block content. Visual styling (textAlign, fontSize) lives exclusively

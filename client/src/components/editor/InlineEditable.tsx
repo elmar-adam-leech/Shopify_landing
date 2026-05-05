@@ -66,7 +66,15 @@ interface InlineEditableProps {
 
 /**
  * Inline contenteditable editor with DOMPurify sanitization on commit.
- * - Double-click to start editing (only when the parent block is selected).
+ * - Single click on the field starts editing — but only when `enabled` is
+ *   true, which the parent block sets only when the block is already
+ *   selected. The first click on an unselected block falls through (the
+ *   field is not enabled yet), so the block-level click handler can run
+ *   and select the block; the next click on the field then enters edit
+ *   mode.
+ * - Hovering an editable field on a selected block reveals a subtle
+ *   dashed outline + text cursor so editors can discover what's editable
+ *   without guessing.
  * - Blur (or Enter when not multiline) commits the change.
  * - Esc cancels and reverts to the original value.
  * - When `rich`, a small floating toolbar offers Bold/Italic/Link.
@@ -154,8 +162,18 @@ export function InlineEditable({
     ref.current?.focus();
   };
 
-  const handleDoubleClick = (e: MouseEvent<HTMLElement>) => {
-    if (!enabled || editing) return;
+  const handleClick = (e: MouseEvent<HTMLElement>) => {
+    // When the field isn't enabled (block not selected yet), let the click
+    // bubble so the parent block's onClick can select the block. Once
+    // selected, a subsequent click enters edit mode without needing a
+    // double-click.
+    if (!enabled) return;
+    if (editing) {
+      // Already editing — let normal contenteditable behavior (caret
+      // placement) happen; just stop the parent from re-selecting.
+      e.stopPropagation();
+      return;
+    }
     e.stopPropagation();
     startEdit();
   };
@@ -184,10 +202,14 @@ export function InlineEditable({
     },
     contentEditable: editing,
     suppressContentEditableWarning: true,
-    onDoubleClick: handleDoubleClick,
+    onClick: handleClick,
     onBlur: handleBlur,
     onKeyDown: handleKeyDown,
-    className: `${className} ${enabled && !editing ? "cursor-text" : ""} focus:outline-none`,
+    className: `${className} ${
+      enabled && !editing
+        ? "cursor-text hover:outline hover:outline-1 hover:outline-dashed hover:outline-primary/50 hover:outline-offset-2 hover:rounded-sm"
+        : ""
+    } focus:outline-none`,
     style,
     "data-placeholder": placeholder,
     "data-testid": testId,

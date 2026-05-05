@@ -263,6 +263,7 @@ export default function Editor() {
                   onDuplicateBlock={editor.handleDuplicateBlock}
                   onOpenSettings={editor.setSettingsBlockId}
                   onUpdateBlock={editor.handleUpdateBlock}
+                  onAddBlockInside={editor.handleAddBlockInside}
                   previewMode={editor.previewMode}
                   dragIntent={editor.dragIntent}
                   activeId={editor.activeId}

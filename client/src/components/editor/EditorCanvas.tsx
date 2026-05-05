@@ -10,7 +10,7 @@ import { GripVertical, Settings, Trash2, Copy } from "lucide-react";
 import { memo, useMemo, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { Block, DesignProps } from "@shared/schema";
+import type { Block, BlockType, DesignProps } from "@shared/schema";
 import { isContainerBlockType } from "@shared/schema";
 import { resolveDesign, designToStyle, type Breakpoint } from "@/lib/responsive";
 import { HeroBlockPreview } from "./blocks/HeroBlockPreview";
@@ -81,6 +81,13 @@ interface EditorCanvasProps {
   onDuplicateBlock: (id: string) => void;
   onOpenSettings: (id: string) => void;
   onUpdateBlock?: (block: Block) => void;
+  /**
+   * Insert a new block of the given type as the last child of `parentId`.
+   * Threaded into empty Container/Section previews so the inline "Add
+   * block here" popover can append a default-config block at that
+   * location, going through the same history/autosave path as drag-drop.
+   */
+  onAddBlockInside?: (parentId: string, type: BlockType) => void;
   previewMode?: boolean;
   dragIntent?: DragIntent;
   activeId?: string | null;
@@ -103,6 +110,7 @@ interface RenderBlockProps {
   onDuplicateBlock: (id: string) => void;
   onOpenSettings: (id: string) => void;
   onUpdateBlock?: (block: Block) => void;
+  onAddBlockInside?: (parentId: string, type: BlockType) => void;
   previewMode?: boolean;
   dragIntent?: DragIntent;
   activeId?: string | null;
@@ -118,6 +126,12 @@ interface RenderBlockProps {
 interface PreviewOptions {
   editable?: boolean;
   onUpdateConfig?: (config: Record<string, any>) => void;
+  /**
+   * Forwarded to Container/Section previews so the inline "Add block
+   * here" popover (shown only inside empty containers) can append a new
+   * default-config block at this location.
+   */
+  onAddBlock?: (type: BlockType) => void;
   /**
    * Resolved design for the active breakpoint, forwarded to previews so that
    * inner alignment / typography reflect breakpoint changes (in addition to
@@ -151,7 +165,7 @@ export function getBlockPreview(
   children?: ReactNode,
   options: PreviewOptions = {}
 ): JSX.Element {
-  const { editable, onUpdateConfig, design, isDragActive } = options;
+  const { editable, onUpdateConfig, design, isDragActive, onAddBlock } = options;
   switch (block.type) {
     case "hero-banner":
       return (
@@ -163,9 +177,21 @@ export function getBlockPreview(
         />
       );
     case "product-grid":
-      return <ProductGridPreview config={block.config} />;
+      return (
+        <ProductGridPreview
+          config={block.config}
+          editable={editable}
+          onUpdateConfig={onUpdateConfig}
+        />
+      );
     case "product-block":
-      return <ProductBlockPreview config={block.config} />;
+      return (
+        <ProductBlockPreview
+          config={block.config}
+          editable={editable}
+          onUpdateConfig={onUpdateConfig}
+        />
+      );
     case "text-block":
       return (
         <TextBlockPreview
@@ -176,7 +202,13 @@ export function getBlockPreview(
         />
       );
     case "image-block":
-      return <ImageBlockPreview config={block.config} />;
+      return (
+        <ImageBlockPreview
+          config={block.config}
+          editable={editable}
+          onUpdateConfig={onUpdateConfig}
+        />
+      );
     case "button-block":
       return (
         <ButtonBlockPreview
@@ -187,11 +219,29 @@ export function getBlockPreview(
         />
       );
     case "form-block":
-      return <FormBlockPreview config={block.config} />;
+      return (
+        <FormBlockPreview
+          config={block.config}
+          editable={editable}
+          onUpdateConfig={onUpdateConfig}
+        />
+      );
     case "phone-block":
-      return <PhoneBlockPreview config={block.config} />;
+      return (
+        <PhoneBlockPreview
+          config={block.config}
+          editable={editable}
+          onUpdateConfig={onUpdateConfig}
+        />
+      );
     case "chat-block":
-      return <ChatBlockPreview config={block.config} />;
+      return (
+        <ChatBlockPreview
+          config={block.config}
+          editable={editable}
+          onUpdateConfig={onUpdateConfig}
+        />
+      );
     case "container":
       return (
         <ContainerPreview
@@ -201,6 +251,7 @@ export function getBlockPreview(
           isDragActive={isDragActive}
           bodyRef={options.bodyRef}
           bodyId={options.bodyId}
+          onAddBlock={onAddBlock}
         >
           {children}
         </ContainerPreview>
@@ -214,6 +265,7 @@ export function getBlockPreview(
           isDragActive={isDragActive}
           bodyRef={options.bodyRef}
           bodyId={options.bodyId}
+          onAddBlock={onAddBlock}
         >
           {children}
         </SectionPreview>
@@ -264,6 +316,7 @@ const RenderBlock = memo(function RenderBlock({
   onDuplicateBlock,
   onOpenSettings,
   onUpdateBlock,
+  onAddBlockInside,
   previewMode,
   dragIntent,
   activeId,
@@ -353,6 +406,16 @@ const RenderBlock = memo(function RenderBlock({
     isDragActive,
     bodyRef: isContainer && !previewMode ? setBodyNodeRef : undefined,
     bodyId: isContainer && !previewMode ? block.id : undefined,
+    // The "Add block here" affordance only renders inside empty
+    // containers/sections (the previews themselves gate on `hasChildren`)
+    // so empty editor space exposes the same insert point that drag-drop
+    // would land on. We still pass the callback for non-empty containers
+    // — it is simply ignored because the empty-state branch is what
+    // renders the popover.
+    onAddBlock:
+      isContainer && onAddBlockInside && !previewMode
+        ? (type) => onAddBlockInside(block.id, type)
+        : undefined,
   };
 
   // The "drop at end" bar lights up when the active drag intent is this
@@ -377,6 +440,7 @@ const RenderBlock = memo(function RenderBlock({
             onDuplicateBlock={onDuplicateBlock}
             onOpenSettings={onOpenSettings}
             onUpdateBlock={onUpdateBlock}
+            onAddBlockInside={onAddBlockInside}
             previewMode={previewMode}
             dragIntent={dragIntent}
             activeId={activeId}
@@ -528,6 +592,7 @@ export function EditorCanvas({
   onDuplicateBlock,
   onOpenSettings,
   onUpdateBlock,
+  onAddBlockInside,
   previewMode = false,
   dragIntent = null,
   activeId = null,
@@ -607,6 +672,7 @@ export function EditorCanvas({
                     onDuplicateBlock={onDuplicateBlock}
                     onOpenSettings={onOpenSettings}
                     onUpdateBlock={onUpdateBlock}
+                    onAddBlockInside={onAddBlockInside}
                     previewMode={previewMode}
                     dragIntent={dragIntent}
                     activeId={activeId}

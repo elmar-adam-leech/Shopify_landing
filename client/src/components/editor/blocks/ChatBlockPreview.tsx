@@ -3,14 +3,22 @@ import type { ChatBlockConfig } from "@shared/schema";
 import { Card } from "@/components/ui/card";
 import { MessageCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { InlineEditable } from "../InlineEditable";
 
 interface ChatBlockPreviewProps {
   config: Record<string, any>;
+  editable?: boolean;
+  onUpdateConfig?: (config: Record<string, any>) => void;
 }
 
-export const ChatBlockPreview = memo(function ChatBlockPreview({ config }: ChatBlockPreviewProps) {
+export const ChatBlockPreview = memo(function ChatBlockPreview({
+  config,
+  editable = false,
+  onUpdateConfig,
+}: ChatBlockPreviewProps) {
   const settings = config as ChatBlockConfig;
-  const welcomeMessage = settings.welcomeMessage || "Hi! How can we help you today?";
+  const welcomeMessage =
+    settings.welcomeMessage || (editable ? "" : "Hi! How can we help you today?");
   const position = settings.position || "bottom-right";
 
   const positionClass = position === "bottom-right" ? "items-end" : "items-start";
@@ -32,7 +40,18 @@ export const ChatBlockPreview = memo(function ChatBlockPreview({ config }: ChatB
         </div>
         <div className="p-4 min-h-[200px] bg-background">
           <div className="bg-muted rounded-lg p-3 max-w-[80%]">
-            <p className="text-sm">{welcomeMessage}</p>
+            {editable && onUpdateConfig ? (
+              <InlineEditable
+                as="p"
+                value={welcomeMessage}
+                onCommit={(next) => onUpdateConfig({ ...config, welcomeMessage: next })}
+                className="text-sm"
+                placeholder="Welcome message"
+                testId="inline-chat-welcome"
+              />
+            ) : (
+              <p className="text-sm">{welcomeMessage}</p>
+            )}
           </div>
         </div>
         <div className="p-3 border-t bg-background rounded-b-lg">

@@ -1,6 +1,7 @@
 import { memo, type ReactNode } from "react";
-import type { DesignProps } from "@shared/schema";
+import type { BlockType, DesignProps } from "@shared/schema";
 import { designToStyle } from "@/lib/responsive";
+import { AddBlockPopover } from "./AddBlockPopover";
 
 interface ContainerPreviewProps {
   config: Record<string, any>;
@@ -36,6 +37,14 @@ interface ContainerPreviewProps {
    * bounding rect when biasing intent toward the parent near its edges.
    */
   bodyId?: string;
+  /**
+   * When provided, an inline "Add block here" popover is rendered inside
+   * empty containers. Selecting a block type from the popover invokes
+   * this callback with the chosen `BlockType`; the editor page wires it
+   * to the same insert helper used by drag-drop so undo/autosave keep
+   * working and the new block becomes the selection.
+   */
+  onAddBlock?: (type: BlockType) => void;
 }
 
 export const ContainerPreview = memo(function ContainerPreview({
@@ -45,6 +54,7 @@ export const ContainerPreview = memo(function ContainerPreview({
   isDragActive = false,
   bodyRef,
   bodyId,
+  onAddBlock,
 }: ContainerPreviewProps) {
   const style = {
     minHeight: hasChildren ? 60 : 120,
@@ -76,14 +86,20 @@ export const ContainerPreview = memo(function ContainerPreview({
       data-block-body-id={bodyId}
     >
       <div
-        className={`flex-1 flex items-center justify-center min-h-[120px] transition-all ${
+        className={`flex-1 flex flex-col items-center justify-center gap-3 min-h-[120px] transition-all ${
           isDragActive
             ? "text-base font-medium text-primary"
             : "text-xs italic text-muted-foreground/70"
         }`}
         data-testid="container-empty-drop-hint"
       >
-        Drop blocks here
+        <span>Drop blocks here</span>
+        {onAddBlock && !isDragActive && (
+          <AddBlockPopover
+            onAddBlock={onAddBlock}
+            testId="button-add-block-here-container"
+          />
+        )}
       </div>
     </div>
   );

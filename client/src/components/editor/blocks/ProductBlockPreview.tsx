@@ -6,12 +6,19 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ShoppingCart, Zap, Package, Minus, Plus } from "lucide-react";
+import { InlineEditable } from "../InlineEditable";
 
 interface ProductBlockPreviewProps {
   config: Record<string, any>;
+  editable?: boolean;
+  onUpdateConfig?: (config: Record<string, any>) => void;
 }
 
-export const ProductBlockPreview = memo(function ProductBlockPreview({ config }: ProductBlockPreviewProps) {
+export const ProductBlockPreview = memo(function ProductBlockPreview({
+  config,
+  editable = false,
+  onUpdateConfig,
+}: ProductBlockPreviewProps) {
   const settings = config as ProductBlockConfig;
   const [quantity, setQuantity] = useState(1);
   
@@ -38,7 +45,9 @@ export const ProductBlockPreview = memo(function ProductBlockPreview({ config }:
     addToCartText = "Add to Cart",
     buyNowText = "Buy Now",
     productId,
+    titleOverride = "",
   } = settings;
+  const canEdit = editable && !!onUpdateConfig;
 
   const productTitle = config.productTitle || null;
   const productImage = config.productImage || null;
@@ -156,9 +165,33 @@ export const ProductBlockPreview = memo(function ProductBlockPreview({ config }:
             )}
             
             {showTitle && (
-              <h2 className="text-2xl font-bold break-words">
-                {hasProduct ? (productTitle || "Product Title") : "Product Name Goes Here"}
-              </h2>
+              canEdit ? (
+                <InlineEditable
+                  as="h2"
+                  value={
+                    titleOverride ||
+                    (hasProduct ? (productTitle || "") : "")
+                  }
+                  multiline={false}
+                  onCommit={(next) =>
+                    onUpdateConfig!({ ...config, titleOverride: next })
+                  }
+                  className="text-2xl font-bold break-words"
+                  placeholder={
+                    hasProduct
+                      ? "Override product title"
+                      : "Product Name Goes Here"
+                  }
+                  testId="inline-product-title"
+                />
+              ) : (
+                <h2 className="text-2xl font-bold break-words">
+                  {titleOverride ||
+                    (hasProduct
+                      ? (productTitle || "Product Title")
+                      : "Product Name Goes Here")}
+                </h2>
+              )
             )}
 
             {showSku && (
@@ -300,15 +333,47 @@ export const ProductBlockPreview = memo(function ProductBlockPreview({ config }:
             
             <div className="flex gap-3 flex-wrap pt-2">
               {showAddToCart && (
-                <Button className="flex-1 gap-2" data-testid="button-add-to-cart">
-                  <ShoppingCart className="h-4 w-4" />
-                  {addToCartText}
+                <Button className="flex-1 gap-2" data-testid="button-add-to-cart" asChild={editable && !!onUpdateConfig}>
+                  {editable && onUpdateConfig ? (
+                    <span>
+                      <ShoppingCart className="h-4 w-4" />
+                      <InlineEditable
+                        value={addToCartText}
+                        multiline={false}
+                        onCommit={(next) => onUpdateConfig({ ...config, addToCartText: next })}
+                        className="inline-block"
+                        placeholder="Add to Cart"
+                        testId="inline-product-add-to-cart"
+                      />
+                    </span>
+                  ) : (
+                    <>
+                      <ShoppingCart className="h-4 w-4" />
+                      {addToCartText}
+                    </>
+                  )}
                 </Button>
               )}
               {showBuyNow && (
-                <Button variant="secondary" className="flex-1 gap-2" data-testid="button-buy-now">
-                  <Zap className="h-4 w-4" />
-                  {buyNowText}
+                <Button variant="secondary" className="flex-1 gap-2" data-testid="button-buy-now" asChild={editable && !!onUpdateConfig}>
+                  {editable && onUpdateConfig ? (
+                    <span>
+                      <Zap className="h-4 w-4" />
+                      <InlineEditable
+                        value={buyNowText}
+                        multiline={false}
+                        onCommit={(next) => onUpdateConfig({ ...config, buyNowText: next })}
+                        className="inline-block"
+                        placeholder="Buy Now"
+                        testId="inline-product-buy-now"
+                      />
+                    </span>
+                  ) : (
+                    <>
+                      <Zap className="h-4 w-4" />
+                      {buyNowText}
+                    </>
+                  )}
                 </Button>
               )}
             </div>

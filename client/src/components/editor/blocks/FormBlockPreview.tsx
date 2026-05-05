@@ -9,9 +9,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { EyeOff, ChevronLeft, ChevronRight, Check } from "lucide-react";
+import { InlineEditable } from "../InlineEditable";
 
 interface FormBlockPreviewProps {
   config: Record<string, any>;
+  editable?: boolean;
+  onUpdateConfig?: (config: Record<string, any>) => void;
 }
 
 interface FormField {
@@ -34,7 +37,48 @@ interface FormField {
   nameFormat?: "full" | "first_last" | "first_middle_last";
 }
 
-function AddressFieldPreview({ field }: { field: FormField }) {
+/**
+ * Renders a field's label inline-editable when an `onEditLabel` callback
+ * is provided, otherwise as a plain `<Label>`. The required asterisk is
+ * kept outside the editable region so editors can't accidentally delete
+ * it (it's controlled by the field's `required` setting).
+ */
+function FieldLabel({
+  field,
+  htmlFor,
+  onEditLabel,
+}: {
+  field: FormField;
+  htmlFor?: string;
+  onEditLabel?: (next: string) => void;
+}) {
+  if (onEditLabel) {
+    return (
+      <Label className="flex items-center gap-1" asChild>
+        <span>
+          <InlineEditable
+            as="span"
+            value={field.label}
+            multiline={false}
+            onCommit={(next) => onEditLabel(next)}
+            className="inline-block min-w-[2ch]"
+            placeholder="Field label"
+            testId={`inline-form-field-label-${field.id}`}
+          />
+          {field.required && <span className="text-destructive ml-1">*</span>}
+        </span>
+      </Label>
+    );
+  }
+  return (
+    <Label htmlFor={htmlFor}>
+      {field.label}
+      {field.required && <span className="text-destructive ml-1">*</span>}
+    </Label>
+  );
+}
+
+function AddressFieldPreview({ field, onEditLabel }: { field: FormField; onEditLabel?: (next: string) => void }) {
   const components = field.addressComponents || {
     street: true,
     city: true,
@@ -44,10 +88,7 @@ function AddressFieldPreview({ field }: { field: FormField }) {
 
   return (
     <div className="space-y-3">
-      <Label>
-        {field.label}
-        {field.required && <span className="text-destructive ml-1">*</span>}
-      </Label>
+      <FieldLabel field={field} onEditLabel={onEditLabel} />
       <div className="space-y-2">
         {components.street && (
           <Input placeholder={field.placeholder || "Street Address"} disabled />
@@ -76,16 +117,13 @@ function AddressFieldPreview({ field }: { field: FormField }) {
   );
 }
 
-function NameFieldPreview({ field }: { field: FormField }) {
+function NameFieldPreview({ field, onEditLabel }: { field: FormField; onEditLabel?: (next: string) => void }) {
   const format = field.nameFormat || "full";
 
   if (format === "full") {
     return (
       <div className="space-y-2">
-        <Label htmlFor={field.id}>
-          {field.label}
-          {field.required && <span className="text-destructive ml-1">*</span>}
-        </Label>
+        <FieldLabel field={field} htmlFor={field.id} onEditLabel={onEditLabel} />
         <Input
           id={field.id}
           placeholder={field.placeholder || "Full Name"}
@@ -98,10 +136,7 @@ function NameFieldPreview({ field }: { field: FormField }) {
   if (format === "first_last") {
     return (
       <div className="space-y-2">
-        <Label>
-          {field.label}
-          {field.required && <span className="text-destructive ml-1">*</span>}
-        </Label>
+        <FieldLabel field={field} onEditLabel={onEditLabel} />
         <div className="grid grid-cols-2 gap-2">
           <Input placeholder="First Name" disabled />
           <Input placeholder="Last Name" disabled />
@@ -112,10 +147,7 @@ function NameFieldPreview({ field }: { field: FormField }) {
 
   return (
     <div className="space-y-2">
-      <Label>
-        {field.label}
-        {field.required && <span className="text-destructive ml-1">*</span>}
-      </Label>
+      <FieldLabel field={field} onEditLabel={onEditLabel} />
       <div className="grid grid-cols-3 gap-2">
         <Input placeholder="First" disabled />
         <Input placeholder="Middle" disabled />
@@ -141,27 +173,24 @@ function HiddenFieldIndicator({ field }: { field: FormField }) {
   );
 }
 
-function FieldRenderer({ field }: { field: FormField }) {
+function FieldRenderer({ field, onEditLabel }: { field: FormField; onEditLabel?: (next: string) => void }) {
   if (field.type === "hidden") {
     return <HiddenFieldIndicator field={field} />;
   }
 
   if (field.type === "address") {
-    return <AddressFieldPreview field={field} />;
+    return <AddressFieldPreview field={field} onEditLabel={onEditLabel} />;
   }
 
   if (field.type === "name") {
-    return <NameFieldPreview field={field} />;
+    return <NameFieldPreview field={field} onEditLabel={onEditLabel} />;
   }
 
   if (field.type === "checkbox") {
     return (
       <div className="flex items-center space-x-2">
         <Checkbox id={field.id} disabled />
-        <Label htmlFor={field.id}>
-          {field.label}
-          {field.required && <span className="text-destructive ml-1">*</span>}
-        </Label>
+        <FieldLabel field={field} htmlFor={field.id} onEditLabel={onEditLabel} />
       </div>
     );
   }
@@ -169,10 +198,7 @@ function FieldRenderer({ field }: { field: FormField }) {
   if (field.type === "select") {
     return (
       <div className="space-y-2">
-        <Label htmlFor={field.id}>
-          {field.label}
-          {field.required && <span className="text-destructive ml-1">*</span>}
-        </Label>
+        <FieldLabel field={field} htmlFor={field.id} onEditLabel={onEditLabel} />
         <Select disabled>
           <SelectTrigger>
             <SelectValue placeholder={field.placeholder || `Select ${field.label.toLowerCase()}`} />
@@ -190,10 +216,7 @@ function FieldRenderer({ field }: { field: FormField }) {
   if (field.type === "textarea") {
     return (
       <div className="space-y-2">
-        <Label htmlFor={field.id}>
-          {field.label}
-          {field.required && <span className="text-destructive ml-1">*</span>}
-        </Label>
+        <FieldLabel field={field} htmlFor={field.id} onEditLabel={onEditLabel} />
         <Textarea
           id={field.id}
           placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
@@ -205,10 +228,7 @@ function FieldRenderer({ field }: { field: FormField }) {
 
   return (
     <div className="space-y-2">
-      <Label htmlFor={field.id}>
-        {field.label}
-        {field.required && <span className="text-destructive ml-1">*</span>}
-      </Label>
+      <FieldLabel field={field} htmlFor={field.id} onEditLabel={onEditLabel} />
       <Input
         id={field.id}
         type={field.type}
@@ -256,25 +276,86 @@ function StepIndicators({
   );
 }
 
-export const FormBlockPreview = memo(function FormBlockPreview({ config }: FormBlockPreviewProps) {
+export const FormBlockPreview = memo(function FormBlockPreview({
+  config,
+  editable = false,
+  onUpdateConfig,
+}: FormBlockPreviewProps) {
   const settings = config as FormBlockConfig;
-  const title = settings.title || "Contact Us";
+  const title = settings.title || (editable ? "" : "Contact Us");
   const fields = settings.fields || [
     { id: "name", label: "Name", type: "text", required: true },
     { id: "email", label: "Email", type: "email", required: true },
   ];
-  const submitText = settings.submitText || "Submit";
+  const submitText = settings.submitText || (editable ? "" : "Submit");
   const isMultiStep = settings.isMultiStep || false;
   const steps = settings.steps || [];
   const showProgressBar = settings.showProgressBar !== false;
   const showStepNumbers = settings.showStepNumbers !== false;
-  const prevButtonText = settings.prevButtonText || "Previous";
-  const nextButtonText = settings.nextButtonText || "Next";
+  const prevButtonText = settings.prevButtonText || (editable ? "" : "Previous");
+  const nextButtonText = settings.nextButtonText || (editable ? "" : "Next");
 
   const [currentStep, setCurrentStep] = useState(0);
 
+  const canEdit = editable && !!onUpdateConfig;
+
+  const updateFieldLabel = (fieldId: string, nextLabel: string) => {
+    if (!onUpdateConfig) return;
+    const nextFields = fields.map((f: FormField) =>
+      f.id === fieldId ? { ...f, label: nextLabel } : f
+    );
+    onUpdateConfig({ ...config, fields: nextFields });
+  };
+
   // Get valid field IDs set for runtime validation
   const validFieldIds = new Set(fields.map((f: FormField) => f.id));
+
+  const renderTitle = (extraClass: string) =>
+    canEdit ? (
+      <InlineEditable
+        as="h3"
+        value={title}
+        multiline={false}
+        onCommit={(next) => onUpdateConfig!({ ...config, title: next })}
+        className={extraClass}
+        placeholder="Form title"
+        testId="inline-form-title"
+      />
+    ) : (
+      <h3 className={extraClass}>{title}</h3>
+    );
+
+  const renderSubmit = (extraClass: string) =>
+    canEdit ? (
+      <Button className={extraClass} data-testid="button-form-submit" asChild>
+        <span>
+          <InlineEditable
+            value={submitText}
+            multiline={false}
+            onCommit={(next) => onUpdateConfig!({ ...config, submitText: next })}
+            className="inline-block"
+            placeholder="Submit"
+            testId="inline-form-submit"
+          />
+        </span>
+      </Button>
+    ) : (
+      <Button className={extraClass} data-testid="button-form-submit">{submitText}</Button>
+    );
+
+  const renderNavButtonText = (key: "prevButtonText" | "nextButtonText", value: string, fallback: string) =>
+    canEdit ? (
+      <InlineEditable
+        value={value}
+        multiline={false}
+        onCommit={(next) => onUpdateConfig!({ ...config, [key]: next })}
+        className="inline-block"
+        placeholder={fallback}
+        testId={`inline-form-${key === "prevButtonText" ? "prev" : "next"}`}
+      />
+    ) : (
+      <span>{value}</span>
+    );
 
   if (isMultiStep && steps.length > 0) {
     const currentStepData = steps[currentStep];
@@ -295,7 +376,7 @@ export const FormBlockPreview = memo(function FormBlockPreview({ config }: FormB
     return (
       <div className="p-6 bg-background" data-testid="form-block-preview">
         <Card className="max-w-md mx-auto p-6">
-          <h3 className="text-xl font-semibold mb-4 text-center">{title}</h3>
+          {renderTitle("text-xl font-semibold mb-4 text-center")}
           
           {showProgressBar && (
             <div className="mb-4">
@@ -329,7 +410,11 @@ export const FormBlockPreview = memo(function FormBlockPreview({ config }: FormB
           <div className="space-y-4">
             {visibleFields.length > 0 ? (
               visibleFields.map((field: FormField) => (
-                <FieldRenderer key={field.id} field={field} />
+                <FieldRenderer
+                  key={field.id}
+                  field={field}
+                  onEditLabel={canEdit ? (next) => updateFieldLabel(field.id, next) : undefined}
+                />
               ))
             ) : (
               <p className="text-sm text-muted-foreground text-center py-4">
@@ -344,20 +429,40 @@ export const FormBlockPreview = memo(function FormBlockPreview({ config }: FormB
               onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
               disabled={isFirstStep}
               data-testid="button-form-prev"
+              asChild={canEdit}
             >
-              <ChevronLeft className="w-4 h-4 mr-1" />
-              {prevButtonText}
+              {canEdit ? (
+                <span>
+                  <ChevronLeft className="w-4 h-4 mr-1" />
+                  {renderNavButtonText("prevButtonText", prevButtonText, "Previous")}
+                </span>
+              ) : (
+                <>
+                  <ChevronLeft className="w-4 h-4 mr-1" />
+                  {prevButtonText}
+                </>
+              )}
             </Button>
-            
+
             {isLastStep ? (
-              <Button data-testid="button-form-submit">{submitText}</Button>
+              renderSubmit("")
             ) : (
               <Button
                 onClick={() => setCurrentStep(Math.min(steps.length - 1, currentStep + 1))}
                 data-testid="button-form-next"
+                asChild={canEdit}
               >
-                {nextButtonText}
-                <ChevronRight className="w-4 h-4 ml-1" />
+                {canEdit ? (
+                  <span>
+                    {renderNavButtonText("nextButtonText", nextButtonText, "Next")}
+                    <ChevronRight className="w-4 h-4 ml-1" />
+                  </span>
+                ) : (
+                  <>
+                    {nextButtonText}
+                    <ChevronRight className="w-4 h-4 ml-1" />
+                  </>
+                )}
               </Button>
             )}
           </div>
@@ -372,7 +477,7 @@ export const FormBlockPreview = memo(function FormBlockPreview({ config }: FormB
   return (
     <div className="p-6 bg-background" data-testid="form-block-preview">
       <Card className="max-w-md mx-auto p-6">
-        <h3 className="text-xl font-semibold mb-6 text-center">{title}</h3>
+        {renderTitle("text-xl font-semibold mb-6 text-center")}
         
         {hiddenFields.length > 0 && (
           <div className="mb-4 space-y-1">
@@ -384,9 +489,13 @@ export const FormBlockPreview = memo(function FormBlockPreview({ config }: FormB
 
         <div className="space-y-4">
           {visibleFields.map((field: FormField) => (
-            <FieldRenderer key={field.id} field={field} />
+            <FieldRenderer
+              key={field.id}
+              field={field}
+              onEditLabel={canEdit ? (next) => updateFieldLabel(field.id, next) : undefined}
+            />
           ))}
-          <Button className="w-full mt-4" data-testid="button-form-submit">{submitText}</Button>
+          {renderSubmit("w-full mt-4")}
         </div>
       </Card>
     </div>
