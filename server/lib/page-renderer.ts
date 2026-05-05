@@ -135,12 +135,22 @@ function generateHydrationScript(store: Store, page: Page): string {
           }
         }
       }
+      var vImage = null;
+      if (v.image) {
+        if (typeof v.image === 'string') vImage = v.image;
+        else if (typeof v.image === 'object' && typeof v.image.url === 'string') vImage = v.image.url;
+      }
+      var vInv = null;
+      if (typeof v.inventoryQuantity === 'number') vInv = v.inventoryQuantity;
+      else if (typeof v.quantityAvailable === 'number') vInv = v.quantityAvailable;
       out.push({
         id: id,
         options: options,
         price: parsePriceField(v.price),
         compareAtPrice: parsePriceField(v.compareAtPrice),
-        available: v.availableForSale !== false
+        available: v.availableForSale !== false,
+        image: vImage,
+        inventoryQuantity: vInv
       });
     }
     return out;
@@ -216,7 +226,8 @@ function generateHydrationScript(store: Store, page: Page): string {
       ? initialVariant.compareAtPrice
       : null;
 
-    var image = (product.images && product.images.edges && product.images.edges[0] && product.images.edges[0].node && product.images.edges[0].node.url) || '';
+    var fallbackImage = (product.images && product.images.edges && product.images.edges[0] && product.images.edges[0].node && product.images.edges[0].node.url) || '';
+    var image = (initialVariant && initialVariant.image) ? initialVariant.image : fallbackImage;
     var currency = 'USD';
     try {
       var rawVariants = (product.variants && product.variants.edges) ? product.variants.edges : [];
@@ -234,6 +245,19 @@ function generateHydrationScript(store: Store, page: Page): string {
     var safeTitle = escapeHtml(product.title);
     var safeVendor = escapeHtml(product.vendor);
     var safeImage = escapeHtml(image);
+    var safeFallbackImage = escapeHtml(fallbackImage);
+
+    var initialStockMessage = '';
+    if (initialVariant) {
+      if (initialVariant.available === false) initialStockMessage = 'Sold out';
+      else if (typeof initialVariant.inventoryQuantity === 'number' && initialVariant.inventoryQuantity > 0 && initialVariant.inventoryQuantity <= 10) {
+        initialStockMessage = initialVariant.inventoryQuantity === 1
+          ? 'Only 1 left in stock'
+          : 'Only ' + initialVariant.inventoryQuantity + ' left in stock';
+      }
+    }
+    var safeStockMessage = escapeHtml(initialStockMessage);
+    var stockHtml = '<p class="lp-product-stock" data-product-stock style="font-size:0.875rem;margin-top:0.5rem;color:#b45309;' + (initialStockMessage ? '' : 'display:none;') + '">' + safeStockMessage + '</p>';
 
     var descDiv = document.createElement('div');
     descDiv.className = 'lp-product-description';
@@ -275,7 +299,7 @@ function generateHydrationScript(store: Store, page: Page): string {
 
     el.innerHTML =
       '<div class="lp-product-dynamic">' +
-        (safeImage ? '<img src="' + safeImage + '" alt="' + safeTitle + '" class="lp-product-image" loading="lazy">' : '') +
+        (safeImage ? '<img src="' + safeImage + '" alt="' + safeTitle + '" class="lp-product-image" data-product-image data-product-image-fallback="' + safeFallbackImage + '" loading="lazy">' : '') +
         '<h2 class="lp-product-title">' + safeTitle + '</h2>' +
         (safeVendor ? '<p class="lp-product-vendor">' + safeVendor + '</p>' : '') +
         '<div class="lp-product-price">' +
@@ -284,6 +308,7 @@ function generateHydrationScript(store: Store, page: Page): string {
           savingsHtml +
         '</div>' +
         selectorsHtml +
+        stockHtml +
         '<div class="lp-product-actions" style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">' +
           (showAdd ? '<button type="button" class="lp-btn lp-btn-primary lp-add-to-cart" data-action="add" data-variant-id="' + safeInitialId + '" data-product-handle="' + safeHandle + '" data-quantity="1" data-track-conversion="' + trackAdd + '" data-default-text="' + addToCartText + '"' + disabledAttr + '>' + addLabel + '</button>' : '') +
           (showBuy ? '<button type="button" class="lp-btn lp-btn-secondary lp-buy-now" data-action="buy" data-variant-id="' + safeInitialId + '" data-product-handle="' + safeHandle + '" data-quantity="1" data-track-conversion="' + trackBuy + '" data-default-text="' + buyNowText + '"' + disabledAttr + '>' + buyLabel + '</button>' : '') +

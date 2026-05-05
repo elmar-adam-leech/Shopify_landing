@@ -133,14 +133,44 @@ async function lookupProductInDatabase(
 function formatDbProductForStorefront(dbProduct: ShopifyProduct): Record<string, any> {
   const pd = dbProduct.productData as Record<string, any>;
 
-  const variants = (pd.variants || []).map((v: any) => ({
-    id: v.id,
-    title: v.title,
-    sku: v.sku || null,
-    availableForSale: v.availableForSale ?? true,
-    price: v.price || { amount: "0", currencyCode: "USD" },
-    selectedOptions: v.selectedOptions || [],
-  }));
+  const variants = (pd.variants || []).map((v: any) => {
+    let image: { url: string; altText?: string | null } | null = null;
+    if (v.image) {
+      if (typeof v.image === "string") image = { url: v.image };
+      else if (typeof v.image === "object" && typeof v.image.url === "string") {
+        image = { url: v.image.url, altText: v.image.altText ?? null };
+      }
+    }
+    let compareAtPrice: any = null;
+    if (v.compareAtPrice !== null && v.compareAtPrice !== undefined) {
+      if (typeof v.compareAtPrice === "object" && "amount" in v.compareAtPrice) {
+        compareAtPrice = v.compareAtPrice;
+      } else {
+        compareAtPrice = { amount: String(v.compareAtPrice), currencyCode: "USD" };
+      }
+    }
+    let price: any = v.price;
+    if (price && typeof price !== "object") {
+      price = { amount: String(price), currencyCode: "USD" };
+    } else if (!price) {
+      price = { amount: "0", currencyCode: "USD" };
+    }
+    let inventoryQuantity: number | null = null;
+    if (typeof v.inventoryQuantity === "number") inventoryQuantity = v.inventoryQuantity;
+    else if (typeof v.quantityAvailable === "number") inventoryQuantity = v.quantityAvailable;
+    return {
+      id: v.id,
+      title: v.title,
+      sku: v.sku || null,
+      availableForSale: v.availableForSale ?? true,
+      price,
+      compareAtPrice,
+      image,
+      inventoryQuantity,
+      quantityAvailable: inventoryQuantity,
+      selectedOptions: v.selectedOptions || [],
+    };
+  });
 
   const images = (pd.images || []).map((img: any) => ({
     url: img.url,
@@ -334,7 +364,10 @@ export function createPageRoutes(): Router {
                       title
                       sku
                       availableForSale
+                      quantityAvailable
                       price { amount currencyCode }
+                      compareAtPrice { amount currencyCode }
+                      image { url altText }
                       selectedOptions { name value }
                     }
                   }
