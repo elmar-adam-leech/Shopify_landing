@@ -106,92 +106,134 @@ function generateHydrationScript(store: Store, page: Page): string {
     return div.innerHTML;
   }
 
-  function updateDynamicBlocks(product, sku) {
-    const dynamicElements = document.querySelectorAll('[data-dynamic-sku]');
-    
-    dynamicElements.forEach(function(el) {
-      if (!product) {
-        el.innerHTML = '<div class="lp-product-error">Product not found</div>';
-        return;
-      }
-
-      const variant = product.variants?.edges?.find(function(v) {
-        return v.node.sku === sku;
-      })?.node || product.variants?.edges?.[0]?.node;
-
-      const price = variant?.price?.amount || product.priceRange?.minVariantPrice?.amount || '0';
-      const image = product.images?.edges?.[0]?.node?.url || '';
-      const currency = variant?.price?.currencyCode || 'USD';
-
-      const formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: currency });
-
-      var safeTitle = escapeHtml(product.title);
-      var safeVendor = escapeHtml(product.vendor);
-      var safeImage = escapeHtml(image);
-      var safeVariantId = escapeHtml(variant?.id || '');
-      var safeProductId = escapeHtml(product.id);
-
-      var descDiv = document.createElement('div');
-      descDiv.className = 'lp-product-description';
-      if (product.descriptionHtml) {
-        descDiv.innerHTML = product.descriptionHtml;
-      }
-
-      var numericVariantId = (variant && variant.id) ? String(variant.id).split('/').pop() : '';
-      var safeNumericVariantId = escapeHtml(numericVariantId);
-      var safeHandle = escapeHtml(product.handle || '');
-      var addToCartText = escapeHtml(el.getAttribute('data-add-to-cart-text') || 'Add to Cart');
-      var buyNowText = escapeHtml(el.getAttribute('data-buy-now-text') || 'Buy Now');
-      var showAdd = el.getAttribute('data-show-add-to-cart') !== '0';
-      var showBuy = el.getAttribute('data-show-buy-now') === '1';
-      var trackAdd = el.getAttribute('data-track-add-to-cart') !== '0' ? '1' : '0';
-      var trackBuy = el.getAttribute('data-track-buy-now') !== '0' ? '1' : '0';
-      var availableForSale = variant ? variant.availableForSale !== false : true;
-      var soldOutAttr = availableForSale ? '' : ' disabled aria-disabled="true"';
-      var soldOutText = availableForSale ? '' : 'Sold out';
-
-      el.innerHTML = \`
-        <div class="lp-product-dynamic">
-          \${safeImage ? '<img src="' + safeImage + '" alt="' + safeTitle + '" class="lp-product-image" loading="lazy">' : ''}
-          <h2 class="lp-product-title">\${safeTitle}</h2>
-          \${safeVendor ? '<p class="lp-product-vendor">' + safeVendor + '</p>' : ''}
-          <div class="lp-product-price">
-            <span class="lp-price-current">\${formatter.format(price)}</span>
-          </div>
-          <div class="lp-product-actions" style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
-            \${showAdd ? '<button type="button" class="lp-btn lp-btn-primary lp-add-to-cart" data-action="add" data-variant-id="' + safeNumericVariantId + '" data-product-handle="' + safeHandle + '" data-quantity="1" data-track-conversion="' + trackAdd + '"' + soldOutAttr + '>' + (soldOutText || addToCartText) + '</button>' : ''}
-            \${showBuy ? '<button type="button" class="lp-btn lp-btn-secondary lp-buy-now" data-action="buy" data-variant-id="' + safeNumericVariantId + '" data-product-handle="' + safeHandle + '" data-quantity="1" data-track-conversion="' + trackBuy + '"' + soldOutAttr + '>' + buyNowText + '</button>' : ''}
-          </div>
-        </div>
-      \`;
-      var firstBtn = el.querySelector('.lp-add-to-cart, .lp-buy-now, .lp-product-actions');
-      el.querySelector('.lp-product-dynamic').insertBefore(descDiv, el.querySelector('.lp-product-actions'));
-    });
-
-    window.dispatchEvent(new CustomEvent('lp:product-loaded', { detail: { product, sku } }));
+  function parsePriceField(value) {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'object' && value !== null && 'amount' in value) {
+      var n1 = parseFloat(String(value.amount));
+      return isNaN(n1) ? null : n1;
+    }
+    var n2 = parseFloat(String(value));
+    return isNaN(n2) ? null : n2;
   }
 
-  function updateSingleBlock(el, product, sku) {
+  function normalizeVariants(product) {
+    var rawList = (product && product.variants && product.variants.edges)
+      ? product.variants.edges.map(function(e) { return e.node; })
+      : [];
+    var out = [];
+    for (var i = 0; i < rawList.length; i++) {
+      var v = rawList[i] || {};
+      var rawId = v.id ? String(v.id) : '';
+      var id = rawId.indexOf('/') !== -1 ? (rawId.split('/').pop() || '') : rawId;
+      if (!id) continue;
+      var options = {};
+      if (Array.isArray(v.selectedOptions)) {
+        for (var j = 0; j < v.selectedOptions.length; j++) {
+          var opt = v.selectedOptions[j];
+          if (opt && typeof opt.name === 'string' && typeof opt.value === 'string') {
+            options[opt.name] = opt.value;
+          }
+        }
+      }
+      out.push({
+        id: id,
+        options: options,
+        price: parsePriceField(v.price),
+        compareAtPrice: parsePriceField(v.compareAtPrice),
+        available: v.availableForSale !== false
+      });
+    }
+    return out;
+  }
+
+  function buildVariantSelectorsHtml(variants, selected) {
+    var optionMap = {};
+    var optionOrder = [];
+    for (var i = 0; i < variants.length; i++) {
+      var opts = variants[i].options || {};
+      for (var name in opts) {
+        if (!Object.prototype.hasOwnProperty.call(opts, name)) continue;
+        if (!optionMap[name]) { optionMap[name] = []; optionOrder.push(name); }
+        if (optionMap[name].indexOf(opts[name]) === -1) optionMap[name].push(opts[name]);
+      }
+    }
+    if (!optionOrder.length) return '';
+    var parts = [];
+    for (var k = 0; k < optionOrder.length; k++) {
+      var nm = optionOrder[k];
+      var values = optionMap[nm];
+      var optionsHtml = '';
+      for (var v = 0; v < values.length; v++) {
+        var val = values[v];
+        var sel = selected[nm] === val ? ' selected' : '';
+        optionsHtml += '<option value="' + escapeHtml(val) + '"' + sel + '>' + escapeHtml(val) + '</option>';
+      }
+      parts.push(
+        '<div class="lp-variant-selector" style="margin-top:1rem;">' +
+          '<label style="display:block;font-size:0.875rem;font-weight:500;margin-bottom:0.25rem;">' + escapeHtml(nm) + '</label>' +
+          '<select data-variant-option="' + escapeHtml(nm) + '" style="width:100%;padding:0.5rem;border:1px solid #ddd;border-radius:4px;font-size:1rem;">' +
+            optionsHtml +
+          '</select>' +
+        '</div>'
+      );
+    }
+    return parts.join('');
+  }
+
+  function pickInitialVariant(variants, sku, product) {
+    if (sku) {
+      var rawList = (product && product.variants && product.variants.edges)
+        ? product.variants.edges.map(function(e) { return e.node; })
+        : [];
+      for (var i = 0; i < rawList.length; i++) {
+        if (rawList[i] && rawList[i].sku === sku) {
+          var rawId = String(rawList[i].id || '');
+          var nid = rawId.indexOf('/') !== -1 ? (rawId.split('/').pop() || '') : rawId;
+          for (var j = 0; j < variants.length; j++) {
+            if (variants[j].id === nid) return variants[j];
+          }
+        }
+      }
+    }
+    return variants[0] || null;
+  }
+
+  function renderProductIntoBlock(el, product, sku) {
     if (!product) {
-      el.innerHTML = '<div class="lp-product-error">No product selected</div>';
+      el.innerHTML = '<div class="lp-product-error">Product not found</div>';
+      el.removeAttribute('data-product-variants');
       return;
     }
 
-    const variant = product.variants?.edges?.find(function(v) {
-      return v.node.sku === sku;
-    })?.node || product.variants?.edges?.[0]?.node;
+    var normalized = normalizeVariants(product);
+    var initialVariant = pickInitialVariant(normalized, sku, product);
 
-    const price = variant?.price?.amount || product.priceRange?.minVariantPrice?.amount || '0';
-    const image = product.images?.edges?.[0]?.node?.url || '';
-    const currency = variant?.price?.currencyCode || 'USD';
+    var price = (initialVariant && initialVariant.price !== null && initialVariant.price !== undefined)
+      ? initialVariant.price
+      : parsePriceField(product.priceRange && product.priceRange.minVariantPrice);
+    if (price === null || price === undefined) price = 0;
+    var compareAt = (initialVariant && initialVariant.compareAtPrice !== null && initialVariant.compareAtPrice !== undefined)
+      ? initialVariant.compareAtPrice
+      : null;
 
-    const formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: currency });
+    var image = (product.images && product.images.edges && product.images.edges[0] && product.images.edges[0].node && product.images.edges[0].node.url) || '';
+    var currency = 'USD';
+    try {
+      var rawVariants = (product.variants && product.variants.edges) ? product.variants.edges : [];
+      if (rawVariants[0] && rawVariants[0].node && rawVariants[0].node.price && rawVariants[0].node.price.currencyCode) {
+        currency = rawVariants[0].node.price.currencyCode;
+      } else if (product.priceRange && product.priceRange.minVariantPrice && product.priceRange.minVariantPrice.currencyCode) {
+        currency = product.priceRange.minVariantPrice.currencyCode;
+      }
+    } catch (e) {}
+
+    var formatter;
+    try { formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }); }
+    catch (e) { formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }); }
 
     var safeTitle = escapeHtml(product.title);
     var safeVendor = escapeHtml(product.vendor);
     var safeImage = escapeHtml(image);
-    var safeVariantId = escapeHtml(variant?.id || '');
-    var safeProductId = escapeHtml(product.id);
 
     var descDiv = document.createElement('div');
     descDiv.className = 'lp-product-description';
@@ -199,34 +241,83 @@ function generateHydrationScript(store: Store, page: Page): string {
       descDiv.innerHTML = product.descriptionHtml;
     }
 
-    var numericVariantId2 = (variant && variant.id) ? String(variant.id).split('/').pop() : '';
-    var safeNumericVariantId2 = escapeHtml(numericVariantId2);
-    var safeHandle2 = escapeHtml(product.handle || '');
-    var addToCartText2 = escapeHtml(el.getAttribute('data-add-to-cart-text') || 'Add to Cart');
-    var buyNowText2 = escapeHtml(el.getAttribute('data-buy-now-text') || 'Buy Now');
-    var showAdd2 = el.getAttribute('data-show-add-to-cart') !== '0';
-    var showBuy2 = el.getAttribute('data-show-buy-now') === '1';
-    var trackAdd2 = el.getAttribute('data-track-add-to-cart') !== '0' ? '1' : '0';
-    var trackBuy2 = el.getAttribute('data-track-buy-now') !== '0' ? '1' : '0';
-    var availableForSale2 = variant ? variant.availableForSale !== false : true;
-    var soldOutAttr2 = availableForSale2 ? '' : ' disabled aria-disabled="true"';
-    var soldOutText2 = availableForSale2 ? '' : 'Sold out';
+    var initialId = initialVariant ? initialVariant.id : '';
+    var safeInitialId = escapeHtml(initialId);
+    var safeHandle = escapeHtml(product.handle || '');
+    var addToCartText = escapeHtml(el.getAttribute('data-add-to-cart-text') || 'Add to Cart');
+    var buyNowText = escapeHtml(el.getAttribute('data-buy-now-text') || 'Buy Now');
+    var showAdd = el.getAttribute('data-show-add-to-cart') !== '0';
+    var showBuy = el.getAttribute('data-show-buy-now') === '1';
+    var trackAdd = el.getAttribute('data-track-add-to-cart') !== '0' ? '1' : '0';
+    var trackBuy = el.getAttribute('data-track-buy-now') !== '0' ? '1' : '0';
+    var available = initialVariant ? initialVariant.available !== false : true;
+    var disabledAttr = (initialId && available) ? '' : ' disabled aria-disabled="true"';
+    var addLabel = !initialId ? 'Choose options' : (available ? addToCartText : 'Sold out');
+    var buyLabel = !initialId ? 'Choose options' : (available ? buyNowText : 'Sold out');
 
-    el.innerHTML = \`
-      <div class="lp-product-dynamic">
-        \${safeImage ? '<img src="' + safeImage + '" alt="' + safeTitle + '" class="lp-product-image" loading="lazy">' : ''}
-        <h2 class="lp-product-title">\${safeTitle}</h2>
-        \${safeVendor ? '<p class="lp-product-vendor">' + safeVendor + '</p>' : ''}
-        <div class="lp-product-price">
-          <span class="lp-price-current">\${formatter.format(price)}</span>
-        </div>
-        <div class="lp-product-actions" style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
-          \${showAdd2 ? '<button type="button" class="lp-btn lp-btn-primary lp-add-to-cart" data-action="add" data-variant-id="' + safeNumericVariantId2 + '" data-product-handle="' + safeHandle2 + '" data-quantity="1" data-track-conversion="' + trackAdd2 + '"' + soldOutAttr2 + '>' + (soldOutText2 || addToCartText2) + '</button>' : ''}
-          \${showBuy2 ? '<button type="button" class="lp-btn lp-btn-secondary lp-buy-now" data-action="buy" data-variant-id="' + safeNumericVariantId2 + '" data-product-handle="' + safeHandle2 + '" data-quantity="1" data-track-conversion="' + trackBuy2 + '"' + soldOutAttr2 + '>' + buyNowText2 + '</button>' : ''}
-        </div>
-      </div>
-    \`;
+    var selectorsHtml = normalized.length > 1
+      ? buildVariantSelectorsHtml(normalized, (initialVariant && initialVariant.options) || {})
+      : '';
+
+    var compareHtml = '';
+    if (compareAt !== null && compareAt !== undefined) {
+      compareHtml = '<span class="lp-price-compare" data-product-compare-price style="text-decoration:line-through;color:#999;margin-left:0.5rem;">' + formatter.format(compareAt) + '</span>';
+    } else {
+      compareHtml = '<span class="lp-price-compare" data-product-compare-price style="text-decoration:line-through;color:#999;margin-left:0.5rem;display:none;"></span>';
+    }
+    var savingsHtml = '';
+    if (compareAt !== null && compareAt !== undefined && price !== null && compareAt > price) {
+      var pct = Math.round((1 - price / compareAt) * 100);
+      savingsHtml = '<span class="lp-price-savings" data-product-savings style="background:#e8f5e9;color:#2e7d32;padding:0.125rem 0.5rem;border-radius:4px;font-size:0.875rem;margin-left:0.5rem;">Save ' + pct + '%</span>';
+    } else {
+      savingsHtml = '<span class="lp-price-savings" data-product-savings style="background:#e8f5e9;color:#2e7d32;padding:0.125rem 0.5rem;border-radius:4px;font-size:0.875rem;margin-left:0.5rem;display:none;"></span>';
+    }
+
+    el.innerHTML =
+      '<div class="lp-product-dynamic">' +
+        (safeImage ? '<img src="' + safeImage + '" alt="' + safeTitle + '" class="lp-product-image" loading="lazy">' : '') +
+        '<h2 class="lp-product-title">' + safeTitle + '</h2>' +
+        (safeVendor ? '<p class="lp-product-vendor">' + safeVendor + '</p>' : '') +
+        '<div class="lp-product-price">' +
+          '<span class="lp-price-current" data-product-price>' + formatter.format(price) + '</span>' +
+          compareHtml +
+          savingsHtml +
+        '</div>' +
+        selectorsHtml +
+        '<div class="lp-product-actions" style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">' +
+          (showAdd ? '<button type="button" class="lp-btn lp-btn-primary lp-add-to-cart" data-action="add" data-variant-id="' + safeInitialId + '" data-product-handle="' + safeHandle + '" data-quantity="1" data-track-conversion="' + trackAdd + '" data-default-text="' + addToCartText + '"' + disabledAttr + '>' + addLabel + '</button>' : '') +
+          (showBuy ? '<button type="button" class="lp-btn lp-btn-secondary lp-buy-now" data-action="buy" data-variant-id="' + safeInitialId + '" data-product-handle="' + safeHandle + '" data-quantity="1" data-track-conversion="' + trackBuy + '" data-default-text="' + buyNowText + '"' + disabledAttr + '>' + buyLabel + '</button>' : '') +
+        '</div>' +
+      '</div>';
+
     el.querySelector('.lp-product-dynamic').insertBefore(descDiv, el.querySelector('.lp-product-actions'));
+
+    if (normalized.length > 1) {
+      try {
+        el.setAttribute('data-product-variants', JSON.stringify(normalized));
+      } catch (e) {}
+      if (typeof window.__lpSetupVariantSection === 'function') {
+        try { window.__lpSetupVariantSection(el); } catch (e) {}
+      }
+    } else {
+      el.removeAttribute('data-product-variants');
+    }
+  }
+
+  function updateDynamicBlocks(product, sku) {
+    var dynamicElements = document.querySelectorAll('[data-dynamic-sku]');
+    dynamicElements.forEach(function(el) {
+      renderProductIntoBlock(el, product, sku);
+    });
+    window.dispatchEvent(new CustomEvent('lp:product-loaded', { detail: { product: product, sku: sku } }));
+  }
+
+  function updateSingleBlock(el, product, sku) {
+    if (!product) {
+      el.innerHTML = '<div class="lp-product-error">No product selected</div>';
+      return;
+    }
+    renderProductIntoBlock(el, product, sku);
   }
 
   async function init() {
@@ -1252,6 +1343,7 @@ function generateVariantSelectorRuntime(): string {
     var sections = document.querySelectorAll('[data-product-variants]');
     for(var i=0;i<sections.length;i++) setupSection(sections[i]);
   }
+  window.__lpSetupVariantSection = setupSection;
   if(document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', init);
   } else {
