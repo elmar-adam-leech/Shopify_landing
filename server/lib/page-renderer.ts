@@ -941,6 +941,60 @@ function generateCartRuntime(): string {
     }
     return res.json();
   }
+  async function fetchCart(){
+    try {
+      var res = await fetch('/cart.js', { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' });
+      if(!res.ok) return null;
+      return await res.json();
+    } catch(e){ return null; }
+  }
+  function dispatchCartEvents(cart, addedItem){
+    try {
+      var detail = { cart: cart, item: addedItem, source: 'replit-page-builder' };
+      // Fire common theme-compatible events so host theme drawers refresh.
+      var names = ['cart:refresh', 'cart:updated', 'cart:build', 'cart:change', 'cart:added'];
+      for(var i=0;i<names.length;i++){
+        try { document.dispatchEvent(new CustomEvent(names[i], { bubbles: true, detail: detail })); } catch(e){}
+      }
+      // Dawn / Shopify 2.0 PubSub bridge.
+      try {
+        var w = window;
+        if(w.PUB_SUB_EVENTS && typeof w.publish === 'function'){
+          if(w.PUB_SUB_EVENTS.cartUpdate) w.publish(w.PUB_SUB_EVENTS.cartUpdate, detail);
+        }
+      } catch(e){}
+    } catch(e){}
+  }
+  function getOrCreateBadge(){
+    var existing = document.querySelector('.lp-cart-badge');
+    if(existing) return existing;
+    var badge = document.createElement('a');
+    badge.className = 'lp-cart-badge';
+    badge.setAttribute('data-testid', 'badge-cart-count');
+    badge.setAttribute('aria-label', 'View cart');
+    badge.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:9999;display:none;align-items:center;gap:0.4rem;padding:0.5rem 0.85rem;border-radius:9999px;background:var(--lp-primary,#111);color:#fff;font:600 0.875rem/1 system-ui,-apple-system,sans-serif;text-decoration:none;box-shadow:0 4px 12px rgba(0,0,0,0.18);cursor:pointer;';
+    badge.innerHTML = '<span aria-hidden="true">\\uD83D\\uDED2</span><span class="lp-cart-badge-count">0</span>';
+    var storeDomain = getStoreDomain();
+    if(isShopifyOrigin(storeDomain)){
+      badge.href = '/cart';
+    } else if(storeDomain){
+      badge.href = 'https://' + storeDomain + '/cart';
+      badge.target = '_top';
+      badge.rel = 'noopener';
+    } else {
+      badge.href = '#';
+    }
+    document.body.appendChild(badge);
+    return badge;
+  }
+  function updateBadge(cart){
+    if(!cart) return;
+    var count = (typeof cart.item_count === 'number') ? cart.item_count : 0;
+    var badge = getOrCreateBadge();
+    var countEl = badge.querySelector('.lp-cart-badge-count');
+    if(countEl) countEl.textContent = String(count);
+    if(count > 0) badge.style.display = 'inline-flex';
+  }
   function permalink(storeDomain, variantId, quantity, checkout){
     var base = 'https://' + storeDomain + '/cart/' + encodeURIComponent(variantId) + ':' + (quantity || 1);
     return checkout ? base + '?checkout' : base;
@@ -988,12 +1042,17 @@ function generateCartRuntime(): string {
 
     try {
       if(isShopifyOrigin(storeDomain)){
-        await ajaxAdd(variantId, quantity);
+        var addedItem = await ajaxAdd(variantId, quantity);
         if(trackThis) trackAddToCart(variantId, quantity);
         if(action === 'buy'){
           window.location.href = '/checkout';
           return;
         }
+        // Refresh cart and notify host theme so its drawer can update.
+        fetchCart().then(function(cart){
+          dispatchCartEvents(cart, addedItem);
+          updateBadge(cart);
+        });
         btn.textContent = 'Added \u2713';
         setTimeout(function(){
           btn.textContent = origText;
