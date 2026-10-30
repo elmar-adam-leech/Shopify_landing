@@ -20,6 +20,13 @@ import {
 } from "../lib/import-fetcher";
 import { extractDigest } from "../lib/import-digest";
 import { screenshotForImport, isScreenshotEnabled } from "../lib/import-screenshot";
+import {
+  uploadImageToShopifyFiles,
+  getUploaderConfigForStore,
+  AssetUploadError,
+  logUploadFailure,
+} from "../lib/asset-uploader";
+import type { ShopifyConfig } from "../lib/shopify";
 
 const modelTierEnum = z.enum(AI_MODEL_TIERS);
 
@@ -302,19 +309,30 @@ export function createAiRoutes(): Router {
       }
       aggregateWarnings.push(...result.warnings);
 
-      // Optional: copy referenced images into the page so the result still
-      // renders if the source CDN later disappears or hot-link-blocks. We
-      // download each image (subject to the same SSRF/size caps as the
-      // page fetch) and inline it as a `data:` URL on the block config.
-      // Per-image failures degrade gracefully and are surfaced as warnings.
+      // Optional: copy referenced images into the merchant's Shopify Files
+      // library so the page still renders if the source CDN later
+      // disappears or hot-link-blocks. We download each image (subject to
+      // the same SSRF/size caps as the page fetch), upload it via the
+      // Admin GraphQL stagedUploads + fileCreate flow, and rewrite the
+      // block URL to the resolved Shopify CDN URL. Per-image failures
+      // degrade gracefully and are surfaced as warnings.
       let blocks = result.blocks;
       if (parsed.data.copyImages) {
-        const { blocks: rewritten, warnings: imageWarnings } = await copyReferencedImages(
-          blocks,
-          controller.signal
-        );
-        blocks = rewritten;
-        aggregateWarnings.push(...imageWarnings);
+        const ctxStoreId = req.storeContext?.storeId ?? parsed.data.storeId ?? null;
+        const uploaderConfig = await getUploaderConfigForStore(ctxStoreId);
+        if (!uploaderConfig) {
+          aggregateWarnings.push(
+            "Couldn't copy images: this store isn't connected to Shopify, so images were left pointing at the source CDN."
+          );
+        } else {
+          const { blocks: rewritten, warnings: imageWarnings } = await copyReferencedImages(
+            blocks,
+            uploaderConfig,
+            controller.signal
+          );
+          blocks = rewritten;
+          aggregateWarnings.push(...imageWarnings);
+        }
       }
 
       logInfo("AI URL import completed", {
@@ -343,37 +361,54 @@ const importFromUrlRequestSchema = z.object({
   storeId: z.string().min(1).optional(),
 });
 
-const MAX_INLINE_IMAGE_BYTES = 256 * 1024;
-const MAX_IMAGES_TO_COPY = 12;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_IMAGES_TO_COPY = 24;
 
 /**
  * Walk the block tree and replace each image-block / hero-banner background
- * URL with an inline data URL after re-downloading via the safe fetcher.
- * Images that fail to download (or are too big to inline) are left as their
- * original URL and reported in the returned warnings list. We hard-cap how
- * many images we attempt so a page with 200 product thumbs cannot stall the
- * whole import.
+ * URL with a Shopify Files CDN URL after re-downloading the source via the
+ * safe fetcher and uploading it through the Admin GraphQL stagedUploads +
+ * fileCreate flow. Images that fail to download or upload are left as
+ * their original URL and reported in the returned warnings list. We
+ * hard-cap how many images we attempt so a page with 200 product thumbs
+ * cannot stall the whole import.
  */
 async function copyReferencedImages(
   blocks: Block[],
+  uploader: ShopifyConfig,
   signal?: AbortSignal
 ): Promise<{ blocks: Block[]; warnings: string[] }> {
   const warnings: string[] = [];
   let attempted = 0;
 
-  async function fetchOne(url: string): Promise<string | null> {
+  async function uploadOne(url: string): Promise<string | null> {
     if (attempted >= MAX_IMAGES_TO_COPY) return null;
     attempted++;
+    let bytes: Uint8Array;
+    let contentType: string;
     try {
-      const { bytes, contentType } = await fetchImageForImport(url, {
+      const fetched = await fetchImageForImport(url, {
         signal,
-        maxBytes: MAX_INLINE_IMAGE_BYTES,
+        maxBytes: MAX_IMAGE_BYTES,
       });
-      const base64 = Buffer.from(bytes).toString("base64");
-      return `data:${contentType};base64,${base64}`;
+      bytes = fetched.bytes;
+      contentType = fetched.contentType;
     } catch (err) {
       const code = err instanceof ImportFetchError ? err.code : "fetch_failed";
       warnings.push(`Couldn't copy image ${url} (${code}); kept the original URL.`);
+      return null;
+    }
+    try {
+      return await uploadImageToShopifyFiles(uploader, {
+        bytes,
+        contentType,
+        sourceUrl: url,
+        signal,
+      });
+    } catch (err) {
+      const code = err instanceof AssetUploadError ? err.code : "upload_failed";
+      logUploadFailure(url, err);
+      warnings.push(`Couldn't upload image ${url} to Shopify Files (${code}); kept the original URL.`);
       return null;
     }
   }
@@ -384,9 +419,9 @@ async function copyReferencedImages(
   async function rewriteUrl(url: string): Promise<string> {
     if (!/^https?:/i.test(url)) return url;
     if (cache.has(url)) return cache.get(url) ?? url;
-    const inlined = await fetchOne(url);
-    cache.set(url, inlined);
-    return inlined ?? url;
+    const uploaded = await uploadOne(url);
+    cache.set(url, uploaded);
+    return uploaded ?? url;
   }
 
   async function walk(list: Block[]): Promise<Block[]> {
@@ -445,7 +480,7 @@ async function copyReferencedImages(
 
   const rewritten = await walk(blocks);
   if (attempted >= MAX_IMAGES_TO_COPY) {
-    warnings.push(`Stopped after copying ${MAX_IMAGES_TO_COPY} images to keep page size reasonable; remaining images kept their original URLs.`);
+    warnings.push(`Stopped after copying ${MAX_IMAGES_TO_COPY} images to keep the import responsive; remaining images kept their original URLs.`);
   }
   return { blocks: rewritten, warnings };
 }

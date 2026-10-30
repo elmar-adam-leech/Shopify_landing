@@ -70,7 +70,7 @@ Preferred communication style: Simple, everyday language.
 - Pinterest Tag
 
 ### Shopify APIs
-- **GraphQL Admin API**: For Shopify customer creation/updates (search, create, update with UTM tagging and consent management) and product synchronization.
+- **GraphQL Admin API**: For Shopify customer creation/updates (search, create, update with UTM tagging and consent management), product synchronization, and Shopify Files uploads (`stagedUploadsCreate` + `fileCreate`, polled until `MediaImage.image.url` resolves) used by the URL importer to copy referenced images into the merchant's store. See `server/lib/asset-uploader.ts`.
 - **Storefront API**: Used for dynamic product loading on public pages.
 
 ### Communication Services

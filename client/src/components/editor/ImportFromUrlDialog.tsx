@@ -205,10 +205,10 @@ export function ImportFromUrlDialog({
           <div className="flex items-start justify-between gap-3 rounded-md border p-3">
             <div className="min-w-0">
               <Label htmlFor="copy-images" className="text-sm font-medium">
-                Copy images into my page
+                Copy images into my Shopify Files
               </Label>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Inlines source images so the page won't break if the source CDN changes. May increase page weight.
+                Uploads source images to your store so the page keeps working if the source CDN changes. Adds a few seconds to the import.
               </p>
             </div>
             <Switch
