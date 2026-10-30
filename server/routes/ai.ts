@@ -240,9 +240,10 @@ export function createAiRoutes(): Router {
       const digest = extractDigest(fetched.html, fetched.finalUrl);
       const aggregateWarnings: string[] = [...digest.warnings];
 
-      // Screenshots are best-effort: if the provider isn't configured we
-      // proceed with the digest only. A short note is added to warnings
-      // so the merchant knows the AI didn't see the page visually.
+      // Screenshots are best-effort: when a provider is configured we
+      // attempt capture and surface only per-attempt failures. When no
+      // provider is configured we silently fall back to the HTML digest
+      // (the noisy per-import "not configured" notice has been removed).
       let screenshots: { breakpoint: string; mimeType: string; base64: string }[] = [];
       if (isScreenshotEnabled()) {
         try {
@@ -259,9 +260,12 @@ export function createAiRoutes(): Router {
           });
           aggregateWarnings.push("Couldn't capture a screenshot of the source page; mapping is based on its HTML only.");
         }
-      } else {
-        aggregateWarnings.push("Visual screenshot capture is not configured on this server; mapping is based on the source HTML only.");
       }
+      // No `else` branch: when no provider is configured we silently fall
+      // back to the HTML digest. The "screenshot capture not configured"
+      // notice has been removed — production deployments should set
+      // IMPORT_SCREENSHOT_PROVIDER (urlbox / browserless / microlink /
+      // playwright) to enable visual capture.
 
       // Brand context (no per-page context for imports — the import IS the
       // page's seed). Same lookup pattern as /api/ai/generate-blocks.

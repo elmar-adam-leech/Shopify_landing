@@ -93,6 +93,11 @@ Preferred communication style: Simple, everyday language.
 - `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` — Global Twilio fallback
 - `DEV_TEST_SECRET` — Required to use test endpoints in development
 - `NEON_SECRET` — Neon serverless driver connection (used in production instead of DATABASE_URL)
+- `IMPORT_SCREENSHOT_PROVIDER` — Enables visual capture for the URL importer. Accepts `urlbox`, `browserless`, `microlink`, or `playwright`. When unset, the AI maps from HTML only.
+  - `URLBOX_API_KEY` — required when provider is `urlbox`
+  - `BROWSERLESS_TOKEN` — required when provider is `browserless`
+  - `MICROLINK_API_KEY` — optional when provider is `microlink` (sent as `x-api-key`); the anonymous tier works for low traffic
+  - `playwright` requires the `playwright` npm package to be installed
 
 ### Health Check
 - `GET /health` — Returns `{ status, database, uptime, timestamp }`. Returns 503 if DB is unreachable.
